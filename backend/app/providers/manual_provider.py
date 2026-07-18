@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities import Account, Holding, Transaction
 from app.persistence.repositories.account_repository import AccountRepository
+from app.persistence.repositories.transaction_repository import TransactionRepository
 from app.providers.base import FinancialDataProvider
 
 
@@ -24,9 +25,8 @@ class ManualProvider(FinancialDataProvider):
         return await AccountRepository(self.session).list_for_user(user_id)
 
     async def get_transactions(self, user_id: UUID, since: date) -> list[Transaction]:
-        # TODO(Phase 2): TransactionRepository.list_for_user_since(user_id, since)
-        return []
+        return await TransactionRepository(self.session).list_since_for_income_expense(user_id, since)
 
     async def get_holdings(self, user_id: UUID, account_id: UUID) -> list[Holding]:
-        # TODO(Phase 2): HoldingRepository.list_for_account(account_id)
+        # TODO(Phase 2 follow-up): HoldingRepository.list_for_account(account_id)
         return []

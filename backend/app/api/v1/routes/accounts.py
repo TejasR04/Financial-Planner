@@ -8,9 +8,18 @@ from app.api.deps import get_current_user, get_db
 from app.domain.entities import Account, User
 from app.domain.enums import AccountStatus, AccountType
 from app.persistence.repositories.account_repository import AccountRepository
+from app.persistence.repositories.holding_repository import HoldingRepository
+from app.persistence.repositories.user_repository import UserRepository
 from app.schemas.account import AccountCreateRequest, AccountListResponse, AccountResponse
+from app.schemas.financial_health import (
+    AllocationAnalysisResponse,
+    AllocationBreakdownResponse,
+    RebalanceSuggestionResponse,
+)
+from app.services.portfolio_allocation_service import PortfolioAllocationService
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
+allocation_service = PortfolioAllocationService()
 
 
 @router.get("", response_model=AccountListResponse)
@@ -50,6 +59,30 @@ async def create_account(
     created = await AccountRepository(db).create(current_user.id, account)
     await db.commit()
     return AccountResponse.model_validate(created, from_attributes=True)
+
+
+@router.get("/allocation", response_model=AllocationAnalysisResponse)
+async def get_allocation(
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> AllocationAnalysisResponse:
+    holdings = await HoldingRepository(db).list_for_user(current_user.id)
+    profile = await UserRepository(db).get_planning_profile(current_user.id)
+    result = allocation_service.analyze(holdings, profile.target_equity_allocation)
+    return AllocationAnalysisResponse(
+        total_market_value=result.total_market_value,
+        breakdown=[
+            AllocationBreakdownResponse(asset_class=b.asset_class.value, market_value=b.market_value, weight=b.weight)
+            for b in result.breakdown
+        ],
+        actual_equity_allocation=result.actual_equity_allocation,
+        target_equity_allocation=result.target_equity_allocation,
+        drift=result.drift,
+        is_within_tolerance=result.is_within_tolerance,
+        rebalance_suggestions=[
+            RebalanceSuggestionResponse(asset_class=s.asset_class.value, action=s.action, amount=s.amount)
+            for s in result.rebalance_suggestions
+        ],
+    )
 
 
 @router.get("/{account_id}", response_model=AccountResponse)
