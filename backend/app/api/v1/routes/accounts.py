@@ -9,6 +9,7 @@ from app.domain.entities import Account, User
 from app.domain.enums import AccountStatus, AccountType
 from app.persistence.repositories.account_repository import AccountRepository
 from app.persistence.repositories.holding_repository import HoldingRepository
+from app.persistence.repositories.institution_repository import InstitutionRepository
 from app.persistence.repositories.user_repository import UserRepository
 from app.schemas.account import AccountCreateRequest, AccountListResponse, AccountResponse
 from app.schemas.financial_health import (
@@ -22,6 +23,13 @@ router = APIRouter(prefix="/accounts", tags=["accounts"])
 allocation_service = PortfolioAllocationService()
 
 
+def _to_response(account: Account, institution_names: dict[UUID, str]) -> AccountResponse:
+    response = AccountResponse.model_validate(account, from_attributes=True)
+    if account.institution_id is not None:
+        response.institution = institution_names.get(account.institution_id)
+    return response
+
+
 @router.get("", response_model=AccountListResponse)
 async def list_accounts(
     type: AccountType | None = None,
@@ -29,10 +37,11 @@ async def list_accounts(
     db: AsyncSession = Depends(get_db),
 ) -> AccountListResponse:
     accounts = await AccountRepository(db).list_for_user(current_user.id, type)
+    institution_names = await InstitutionRepository(db).name_map_for_user(current_user.id)
     assets = sum((a.balance for a in accounts if a.balance >= 0), Decimal("0"))
     liabilities = sum((-a.balance for a in accounts if a.balance < 0), Decimal("0"))
     return AccountListResponse(
-        data=[AccountResponse.model_validate(a, from_attributes=True) for a in accounts],
+        data=[_to_response(a, institution_names) for a in accounts],
         total_assets=assets,
         total_liabilities=liabilities,
         net_worth=assets - liabilities,
@@ -90,7 +99,8 @@ async def get_account(
     account_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> AccountResponse:
     account = await AccountRepository(db).get_by_id(account_id)
-    return AccountResponse.model_validate(account, from_attributes=True)
+    institution_names = await InstitutionRepository(db).name_map_for_user(current_user.id)
+    return _to_response(account, institution_names)
 
 
 @router.delete("/{account_id}", status_code=status.HTTP_204_NO_CONTENT)

@@ -9,10 +9,12 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { netWorthSeries, formatCurrency } from "@/lib/data";
+import { formatCurrency } from "@/lib/data";
+import { useNetWorthSeries } from "@/lib/data-provider";
 import { ChartTooltip } from "./chart-tooltip";
 
 export function NetWorthChart() {
+  const netWorthSeries = useNetWorthSeries();
   return (
     <div className="h-[280px] w-full px-2 pb-2 pt-4">
       <ResponsiveContainer width="100%" height="100%">

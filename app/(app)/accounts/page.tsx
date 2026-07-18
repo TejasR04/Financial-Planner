@@ -1,11 +1,16 @@
+"use client";
+
 import { Plus, RefreshCw } from "lucide-react";
 import { PageContainer, PageHeader } from "@/components/page-container";
 import { Panel, PanelHeader } from "@/components/panel";
 import { AccountCard } from "@/components/account-card";
 import { Button } from "@/components/ui/button";
-import { accounts, formatCurrency } from "@/lib/data";
+import { formatCurrency } from "@/lib/data";
+import { useAccountsData } from "@/lib/data-provider";
 
 export default function AccountsPage() {
+  const accounts = useAccountsData();
+
   const assets = accounts
     .filter((a) => a.balance >= 0)
     .reduce((s, a) => s + a.balance, 0);
@@ -30,12 +35,17 @@ export default function AccountsPage() {
 
   const assetAccounts = accounts.filter((a) => a.balance >= 0);
   const liabilityAccounts = accounts.filter((a) => a.balance < 0);
+  const institutionCount = new Set(
+    accounts.map((a) => a.institution).filter(Boolean),
+  ).size;
 
   return (
     <PageContainer>
       <PageHeader
         title="Accounts"
-        description="8 linked accounts across 6 institutions"
+        description={`${accounts.length} linked account${accounts.length === 1 ? "" : "s"}${
+          institutionCount ? ` across ${institutionCount} institution${institutionCount === 1 ? "" : "s"}` : ""
+        }`}
         actions={
           <>
             <Button variant="outline" size="sm">
@@ -137,7 +147,7 @@ export default function AccountsPage() {
                     {a.type}
                   </td>
                   <td className="hidden px-4 py-2.5 text-muted-foreground md:table-cell">
-                    {a.institution}
+                    {a.institution ?? "—"}
                   </td>
                   <td className="hidden px-4 py-2.5 font-mono text-xs text-muted-foreground tabular-nums lg:table-cell">
                     {a.updated}

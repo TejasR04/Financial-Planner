@@ -1,3 +1,5 @@
+"use client";
+
 import { Download, Filter } from "lucide-react";
 import { PageContainer, PageHeader } from "@/components/page-container";
 import { Panel, PanelHeader } from "@/components/panel";
@@ -10,14 +12,18 @@ import { Timeline } from "@/components/timeline";
 import { AiInsights } from "@/components/ai-insights";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { kpis } from "@/lib/data";
+import { useAccountsData, useAllocationMeta, useKpis } from "@/lib/data-provider";
 
 export default function OverviewPage() {
+  const kpis = useKpis();
+  const accounts = useAccountsData();
+  const allocationMeta = useAllocationMeta();
+
   return (
     <PageContainer>
       <PageHeader
         title="Overview"
-        description="Consolidated position across 8 linked accounts · updated 4 minutes ago"
+        description={`Consolidated position across ${accounts.length} linked account${accounts.length === 1 ? "" : "s"}`}
         actions={
           <>
             <Button variant="outline" size="sm">
@@ -64,8 +70,16 @@ export default function OverviewPage() {
         <Panel>
           <PanelHeader
             title="Asset allocation"
-            description="Target 42% equities"
-            actions={<Badge variant="warning">4% drift</Badge>}
+            description={
+              allocationMeta ? `Target ${allocationMeta.targetEquityPercent}% equities` : "Target allocation"
+            }
+            actions={
+              allocationMeta && Math.abs(allocationMeta.driftPercent) > 0 ? (
+                <Badge variant={allocationMeta.isWithinTolerance ? "outline" : "warning"}>
+                  {Math.abs(allocationMeta.driftPercent)}% drift
+                </Badge>
+              ) : undefined
+            }
           />
           <AllocationChart />
         </Panel>
@@ -122,3 +136,4 @@ export default function OverviewPage() {
     </PageContainer>
   );
 }
+

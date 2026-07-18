@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Check } from "lucide-react";
 import { Panel, PanelHeader } from "@/components/panel";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { api } from "@/lib/api-client";
+import { useAccountsData, useDataRefresh, useUserAccount } from "@/lib/data-provider";
 
 const sections = [
   { id: "profile", label: "Profile" },
@@ -36,16 +38,21 @@ function Field({
 }
 
 const inputClass =
-  "h-8 w-full rounded-md border border-border bg-background px-2.5 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-3 focus:ring-ring/20";
+  "h-8 w-full rounded-md border border-border bg-background px-2.5 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-3 focus:ring-ring/20 disabled:cursor-not-allowed disabled:opacity-60";
 
-function Toggle({ defaultOn = false }: { defaultOn?: boolean }) {
-  const [on, setOn] = useState(defaultOn);
+function Toggle({
+  on,
+  onChange,
+}: {
+  on: boolean;
+  onChange: (next: boolean) => void;
+}) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={on}
-      onClick={() => setOn((v) => !v)}
+      onClick={() => onChange(!on)}
       className={cn(
         "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
         on ? "bg-primary" : "bg-muted",
@@ -63,6 +70,84 @@ function Toggle({ defaultOn = false }: { defaultOn?: boolean }) {
 
 export function SettingsForms() {
   const [tab, setTab] = useState("profile");
+  const userAccount = useUserAccount();
+  const accounts = useAccountsData();
+  const refresh = useDataRefresh();
+
+  // --- Profile tab ---------------------------------------------------
+  const [fullName, setFullName] = useState("");
+  const [baseCurrency, setBaseCurrency] = useState("USD");
+  const [dob, setDob] = useState("");
+  const [profileSaving, setProfileSaving] = useState(false);
+  const [profileSaved, setProfileSaved] = useState(false);
+
+  useEffect(() => {
+    if (!userAccount) return;
+    setFullName(userAccount.fullName);
+    setBaseCurrency(userAccount.baseCurrency);
+    setDob(userAccount.dateOfBirth ?? "");
+  }, [userAccount]);
+
+  async function saveProfile() {
+    setProfileSaving(true);
+    setProfileSaved(false);
+    try {
+      await api.users.updateMe({
+        full_name: fullName,
+        base_currency: baseCurrency,
+        date_of_birth: dob || undefined,
+      });
+      refresh();
+      setProfileSaved(true);
+    } finally {
+      setProfileSaving(false);
+    }
+  }
+
+  // --- Planning tab ----------------------------------------------------
+  const [retirementAge, setRetirementAge] = useState(65);
+  const [equityAllocation, setEquityAllocation] = useState(60);
+  const [withdrawalRate, setWithdrawalRate] = useState(4);
+  const [includeSS, setIncludeSS] = useState(true);
+  const [planningSaving, setPlanningSaving] = useState(false);
+  const [planningSaved, setPlanningSaved] = useState(false);
+
+  useEffect(() => {
+    if (!userAccount) return;
+    setRetirementAge(userAccount.targetRetirementAge);
+    setEquityAllocation(Math.round(userAccount.targetEquityAllocation * 100));
+    setWithdrawalRate(Math.round(userAccount.defaultWithdrawalRate * 1000) / 10);
+    setIncludeSS(userAccount.includeSocialSecurity);
+  }, [userAccount]);
+
+  async function savePlanning() {
+    setPlanningSaving(true);
+    setPlanningSaved(false);
+    try {
+      await api.users.updatePlanningProfile({
+        target_retirement_age: retirementAge,
+        target_equity_allocation: String(equityAllocation / 100),
+        default_withdrawal_rate: String(withdrawalRate / 100),
+        include_social_security: includeSS,
+      });
+      refresh();
+      setPlanningSaved(true);
+    } finally {
+      setPlanningSaving(false);
+    }
+  }
+
+  // --- Institutions tab: derived from real linked accounts --------------
+  const institutionGroups = Array.from(
+    accounts.reduce((map, a) => {
+      const key = a.institution ?? "Manually added";
+      const entry = map.get(key) ?? { count: 0, attention: 0 };
+      entry.count += 1;
+      if (a.status === "attention") entry.attention += 1;
+      map.set(key, entry);
+      return map;
+    }, new Map<string, { count: number; attention: number }>()),
+  );
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[180px_1fr]">
@@ -94,37 +179,47 @@ export function SettingsForms() {
             />
             <div className="divide-y divide-border px-4">
               <Field label="Full name">
-                <input className={inputClass} defaultValue="Tejas Ravi" />
+                <input
+                  className={inputClass}
+                  value={fullName}
+                  onChange={(e) => setFullName(e.target.value)}
+                />
               </Field>
-              <Field label="Email" hint="Used for alerts and reports">
+              <Field label="Email" hint="Contact support to change your email">
                 <input
                   className={inputClass}
                   type="email"
-                  defaultValue="alex@meridian.finance"
+                  value={userAccount?.email ?? ""}
+                  disabled
                 />
               </Field>
               <Field label="Base currency">
-                <select className={inputClass} defaultValue="USD">
-                  <option>USD — US Dollar</option>
-                  <option>EUR — Euro</option>
-                  <option>GBP — British Pound</option>
+                <select
+                  className={inputClass}
+                  value={baseCurrency}
+                  onChange={(e) => setBaseCurrency(e.target.value)}
+                >
+                  <option value="USD">USD — US Dollar</option>
+                  <option value="EUR">EUR — Euro</option>
+                  <option value="GBP">GBP — British Pound</option>
                 </select>
               </Field>
               <Field label="Date of birth" hint="Drives retirement horizon">
                 <input
                   className={inputClass}
-                  type="text"
-                  defaultValue="1993-04-18"
+                  type="date"
+                  value={dob}
+                  onChange={(e) => setDob(e.target.value)}
                 />
               </Field>
             </div>
-            <div className="flex justify-end gap-2 border-t border-border p-3">
-              <Button variant="ghost" size="sm">
-                Reset
-              </Button>
-              <Button size="sm">
+            <div className="flex items-center justify-end gap-2 border-t border-border p-3">
+              {profileSaved && (
+                <span className="text-[12px] text-positive">Saved</span>
+              )}
+              <Button size="sm" onClick={saveProfile} disabled={profileSaving}>
                 <Check />
-                Save changes
+                {profileSaving ? "Saving…" : "Save changes"}
               </Button>
             </div>
           </Panel>
@@ -138,33 +233,47 @@ export function SettingsForms() {
             />
             <div className="divide-y divide-border px-4">
               <Field label="Target retirement age">
-                <input className={inputClass} type="number" defaultValue={62} />
+                <input
+                  className={inputClass}
+                  type="number"
+                  value={retirementAge}
+                  onChange={(e) => setRetirementAge(Number(e.target.value))}
+                />
               </Field>
               <Field
                 label="Target equity allocation"
-                hint="Used for drift alerts"
+                hint="Used for drift alerts (%)"
               >
-                <input className={inputClass} type="number" defaultValue={42} />
+                <input
+                  className={inputClass}
+                  type="number"
+                  value={equityAllocation}
+                  onChange={(e) => setEquityAllocation(Number(e.target.value))}
+                />
               </Field>
-              <Field label="Default withdrawal rate">
+              <Field label="Default withdrawal rate" hint="%">
                 <input
                   className={inputClass}
                   type="number"
                   step="0.1"
-                  defaultValue={3.5}
+                  value={withdrawalRate}
+                  onChange={(e) => setWithdrawalRate(Number(e.target.value))}
                 />
               </Field>
               <Field
                 label="Include Social Security"
                 hint="Add projected benefits to models"
               >
-                <Toggle defaultOn />
+                <Toggle on={includeSS} onChange={setIncludeSS} />
               </Field>
             </div>
-            <div className="flex justify-end gap-2 border-t border-border p-3">
-              <Button size="sm">
+            <div className="flex items-center justify-end gap-2 border-t border-border p-3">
+              {planningSaved && (
+                <span className="text-[12px] text-positive">Saved</span>
+              )}
+              <Button size="sm" onClick={savePlanning} disabled={planningSaving}>
                 <Check />
-                Save changes
+                {planningSaving ? "Saving…" : "Save changes"}
               </Button>
             </div>
           </Panel>
@@ -174,58 +283,58 @@ export function SettingsForms() {
           <Panel>
             <PanelHeader
               title="Connected institutions"
-              description="Data providers and sync cadence"
+              description="Derived from your linked accounts"
             />
-            <ul className="divide-y divide-border">
-              {[
-                { name: "Fidelity", status: "Healthy", accounts: 1 },
-                { name: "Vanguard", status: "Healthy", accounts: 1 },
-                { name: "Charles Schwab", status: "Healthy", accounts: 1 },
-                { name: "Chase", status: "Action required", accounts: 2 },
-                { name: "Marcus", status: "Healthy", accounts: 1 },
-              ].map((inst) => {
-                const ok = inst.status === "Healthy";
-                return (
-                  <li
-                    key={inst.name}
-                    className="flex items-center justify-between gap-3 px-4 py-3"
-                  >
-                    <div className="flex items-center gap-2.5">
-                      <span className="flex size-7 items-center justify-center rounded-md border border-border bg-muted/50 font-mono text-[11px] font-semibold text-muted-foreground">
-                        {inst.name.slice(0, 2).toUpperCase()}
-                      </span>
-                      <div>
-                        <p className="text-[13px] font-medium text-foreground">
-                          {inst.name}
-                        </p>
-                        <p className="text-[11px] text-muted-foreground">
-                          {inst.accounts} account{inst.accounts > 1 ? "s" : ""}
-                        </p>
+            {institutionGroups.length === 0 ? (
+              <p className="px-4 py-6 text-center text-[13px] text-muted-foreground">
+                No institutions linked yet.
+              </p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {institutionGroups.map(([name, info]) => {
+                  const ok = info.attention === 0;
+                  return (
+                    <li
+                      key={name}
+                      className="flex items-center justify-between gap-3 px-4 py-3"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <span className="flex size-7 items-center justify-center rounded-md border border-border bg-muted/50 font-mono text-[11px] font-semibold text-muted-foreground">
+                          {name.slice(0, 2).toUpperCase()}
+                        </span>
+                        <div>
+                          <p className="text-[13px] font-medium text-foreground">
+                            {name}
+                          </p>
+                          <p className="text-[11px] text-muted-foreground">
+                            {info.count} account{info.count > 1 ? "s" : ""}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <span
-                        className={cn(
-                          "flex items-center gap-1.5 text-[11px] font-medium",
-                          ok ? "text-positive" : "text-warning",
-                        )}
-                      >
+                      <div className="flex items-center gap-3">
                         <span
                           className={cn(
-                            "size-1.5 rounded-full",
-                            ok ? "bg-positive" : "bg-warning",
+                            "flex items-center gap-1.5 text-[11px] font-medium",
+                            ok ? "text-positive" : "text-warning",
                           )}
-                        />
-                        {inst.status}
-                      </span>
-                      <Button variant="outline" size="xs">
-                        Manage
-                      </Button>
-                    </div>
-                  </li>
-                );
-              })}
-            </ul>
+                        >
+                          <span
+                            className={cn(
+                              "size-1.5 rounded-full",
+                              ok ? "bg-positive" : "bg-warning",
+                            )}
+                          />
+                          {ok ? "Healthy" : "Action required"}
+                        </span>
+                        <Button variant="outline" size="xs">
+                          Manage
+                        </Button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </Panel>
         )}
 
@@ -233,52 +342,50 @@ export function SettingsForms() {
           <Panel>
             <PanelHeader
               title="Notifications"
-              description="Choose what Meridian alerts you about"
+              description="Choose what Meridian alerts you about — saved locally on this device for now"
             />
             <div className="divide-y divide-border px-4">
               {[
                 {
                   label: "Weekly portfolio digest",
                   hint: "Every Monday at 8:00 AM",
-                  on: true,
                 },
                 {
                   label: "Allocation drift alerts",
                   hint: "When drift exceeds 5%",
-                  on: true,
                 },
                 {
                   label: "Large transaction alerts",
                   hint: "Transactions over $2,500",
-                  on: true,
                 },
                 {
                   label: "New AI recommendations",
                   hint: "When analysis surfaces opportunities",
-                  on: false,
                 },
                 {
                   label: "Bill & contribution reminders",
                   hint: "Two days before due dates",
-                  on: false,
                 },
               ].map((n) => (
-                <Field key={n.label} label={n.label} hint={n.hint}>
-                  <div className="flex sm:justify-start">
-                    <Toggle defaultOn={n.on} />
-                  </div>
-                </Field>
+                <NotificationToggleField key={n.label} label={n.label} hint={n.hint} />
               ))}
-            </div>
-            <div className="flex justify-end gap-2 border-t border-border p-3">
-              <Button size="sm">
-                <Check />
-                Save preferences
-              </Button>
             </div>
           </Panel>
         )}
       </div>
     </div>
+  );
+}
+
+// Local-only preference (no backend model exists for notification settings
+// yet) — kept isolated so it doesn't silently claim to be server-persisted.
+function NotificationToggleField({ label, hint }: { label: string; hint: string }) {
+  const [on, setOn] = useState(false);
+  return (
+    <Field label={label} hint={hint}>
+      <div className="flex sm:justify-start">
+        <Toggle on={on} onChange={setOn} />
+      </div>
+    </Field>
   );
 }

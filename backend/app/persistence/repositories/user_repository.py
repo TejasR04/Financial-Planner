@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import date
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
@@ -36,6 +37,46 @@ class UserRepository(BaseRepository[UserModel]):
         self.session.add(PlanningProfileModel(id=uuid4(), user_id=row.id))
         await self.session.flush()
         return _to_domain(row)
+
+    async def update(
+        self,
+        user_id: UUID,
+        full_name: str | None = None,
+        base_currency: str | None = None,
+        date_of_birth: date | None = None,
+    ) -> User:
+        row = await self._get_or_raise("User", user_id)
+        if full_name is not None:
+            row.full_name = full_name
+        if base_currency is not None:
+            row.base_currency = base_currency
+        if date_of_birth is not None:
+            row.date_of_birth = date_of_birth
+        await self.session.flush()
+        return _to_domain(row)
+
+    async def update_planning_profile(
+        self,
+        user_id: UUID,
+        **fields: object,
+    ) -> PlanningProfile:
+        result = await self.session.execute(
+            select(PlanningProfileModel).where(PlanningProfileModel.user_id == user_id)
+        )
+        row = result.scalar_one()
+        for key, value in fields.items():
+            if value is not None:
+                setattr(row, key, value)
+        await self.session.flush()
+        return PlanningProfile(
+            user_id=row.user_id,
+            target_retirement_age=row.target_retirement_age,
+            target_equity_allocation=row.target_equity_allocation,
+            default_withdrawal_rate=row.default_withdrawal_rate,
+            include_social_security=row.include_social_security,
+            expected_return=row.expected_return,
+            inflation_rate=row.inflation_rate,
+        )
 
     async def get_planning_profile(self, user_id: UUID) -> PlanningProfile:
         result = await self.session.execute(

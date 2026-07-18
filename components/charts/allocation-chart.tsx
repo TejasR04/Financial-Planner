@@ -1,10 +1,12 @@
 "use client";
 
 import { Cell, Pie, PieChart, ResponsiveContainer, Tooltip } from "recharts";
-import { allocation, formatCurrency } from "@/lib/data";
+import { formatCurrency } from "@/lib/data";
+import { useAllocation } from "@/lib/data-provider";
 import { ChartTooltip } from "./chart-tooltip";
 
 export function AllocationChart() {
+  const allocation = useAllocation();
   const total = allocation.reduce((s, a) => s + a.amount, 0);
 
   return (

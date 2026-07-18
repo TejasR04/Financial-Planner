@@ -9,14 +9,21 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { scenarios, scenarioYears } from "@/lib/data";
+import { useScenariosData } from "@/lib/data-provider";
 import { ChartTooltip } from "./chart-tooltip";
 
 export function ScenarioChart({ activeIds }: { activeIds: string[] }) {
-  const data = scenarioYears.map((year, i) => {
+  const scenarios = useScenariosData();
+
+  // Each scenario has its own real trajectory (different retirement ages
+  // produce different-length runs), so build the shared x-axis as the
+  // union of every scenario's calendar years rather than a fixed list.
+  const years = Array.from(new Set(scenarios.flatMap((s) => s.years))).sort();
+  const data = years.map((year) => {
     const row: Record<string, number | string> = { year };
     scenarios.forEach((s) => {
-      row[s.name] = s.series[i];
+      const i = s.years.indexOf(year);
+      if (i !== -1) row[s.name] = s.series[i];
     });
     return row;
   });

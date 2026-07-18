@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
-import { scenarios, formatCurrency } from "@/lib/data";
+import { useEffect, useState } from "react";
+import { formatCurrency } from "@/lib/data";
+import { useScenariosData } from "@/lib/data-provider";
 import { Panel, PanelHeader } from "@/components/panel";
 import { ScenarioChart } from "@/components/charts/scenario-chart";
 import { Button } from "@/components/ui/button";
@@ -27,7 +28,14 @@ const metrics = [
 ] as const;
 
 export function ScenarioCompare() {
-  const [active, setActive] = useState<string[]>(scenarios.map((s) => s.id));
+  const scenarios = useScenariosData();
+  const [active, setActive] = useState<string[]>([]);
+
+  // Scenarios load asynchronously; default every scenario to "active" the
+  // first time the real list arrives.
+  useEffect(() => {
+    if (scenarios.length > 0) setActive(scenarios.map((s) => s.id));
+  }, [scenarios.length]);
 
   const toggle = (id: string) =>
     setActive((prev) =>

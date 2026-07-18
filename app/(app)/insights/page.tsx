@@ -1,13 +1,49 @@
+"use client";
+
+import { useState } from "react";
 import { Sparkles, RefreshCw } from "lucide-react";
 import { PageContainer, PageHeader } from "@/components/page-container";
 import { Panel, PanelHeader } from "@/components/panel";
 import { RecommendationCard } from "@/components/recommendation-card";
 import { AiInsights } from "@/components/ai-insights";
 import { Button } from "@/components/ui/button";
-import { recommendations, formatCurrency } from "@/lib/data";
+import { formatCurrency } from "@/lib/data";
+import { useDataRefresh, useFinancialHealthData, useRecommendationsData } from "@/lib/data-provider";
+import { api } from "@/lib/api-client";
+
+function healthLabel(score: number) {
+  if (score >= 80) return "Strong";
+  if (score >= 60) return "Good";
+  if (score >= 40) return "Fair";
+  return "Needs attention";
+}
 
 export default function InsightsPage() {
+  const recommendations = useRecommendationsData();
+  const financialHealth = useFinancialHealthData();
+  const refresh = useDataRefresh();
+  const [rerunning, setRerunning] = useState(false);
+
   const totalImpact = recommendations.reduce((s, r) => s + r.impactValue, 0);
+
+  async function handleRerun() {
+    setRerunning(true);
+    try {
+      await Promise.all([api.recommendations.generate(), api.financialHealth.recalculate()]);
+      refresh();
+    } finally {
+      setRerunning(false);
+    }
+  }
+
+  const healthRows = financialHealth
+    ? [
+        { label: "Liquidity", score: financialHealth.liquidity },
+        { label: "Diversification", score: financialHealth.diversification },
+        { label: "Debt ratio", score: financialHealth.debtRatio },
+        { label: "Savings discipline", score: financialHealth.savingsDiscipline },
+      ]
+    : [];
 
   return (
     <PageContainer>
@@ -15,8 +51,8 @@ export default function InsightsPage() {
         title="Insights"
         description="AI-surfaced recommendations ranked by projected impact and confidence"
         actions={
-          <Button variant="outline" size="sm">
-            <RefreshCw />
+          <Button variant="outline" size="sm" onClick={handleRerun} disabled={rerunning}>
+            <RefreshCw className={rerunning ? "animate-spin" : undefined} />
             Re-run analysis
           </Button>
         }
@@ -66,19 +102,14 @@ export default function InsightsPage() {
             <div className="p-4">
               <div className="flex items-end gap-3">
                 <span className="font-mono text-4xl font-semibold tracking-tight text-foreground tabular-nums">
-                  82
+                  {financialHealth ? financialHealth.overall : "—"}
                 </span>
                 <span className="mb-1.5 text-sm text-muted-foreground">
-                  / 100 · Strong
+                  / 100{financialHealth ? ` · ${healthLabel(financialHealth.overall)}` : ""}
                 </span>
               </div>
               <div className="mt-4 space-y-3">
-                {[
-                  { label: "Liquidity", score: 88 },
-                  { label: "Diversification", score: 74 },
-                  { label: "Debt ratio", score: 91 },
-                  { label: "Savings discipline", score: 79 },
-                ].map((row) => (
+                {healthRows.map((row) => (
                   <div key={row.label}>
                     <div className="flex items-center justify-between text-[12px]">
                       <span className="text-muted-foreground">{row.label}</span>

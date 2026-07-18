@@ -1,7 +1,8 @@
 "use client";
 
 import { Check } from "lucide-react";
-import { milestones, type Milestone } from "@/lib/data";
+import { type Milestone } from "@/lib/data";
+import { useMilestones } from "@/lib/data-provider";
 import { cn } from "@/lib/utils";
 
 const dot: Record<Milestone["status"], string> = {
@@ -12,6 +13,7 @@ const dot: Record<Milestone["status"], string> = {
 };
 
 export function Timeline() {
+  const milestones = useMilestones();
   return (
     <ol className="relative px-4 py-4">
       {milestones.map((m, i) => {
@@ -32,7 +34,7 @@ export function Timeline() {
                 dot[m.status],
               )}
             >
-              {m.status === "done" ? <Check className="size-3.5" /> : m.age}
+              {m.status === "done" ? <Check className="size-3.5" /> : (m.age ?? "—")}
             </span>
             <div className="min-w-0 flex-1">
               <div className="flex items-baseline justify-between gap-2">
@@ -47,10 +49,14 @@ export function Timeline() {
                 <span className="font-mono text-[11px] text-muted-foreground">
                   {m.year}
                 </span>
-                <span className="text-muted-foreground/40">·</span>
-                <p className="truncate text-xs text-muted-foreground">
-                  {m.detail}
-                </p>
+                {m.detail && (
+                  <>
+                    <span className="text-muted-foreground/40">·</span>
+                    <p className="truncate text-xs text-muted-foreground">
+                      {m.detail}
+                    </p>
+                  </>
+                )}
               </div>
             </div>
           </li>

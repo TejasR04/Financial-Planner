@@ -7,7 +7,8 @@ import {
   Info,
   ArrowRight,
 } from "lucide-react";
-import { insights, type Insight } from "@/lib/data";
+import { type Insight } from "@/lib/data";
+import { useInsightsData } from "@/lib/data-provider";
 import { cn } from "@/lib/utils";
 
 const config: Record<
@@ -35,6 +36,7 @@ const config: Record<
 };
 
 export function AiInsights({ className }: { className?: string }) {
+  const insights = useInsightsData();
   return (
     <div
       className={cn(

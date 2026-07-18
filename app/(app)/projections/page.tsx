@@ -1,3 +1,5 @@
+"use client";
+
 import { Plus, Sparkles } from "lucide-react";
 import { PageContainer, PageHeader } from "@/components/page-container";
 import { ScenarioCompare } from "@/components/scenario-compare";
@@ -5,12 +7,15 @@ import { ProjectionAssumptions } from "@/components/projection-assumptions";
 import { Panel, PanelHeader } from "@/components/panel";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { scenarios, formatCurrency } from "@/lib/data";
+import { formatCurrency } from "@/lib/data";
+import { useScenariosData } from "@/lib/data-provider";
 
 export default function ProjectionsPage() {
-  const best = scenarios.reduce((a, b) =>
-    b.successRate > a.successRate ? b : a,
-  );
+  const scenarios = useScenariosData();
+  const best =
+    scenarios.length > 0
+      ? scenarios.reduce((a, b) => (b.successRate > a.successRate ? b : a))
+      : null;
 
   return (
     <PageContainer>
@@ -48,7 +53,7 @@ export default function ProjectionsPage() {
                   {s.name}
                 </span>
               </div>
-              {s.id === best.id && (
+              {s.id === best?.id && (
                 <Badge variant="positive">Recommended</Badge>
               )}
             </div>

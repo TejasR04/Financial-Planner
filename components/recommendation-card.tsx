@@ -1,7 +1,10 @@
 "use client";
 
+import { useState } from "react";
 import { Check, ArrowRight } from "lucide-react";
 import { type Recommendation } from "@/lib/data";
+import { api } from "@/lib/api-client";
+import { useDataRefresh } from "@/lib/data-provider";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -13,6 +16,19 @@ const effortColor: Record<Recommendation["effort"], string> = {
 };
 
 export function RecommendationCard({ rec }: { rec: Recommendation }) {
+  const refresh = useDataRefresh();
+  const [pending, setPending] = useState<"applied" | "dismissed" | null>(null);
+
+  async function handleAction(status: "applied" | "dismissed") {
+    setPending(status);
+    try {
+      await api.recommendations.update(rec.id, status);
+      refresh();
+    } catch {
+      setPending(null);
+    }
+  }
+
   return (
     <div className="flex flex-col rounded-lg border border-border bg-card p-4">
       <div className="flex items-start justify-between gap-3">
@@ -50,12 +66,17 @@ export function RecommendationCard({ rec }: { rec: Recommendation }) {
           </span>
         </div>
         <div className="flex items-center gap-1.5">
-          <Button variant="ghost" size="xs">
-            Dismiss
+          <Button
+            variant="ghost"
+            size="xs"
+            onClick={() => handleAction("dismissed")}
+            disabled={pending !== null}
+          >
+            {pending === "dismissed" ? "Dismissing…" : "Dismiss"}
           </Button>
-          <Button size="xs">
+          <Button size="xs" onClick={() => handleAction("applied")} disabled={pending !== null}>
             <Check />
-            Apply
+            {pending === "applied" ? "Applying…" : "Apply"}
           </Button>
         </div>
       </div>

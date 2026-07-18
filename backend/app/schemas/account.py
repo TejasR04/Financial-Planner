@@ -1,3 +1,4 @@
+from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -17,6 +18,8 @@ class AccountResponse(BaseModel):
     mask: str | None
     apy: Decimal | None
     status: AccountStatus
+    institution: str | None = None
+    updated_at: datetime | None = None
 
 
 class AccountCreateRequest(BaseModel):

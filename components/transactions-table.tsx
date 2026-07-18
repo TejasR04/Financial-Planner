@@ -1,9 +1,11 @@
 "use client";
 
-import { transactions, formatCurrency } from "@/lib/data";
+import { formatCurrency } from "@/lib/data";
+import { useTransactionsData } from "@/lib/data-provider";
 import { cn } from "@/lib/utils";
 
 export function TransactionsTable() {
+  const transactions = useTransactionsData().slice(0, 8);
   return (
     <div className="overflow-x-auto">
       <table className="w-full border-collapse text-[13px]">

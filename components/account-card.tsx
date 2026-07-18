@@ -36,7 +36,6 @@ const statusBadge: Record<
 export function AccountCard({ account }: { account: Account }) {
   const Icon = typeIcon[account.type];
   const negative = account.balance < 0;
-  const up = account.change >= 0;
   const badge = statusBadge[account.status];
 
   return (
@@ -51,7 +50,7 @@ export function AccountCard({ account }: { account: Account }) {
               {account.name}
             </p>
             <p className="text-[11px] text-muted-foreground">
-              {account.institution} ·{" "}
+              {account.institution ? `${account.institution} · ` : ""}
               <span className="font-mono">••{account.mask}</span>
             </p>
           </div>
@@ -70,19 +69,21 @@ export function AccountCard({ account }: { account: Account }) {
             {formatCurrency(account.balance)}
           </p>
           <div className="mt-0.5 flex items-center gap-2 text-[11px]">
-            <span
-              className={cn(
-                "inline-flex items-center gap-0.5 font-medium tabular-nums",
-                up ? "text-positive" : "text-destructive",
-              )}
-            >
-              {up ? (
-                <ArrowUpRight className="size-3" />
-              ) : (
-                <ArrowDownRight className="size-3" />
-              )}
-              {formatPercent(Math.abs(account.change))}
-            </span>
+            {account.change != null && (
+              <span
+                className={cn(
+                  "inline-flex items-center gap-0.5 font-medium tabular-nums",
+                  account.change >= 0 ? "text-positive" : "text-destructive",
+                )}
+              >
+                {account.change >= 0 ? (
+                  <ArrowUpRight className="size-3" />
+                ) : (
+                  <ArrowDownRight className="size-3" />
+                )}
+                {formatPercent(Math.abs(account.change))}
+              </span>
+            )}
             <span className="text-muted-foreground">· {account.updated}</span>
           </div>
         </div>

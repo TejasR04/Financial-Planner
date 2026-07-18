@@ -9,10 +9,12 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { cashflowSeries, formatCurrency } from "@/lib/data";
+import { formatCurrency } from "@/lib/data";
+import { useCashflowSeries } from "@/lib/data-provider";
 import { ChartTooltip } from "./chart-tooltip";
 
 export function CashflowChart() {
+  const cashflowSeries = useCashflowSeries();
   return (
     <div className="h-[220px] w-full px-2 pb-2 pt-4">
       <ResponsiveContainer width="100%" height="100%">
