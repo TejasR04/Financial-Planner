@@ -153,6 +153,7 @@ async def run_scenario(
         scenario_id=scenario_id,
         engine_version=result.engine_version,
         net_worth_at_target_age=result.retirement_projection.projected_balance_at_retirement,
+        monthly_sustainable_withdrawal=result.retirement_projection.monthly_sustainable_withdrawal,
         trajectory=trajectory,
         assumptions_snapshot=assumptions_snapshot,
         method="monte_carlo" if result.monte_carlo else "deterministic",

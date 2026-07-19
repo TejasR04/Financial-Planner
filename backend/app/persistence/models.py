@@ -197,6 +197,7 @@ class SimulationRunModel(Base):
     seed: Mapped[int | None] = mapped_column(Integer, nullable=True)
     method: Mapped[str] = mapped_column(String(20), default="deterministic")
     net_worth_at_target_age: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    monthly_sustainable_withdrawal: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     success_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 4), nullable=True)
     trajectory: Mapped[dict] = mapped_column(JSONB)
     assumptions_snapshot: Mapped[dict] = mapped_column(JSONB)

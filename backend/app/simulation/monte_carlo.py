@@ -10,11 +10,8 @@ wired end to end; swapping the sampler later requires no change to
 from __future__ import annotations
 
 import random
-import statistics
 from dataclasses import dataclass
 from decimal import Decimal
-
-from app.simulation.engine import project_balance_series
 
 ZERO = Decimal("0")
 
@@ -22,7 +19,7 @@ ZERO = Decimal("0")
 @dataclass(slots=True, frozen=True)
 class MonteCarloResult:
     trials: int
-    success_rate: float          # fraction of trials meeting the target
+    success_rate: float          # meaning depends on mode — see run_monte_carlo docstring
     median_ending_balance: Decimal
     p10_ending_balance: Decimal
     p90_ending_balance: Decimal
@@ -39,15 +36,42 @@ def run_monte_carlo(
     target_balance: Decimal,
     trials: int = 1000,
     seed: int = 42,
+    retirement_years: int = 0,
+    annual_withdrawal: Decimal = ZERO,
 ) -> MonteCarloResult:
     """Runs `trials` independent projections with the annual return sampled
-    from a normal distribution around `expected_return`, and reports the
-    fraction of trials that end at or above `target_balance`.
+    from a normal distribution around `expected_return`.
+
+    Two modes, selected by whether `retirement_years > 0`:
+
+    - **Accumulation-only (`retirement_years=0`, the default)**: simulates
+      `years` of contributions + random growth and reports the fraction of
+      trials whose ENDING balance is >= `target_balance`. This is what
+      backs the generic `/simulations/monte-carlo` endpoint and the
+      `run_monte_carlo` AI tool, where there's no retirement horizon to
+      model — just "does this savings plan clear this bar".
+
+    - **Full retirement horizon (`retirement_years > 0`)**: after the same
+      `years` of accumulation, each trial continues for `retirement_years`
+      more years with NO further contributions, instead withdrawing
+      `annual_withdrawal` at the start of each year (then growing the
+      remainder at that year's sampled return — the standard
+      sequence-of-returns convention). `success_rate` here means the
+      fraction of trials that never hit a zero balance before the end of
+      that retirement horizon — i.e. "didn't run out of money" — which is
+      what `ScenarioService` uses so "success rate" answers the question
+      people actually mean by it for a retirement scenario. `target_balance`
+      is ignored in this mode.
+
+    Simplification worth knowing: `annual_withdrawal` is held flat in
+    nominal terms across the retirement horizon (not inflation-adjusted
+    year over year, unlike the classic real-terms "4% rule"). Fine for a
+    v1; a future pass could index it to `inflation_rate` per year.
 
     This is deliberately simple (normal, i.i.d. annual returns) — a
     reasonable default for a v1 that is explicitly designed to be replaced
-    (bootstrapped historical sequences, fatter tails, sequence-of-returns
-    risk) without touching any caller.
+    (bootstrapped historical sequences, fatter tails) without touching any
+    caller.
     """
     if trials <= 0:
         raise ValueError("trials must be positive")
@@ -67,8 +91,24 @@ def run_monte_carlo(
             balance = balance + contribution + balance * sampled_rate
             if balance < ZERO:
                 balance = ZERO
+
+        ran_out = False
+        for _year in range(retirement_years):
+            sampled_rate = Decimal(str(rng.normalvariate(mean, stdev)))
+            balance = balance - annual_withdrawal
+            if balance <= ZERO:
+                balance = ZERO
+                ran_out = True
+                continue
+            balance = balance * (Decimal("1") + sampled_rate)
+            if balance < ZERO:
+                balance = ZERO
+
         endings.append(balance)
-        if balance >= target_balance:
+        if retirement_years > 0:
+            if not ran_out:
+                successes += 1
+        elif balance >= target_balance:
             successes += 1
 
     endings_sorted = sorted(endings)

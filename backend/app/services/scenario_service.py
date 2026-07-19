@@ -71,6 +71,10 @@ class ScenarioService:
                 years=years,
                 starting_age=assumptions.current_age,
                 target_balance=target,
+                retirement_years=assumptions.years_in_retirement,
+                annual_withdrawal=(
+                    annual_spending_target if annual_spending_target else retirement.annual_sustainable_withdrawal
+                ),
                 trials=monte_carlo_trials,
                 seed=monte_carlo_seed,
             )

@@ -48,6 +48,7 @@ class ScenarioRepository(BaseRepository[ScenarioModel]):
     async def record_run(
         self, scenario_id: UUID, engine_version: str, net_worth_at_target_age, trajectory: dict,
         assumptions_snapshot: dict, method: str = "deterministic", success_rate=None, seed: int | None = None,
+        monthly_sustainable_withdrawal=None,
     ) -> SimulationRunModel:
         row = SimulationRunModel(
             id=uuid4(),
@@ -55,6 +56,7 @@ class ScenarioRepository(BaseRepository[ScenarioModel]):
             engine_version=engine_version,
             method=method,
             net_worth_at_target_age=net_worth_at_target_age,
+            monthly_sustainable_withdrawal=monthly_sustainable_withdrawal,
             success_rate=success_rate,
             trajectory=trajectory,
             assumptions_snapshot=assumptions_snapshot,

@@ -49,6 +49,7 @@ class ScenarioRunResponse(BaseModel):
     engine_version: str
     method: str
     net_worth_at_target_age: Decimal
+    monthly_sustainable_withdrawal: Decimal | None
     success_rate: Decimal | None
     trajectory: list[dict]
     created_at: datetime
