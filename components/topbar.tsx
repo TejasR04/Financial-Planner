@@ -1,8 +1,9 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { Search, Bell, Sun, Moon, Plus, ChevronRight } from "lucide-react";
+import { Search, Bell, Sun, Moon, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { PlaidLinkButton } from "@/components/plaid-link-button";
 import { useTheme } from "@/components/theme-provider";
 
 const titles: Record<string, string> = {
@@ -58,10 +59,7 @@ export function Topbar({ onOpenCommand }: { onOpenCommand: () => void }) {
           <Bell />
           <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-primary" />
         </Button>
-        <Button size="sm" className="ml-1">
-          <Plus />
-          Link account
-        </Button>
+        <PlaidLinkButton size="sm" className="ml-1" />
       </div>
     </header>
   );

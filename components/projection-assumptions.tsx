@@ -18,16 +18,43 @@ type Assumption = {
 };
 
 const FALLBACK_ASSUMPTIONS: Assumption[] = [
-  { key: "age", label: "Target retirement age", min: 45, max: 75, step: 1, value: 65, suffix: "yrs" },
-  { key: "contribution", label: "Monthly contribution", min: 0, max: 10000, step: 100, value: 500, suffix: "$" },
-  { key: "return", label: "Expected real return", min: 2, max: 10, step: 0.1, value: 6.5, suffix: "%" },
+  {
+    key: "age",
+    label: "Target retirement age",
+    min: 45,
+    max: 75,
+    step: 1,
+    value: 65,
+    suffix: "yrs",
+  },
+  {
+    key: "contribution",
+    label: "Monthly savings contribution",
+    min: 0,
+    max: 10000,
+    step: 100,
+    value: 500,
+    suffix: "$",
+  },
+  {
+    key: "return",
+    label: "Expected real return",
+    min: 2,
+    max: 10,
+    step: 0.1,
+    value: 6.5,
+    suffix: "%",
+  },
 ];
 
 export function ProjectionAssumptions() {
   const profile = useProfileSummary();
-  const [assumptions, setAssumptions] = useState<Assumption[]>(FALLBACK_ASSUMPTIONS);
+  const [assumptions, setAssumptions] =
+    useState<Assumption[]>(FALLBACK_ASSUMPTIONS);
   const [initialized, setInitialized] = useState(false);
-  const [result, setResult] = useState<{ fv: number; years: number } | null>(null);
+  const [result, setResult] = useState<{ fv: number; years: number } | null>(
+    null,
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -47,7 +74,7 @@ export function ProjectionAssumptions() {
       },
       {
         key: "contribution",
-        label: "Monthly contribution",
+        label: "Monthly savings contribution",
         min: 0,
         max: 10000,
         step: 100,
@@ -75,7 +102,10 @@ export function ProjectionAssumptions() {
   const age = assumptions.find((a) => a.key === "age")!.value;
   const contribution = assumptions.find((a) => a.key === "contribution")!.value;
   const ret = assumptions.find((a) => a.key === "return")!.value;
-  const years = Math.max(1, Math.round(age - (profile?.currentAge ?? age - 30)));
+  const years = Math.max(
+    1,
+    Math.round(age - (profile?.currentAge ?? age - 30)),
+  );
 
   // Debounced call to the real simulation endpoint — this replaces the old
   // hardcoded-salary compound-interest formula (ARCHITECTURE.md §11).
@@ -92,9 +122,16 @@ export function ProjectionAssumptions() {
           expected_return: String(ret / 100),
           annual_net_contribution: String(contribution * 12),
         });
-        setResult({ fv: parseFloat(sim.projected_net_worth_at_horizon), years });
+        setResult({
+          fv: parseFloat(sim.projected_net_worth_at_horizon),
+          years,
+        });
       } catch (err) {
-        setError(err instanceof ApiError ? err.message : "Couldn't run the projection.");
+        setError(
+          err instanceof ApiError
+            ? err.message
+            : "Couldn't run the projection.",
+        );
       } finally {
         setLoading(false);
       }
@@ -106,7 +143,7 @@ export function ProjectionAssumptions() {
     <Panel>
       <PanelHeader
         title="Model assumptions"
-        description="Adjust inputs to reshape the projection"
+        description="Quick what-if for total net worth — adjust inputs to reshape the projection"
       />
       <div className="flex flex-col gap-4 p-4">
         {assumptions.map((a) => (
@@ -118,7 +155,9 @@ export function ProjectionAssumptions() {
               <span className="font-mono text-[13px] font-medium text-foreground tabular-nums">
                 {a.suffix === "$" ? formatCurrency(a.value) : a.value}
                 {a.suffix !== "$" && (
-                  <span className="ml-0.5 text-muted-foreground">{a.suffix}</span>
+                  <span className="ml-0.5 text-muted-foreground">
+                    {a.suffix}
+                  </span>
                 )}
               </span>
             </div>
@@ -138,10 +177,14 @@ export function ProjectionAssumptions() {
 
       <div className="border-t border-border bg-muted/30 px-4 py-3.5">
         <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Projected net worth at retirement
+          Projected total net worth at retirement
         </p>
         <p className="mt-1 font-mono text-2xl font-semibold tracking-tight text-primary tabular-nums">
-          {result ? formatCurrency(result.fv, { compact: true }) : loading ? "…" : "—"}
+          {result
+            ? formatCurrency(result.fv, { compact: true })
+            : loading
+              ? "…"
+              : "—"}
         </p>
         <p className="mt-0.5 text-[11px] text-muted-foreground">
           {error

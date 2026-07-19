@@ -20,6 +20,11 @@ class Settings(BaseSettings):
     plaid_client_id: str | None = None
     plaid_secret: str | None = None
     plaid_env: str = "sandbox"
+    # Fernet key (32 url-safe base64-encoded bytes) used to encrypt Plaid
+    # access tokens at rest. Generate a real one with:
+    #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+    # and put it in .env — never reuse the placeholder below outside local dev.
+    plaid_token_encryption_key: str = "wKcp4Vw4qN7pQoT1Md1AXjC8v4Gg9WdY7CqB2m1x4Zk="
 
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"

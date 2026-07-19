@@ -8,7 +8,7 @@ import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Integer, Numeric, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -57,6 +57,7 @@ class PlanningProfileModel(Base):
 
 class InstitutionModel(Base):
     __tablename__ = "institutions"
+    __table_args__ = (UniqueConstraint("external_item_id", name="uq_institutions_external_item_id"),)
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     user_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("users.id"), index=True)
@@ -64,6 +65,12 @@ class InstitutionModel(Base):
     provider: Mapped[str] = mapped_column(String(20))
     status: Mapped[str] = mapped_column(String(20), default="healthy")
     external_item_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Plaid access_token, Fernet-encrypted (see app/core/crypto.py). Never
+    # decrypted outside PlaidProvider, never included in any API schema.
+    plaid_access_token_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Cursor for Plaid's /transactions/sync (Phase B). Stored now since the
+    # column lives on the same row Phase A already creates.
+    plaid_sync_cursor: Mapped[str | None] = mapped_column(Text, nullable=True)
     last_synced_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 

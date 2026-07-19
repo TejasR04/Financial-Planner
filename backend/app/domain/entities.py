@@ -78,6 +78,7 @@ class Account:
     apy: Decimal | None = None
     status: AccountStatus = AccountStatus.MANUAL
     updated_at: datetime | None = None
+    external_account_id: str | None = None
 
     @property
     def is_liability(self) -> bool:

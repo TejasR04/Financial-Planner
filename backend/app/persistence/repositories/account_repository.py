@@ -36,10 +36,45 @@ class AccountRepository(BaseRepository[AccountModel]):
             balance=account.balance,
             apy=account.apy,
             status=account.status.value,
+            external_account_id=account.external_account_id,
         )
         self.session.add(row)
         await self.session.flush()
         return _to_domain(row)
+
+    async def get_by_external_account_id(self, external_account_id: str) -> Account | None:
+        query = select(AccountModel).where(AccountModel.external_account_id == external_account_id)
+        result = await self.session.execute(query)
+        row = result.scalar_one_or_none()
+        return _to_domain(row) if row is not None else None
+
+    async def upsert_from_plaid(self, user_id: UUID, account: Account) -> Account:
+        """Create or update an account sourced from Plaid, matched by
+        `external_account_id`. Ownership is always the authenticated
+        `user_id` passed in by the caller — never trusted from the Plaid
+        payload itself.
+        """
+        existing = None
+        if account.external_account_id is not None:
+            query = select(AccountModel).where(
+                AccountModel.external_account_id == account.external_account_id,
+                AccountModel.user_id == user_id,
+            )
+            result = await self.session.execute(query)
+            existing = result.scalar_one_or_none()
+
+        if existing is not None:
+            existing.name = account.name
+            existing.type = account.type.value
+            existing.mask = account.mask
+            existing.currency = account.currency
+            existing.balance = account.balance
+            existing.status = account.status.value
+            existing.institution_id = account.institution_id
+            await self.session.flush()
+            return _to_domain(existing)
+
+        return await self.create(user_id, account)
 
     async def update_balance(self, account_id: UUID, new_balance) -> Account:
         row = await self._get_or_raise("Account", account_id)
@@ -66,4 +101,5 @@ def _to_domain(row: AccountModel) -> Account:
         apy=row.apy,
         status=AccountStatus(row.status),
         updated_at=row.updated_at,
+        external_account_id=row.external_account_id,
     )

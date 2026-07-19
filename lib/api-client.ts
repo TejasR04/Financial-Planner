@@ -27,10 +27,7 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(
-  path: string,
-  options: RequestInit = {},
-): Promise<T> {
+async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers = new Headers(options.headers);
   headers.set("Content-Type", "application/json");
   if (authToken) headers.set("Authorization", `Bearer ${authToken}`);
@@ -59,9 +56,15 @@ async function request<T>(
 
 const get = <T>(path: string) => request<T>(path);
 const post = <T>(path: string, body?: unknown) =>
-  request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined });
+  request<T>(path, {
+    method: "POST",
+    body: body ? JSON.stringify(body) : undefined,
+  });
 const patch = <T>(path: string, body?: unknown) =>
-  request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined });
+  request<T>(path, {
+    method: "PATCH",
+    body: body ? JSON.stringify(body) : undefined,
+  });
 
 // ---------------------------------------------------------------------------
 // Backend response/request shapes (mirrors app/schemas/*.py exactly)
@@ -89,7 +92,13 @@ export type ApiPlanningProfile = {
 export type ApiAccount = {
   id: string;
   name: string;
-  type: "investment" | "depository" | "retirement" | "credit" | "loan" | "property";
+  type:
+    | "investment"
+    | "depository"
+    | "retirement"
+    | "credit"
+    | "loan"
+    | "property";
   balance: string;
   currency: string;
   mask: string | null;
@@ -97,6 +106,13 @@ export type ApiAccount = {
   status: "connected" | "attention" | "manual";
   institution: string | null;
   updated_at: string | null;
+};
+
+export type ApiPlaidLinkToken = { link_token: string; expiration: string };
+
+export type ApiPlaidExchangeResponse = {
+  institution: { id: string; name: string; status: string };
+  accounts: ApiAccount[];
 };
 
 export type ApiAccountList = {
@@ -169,7 +185,13 @@ export type ApiScenarioRun = {
   method: string;
   net_worth_at_target_age: string;
   success_rate: string | null;
-  trajectory: { year: number; age: number; assets: string; liabilities: string; net: string }[];
+  trajectory: {
+    year: number;
+    age: number;
+    assets: string;
+    liabilities: string;
+    net: string;
+  }[];
   created_at: string;
 };
 
@@ -203,7 +225,13 @@ export type ApiFinancialHealth = {
 export type ApiNetWorthSimulation = {
   net_worth_today: string;
   projected_net_worth_at_horizon: string;
-  series: { year_index: number; age: number; assets: string; liabilities: string; net: string }[];
+  series: {
+    year_index: number;
+    age: number;
+    assets: string;
+    liabilities: string;
+    net: string;
+  }[];
 };
 
 export type ApiAllocationAnalysis = {
@@ -213,7 +241,11 @@ export type ApiAllocationAnalysis = {
   target_equity_allocation: string;
   drift: string;
   is_within_tolerance: boolean;
-  rebalance_suggestions: { asset_class: string; action: string; amount: string }[];
+  rebalance_suggestions: {
+    asset_class: string;
+    action: string;
+    amount: string;
+  }[];
 };
 
 // ---------------------------------------------------------------------------
@@ -223,7 +255,11 @@ export type ApiAllocationAnalysis = {
 export const api = {
   auth: {
     register: (email: string, password: string, fullName: string) =>
-      post<ApiTokenResponse>("/auth/register", { email, password, full_name: fullName }),
+      post<ApiTokenResponse>("/auth/register", {
+        email,
+        password,
+        full_name: fullName,
+      }),
     login: (email: string, password: string) =>
       post<ApiTokenResponse>("/auth/login", { email, password }),
     refresh: (refreshToken: string) =>
@@ -231,21 +267,37 @@ export const api = {
   },
   users: {
     me: () => get<ApiUser>("/users/me"),
-    updateMe: (body: { full_name?: string; base_currency?: string; date_of_birth?: string }) =>
-      patch<ApiUser>("/users/me", body),
-    planningProfile: () => get<ApiPlanningProfile>("/users/me/planning-profile"),
-    updatePlanningProfile: (body: Partial<{
-      target_retirement_age: number;
-      target_equity_allocation: string;
-      default_withdrawal_rate: string;
-      include_social_security: boolean;
-      expected_return: string;
-      inflation_rate: string;
-    }>) => patch<ApiPlanningProfile>("/users/me/planning-profile", body),
+    updateMe: (body: {
+      full_name?: string;
+      base_currency?: string;
+      date_of_birth?: string;
+    }) => patch<ApiUser>("/users/me", body),
+    planningProfile: () =>
+      get<ApiPlanningProfile>("/users/me/planning-profile"),
+    updatePlanningProfile: (
+      body: Partial<{
+        target_retirement_age: number;
+        target_equity_allocation: string;
+        default_withdrawal_rate: string;
+        include_social_security: boolean;
+        expected_return: string;
+        inflation_rate: string;
+      }>,
+    ) => patch<ApiPlanningProfile>("/users/me/planning-profile", body),
   },
   accounts: {
     list: () => get<ApiAccountList>("/accounts"),
     allocation: () => get<ApiAllocationAnalysis>("/accounts/allocation"),
+  },
+  plaid: {
+    // Never returns or logs anything token-related — the backend keeps the
+    // Plaid access_token server-side (encrypted at rest) and this client
+    // only ever sees a short-lived link_token / one-time public_token.
+    createLinkToken: () => post<ApiPlaidLinkToken>("/plaid/link-token"),
+    exchangePublicToken: (publicToken: string) =>
+      post<ApiPlaidExchangeResponse>("/plaid/exchange-public-token", {
+        public_token: publicToken,
+      }),
   },
   transactions: {
     list: (params?: { limit?: number; offset?: number }) => {
@@ -261,7 +313,15 @@ export const api = {
   },
   scenarios: {
     list: () => get<ApiScenario[]>("/scenarios"),
-    runs: (scenarioId: string) => get<{ data: ApiScenarioRun[] }>(`/scenarios/${scenarioId}/runs`),
+    create: (body: {
+      name: string;
+      description?: string;
+      current_age: number;
+      retirement_age: number;
+      monthly_contribution?: string;
+    }) => post<ApiScenario>("/scenarios", body),
+    runs: (scenarioId: string) =>
+      get<{ data: ApiScenarioRun[] }>(`/scenarios/${scenarioId}/runs`),
     run: (
       scenarioId: string,
       body: {
@@ -273,7 +333,9 @@ export const api = {
       },
     ) => post<ApiScenarioRun>(`/scenarios/${scenarioId}/run`, body),
     compare: (scenarioIds: string[]) =>
-      post<{ rows: ApiScenarioCompareRow[] }>("/scenarios/compare", { scenario_ids: scenarioIds }),
+      post<{ rows: ApiScenarioCompareRow[] }>("/scenarios/compare", {
+        scenario_ids: scenarioIds,
+      }),
   },
   simulations: {
     netWorth: (body: {
@@ -295,6 +357,7 @@ export const api = {
   },
   financialHealth: {
     get: () => get<ApiFinancialHealth>("/financial-health"),
-    recalculate: () => post<ApiFinancialHealth>("/financial-health/recalculate", {}),
+    recalculate: () =>
+      post<ApiFinancialHealth>("/financial-health/recalculate", {}),
   },
 };

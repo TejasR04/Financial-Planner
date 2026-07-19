@@ -4,7 +4,14 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
-from app.core.exceptions import ConflictError, DomainError, NotFoundError, UnauthorizedError, ValidationError
+from app.core.exceptions import (
+    ConflictError,
+    DomainError,
+    NotFoundError,
+    ProviderError,
+    UnauthorizedError,
+    ValidationError,
+)
 
 settings = get_settings()
 
@@ -26,6 +33,7 @@ _STATUS_BY_ERROR = {
     ValidationError: 422,
     UnauthorizedError: 401,
     ConflictError: 409,
+    ProviderError: 502,
 }
 
 

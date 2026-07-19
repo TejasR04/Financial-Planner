@@ -1,10 +1,11 @@
 "use client";
 
-import { Plus, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { PageContainer, PageHeader } from "@/components/page-container";
 import { Panel, PanelHeader } from "@/components/panel";
 import { AccountCard } from "@/components/account-card";
 import { Button } from "@/components/ui/button";
+import { PlaidLinkButton } from "@/components/plaid-link-button";
 import { formatCurrency } from "@/lib/data";
 import { useAccountsData } from "@/lib/data-provider";
 
@@ -52,10 +53,7 @@ export default function AccountsPage() {
               <RefreshCw />
               Sync all
             </Button>
-            <Button size="sm">
-              <Plus />
-              Link account
-            </Button>
+            <PlaidLinkButton size="sm" />
           </>
         }
       />

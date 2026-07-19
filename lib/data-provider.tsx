@@ -208,7 +208,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           status: a.status,
           updated: formatRelativeTime(a.updated_at),
         }));
-        const accountNameById = new Map(accountList.data.map((a) => [a.id, a.name]));
+        const accountNameById = new Map(
+          accountList.data.map((a) => [a.id, a.name]),
+        );
 
         // --- kpis (net worth + liquid assets are real; no fabricated
         // deltas/sparklines — see lib/data.ts) -------------------------
@@ -275,8 +277,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           }),
         );
         const allocationMeta: AllocationMeta = {
-          targetEquityPercent: Math.round(parseFloat(allocationAnalysis.target_equity_allocation) * 1000) / 10,
-          driftPercent: Math.round(parseFloat(allocationAnalysis.drift) * 1000) / 10,
+          targetEquityPercent:
+            Math.round(
+              parseFloat(allocationAnalysis.target_equity_allocation) * 1000,
+            ) / 10,
+          driftPercent:
+            Math.round(parseFloat(allocationAnalysis.drift) * 1000) / 10,
           isWithinTolerance: allocationAnalysis.is_within_tolerance,
         };
 
@@ -291,7 +297,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           status: t.status,
         }));
 
-        const cashflowByMonth = new Map<string, { income: number; expenses: number }>();
+        const cashflowByMonth = new Map<
+          string,
+          { income: number; expenses: number }
+        >();
         for (const t of transactionList.data) {
           const d = new Date(`${t.posted_at}T00:00:00`);
           const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
@@ -301,12 +310,18 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           else bucket.expenses += -amount;
           cashflowByMonth.set(key, bucket);
         }
-        const cashflowSeries: CashflowPoint[] = Array.from(cashflowByMonth.entries())
+        const cashflowSeries: CashflowPoint[] = Array.from(
+          cashflowByMonth.entries(),
+        )
           .sort(([a], [b]) => a.localeCompare(b))
           .slice(-6)
           .map(([key, v]) => {
             const [y, m] = key.split("-");
-            const label = new Date(Number(y), Number(m) - 1, 1).toLocaleDateString("en-US", {
+            const label = new Date(
+              Number(y),
+              Number(m) - 1,
+              1,
+            ).toLocaleDateString("en-US", {
               month: "short",
             });
             return { month: label, income: v.income, expenses: v.expenses };
@@ -324,7 +339,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             year: String(targetYear),
             age: g.target_age ?? undefined,
             title: g.title,
-            amount: formatCurrency(parseFloat(g.target_amount), { compact: true }),
+            amount: formatCurrency(parseFloat(g.target_amount), {
+              compact: true,
+            }),
             status: g.status,
           };
         });
@@ -344,7 +361,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           body: r.body,
           impact: `${formatCurrency(parseFloat(r.impact_value), { sign: true })} / yr`,
           impactValue: parseFloat(r.impact_value),
-          effort: (r.effort.charAt(0).toUpperCase() + r.effort.slice(1)) as Recommendation["effort"],
+          effort: (r.effort.charAt(0).toUpperCase() +
+            r.effort.slice(1)) as Recommendation["effort"],
           category: r.category,
           confidence: r.confidence,
         }));
@@ -372,8 +390,10 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
               run = null;
             }
 
-            const series = run?.trajectory.map((p) => parseFloat(p.net) / 1_000_000) ?? [];
-            const years = run?.trajectory.map((p) => String(currentYear + p.year)) ?? [];
+            const series =
+              run?.trajectory.map((p) => parseFloat(p.net) / 1_000_000) ?? [];
+            const years =
+              run?.trajectory.map((p) => String(currentYear + p.year)) ?? [];
 
             return {
               id: s.id,
@@ -382,7 +402,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
               netWorthAt65: run ? parseFloat(run.net_worth_at_target_age) : 0,
               retirementAge: s.retirement_age,
               monthlyContribution: parseFloat(s.monthly_contribution),
-              successRate: run?.success_rate ? Math.round(parseFloat(run.success_rate) * 1000) / 10 : 0,
+              successRate: run?.success_rate
+                ? Math.round(parseFloat(run.success_rate) * 1000) / 10
+                : 0,
               color: CHART_COLORS[i % CHART_COLORS.length],
               series,
               years,
@@ -408,7 +430,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
 
         const avgMonthlySurplus =
           cashflowSeries.length > 0
-            ? cashflowSeries.reduce((s, c) => s + (c.income - c.expenses), 0) / cashflowSeries.length
+            ? cashflowSeries.reduce((s, c) => s + (c.income - c.expenses), 0) /
+              cashflowSeries.length
             : 0;
         const profile: ProfileSummary = {
           currentAge,
@@ -424,8 +447,12 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           baseCurrency: user.base_currency,
           dateOfBirth: user.date_of_birth,
           targetRetirementAge: planningProfile.target_retirement_age,
-          targetEquityAllocation: parseFloat(planningProfile.target_equity_allocation),
-          defaultWithdrawalRate: parseFloat(planningProfile.default_withdrawal_rate),
+          targetEquityAllocation: parseFloat(
+            planningProfile.target_equity_allocation,
+          ),
+          defaultWithdrawalRate: parseFloat(
+            planningProfile.default_withdrawal_rate,
+          ),
           includeSocialSecurity: planningProfile.include_social_security,
         };
 
@@ -449,7 +476,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load your data.");
+          setError(
+            err instanceof Error ? err.message : "Failed to load your data.",
+          );
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -494,6 +523,7 @@ export const useTransactionsData = () => useData().transactions;
 export const useMilestones = () => useData().milestones;
 export const useRecommendationsData = () => useData().recommendations;
 export const useScenariosData = () => useData().scenarios;
+export const useCurrentAge = () => useData().profile?.currentAge ?? null;
 export const useInsightsData = () => useData().insights;
 export const useFinancialHealthData = () => useData().financialHealth;
 export const useProfileSummary = () => useData().profile;

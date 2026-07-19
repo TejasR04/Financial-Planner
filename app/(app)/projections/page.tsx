@@ -1,9 +1,11 @@
 "use client";
 
+import { useState } from "react";
 import { Plus, Sparkles } from "lucide-react";
 import { PageContainer, PageHeader } from "@/components/page-container";
 import { ScenarioCompare } from "@/components/scenario-compare";
 import { ProjectionAssumptions } from "@/components/projection-assumptions";
+import { NewScenarioDialog } from "@/components/new-scenario-dialog";
 import { Panel, PanelHeader } from "@/components/panel";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -12,6 +14,7 @@ import { useScenariosData } from "@/lib/data-provider";
 
 export default function ProjectionsPage() {
   const scenarios = useScenariosData();
+  const [newScenarioOpen, setNewScenarioOpen] = useState(false);
   const best =
     scenarios.length > 0
       ? scenarios.reduce((a, b) => (b.successRate > a.successRate ? b : a))
@@ -19,6 +22,10 @@ export default function ProjectionsPage() {
 
   return (
     <PageContainer>
+      <NewScenarioDialog
+        open={newScenarioOpen}
+        onClose={() => setNewScenarioOpen(false)}
+      />
       <PageHeader
         title="Projections"
         description="Monte Carlo modeling across savings, allocation, and retirement scenarios"
@@ -28,7 +35,7 @@ export default function ProjectionsPage() {
               <Sparkles />
               Optimize
             </Button>
-            <Button size="sm">
+            <Button size="sm" onClick={() => setNewScenarioOpen(true)}>
               <Plus />
               New scenario
             </Button>
@@ -63,7 +70,7 @@ export default function ProjectionsPage() {
             <div className="mt-3 flex items-end justify-between border-t border-border pt-3">
               <div>
                 <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                  Net worth at 65
+                  Retirement balance at {s.retirementAge}
                 </p>
                 <p className="font-mono text-lg font-semibold text-foreground tabular-nums">
                   {formatCurrency(s.netWorthAt65, { compact: true })}
