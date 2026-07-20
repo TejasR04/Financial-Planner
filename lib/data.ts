@@ -136,6 +136,10 @@ export type Scenario = {
   name: string;
   description: string;
   netWorthAt65: number;
+  // Monthly sustainable withdrawal from retirement accounts, assuming the
+  // plan's life-expectancy assumption (95 by default) — i.e. "monthly
+  // retirement income", not to be confused with total net worth above.
+  monthlyIncomeAtLifeExpectancy: number;
   retirementAge: number;
   monthlyContribution: number;
   successRate: number;

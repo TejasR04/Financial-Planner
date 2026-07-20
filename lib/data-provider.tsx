@@ -400,6 +400,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
               name: s.name,
               description: s.description ?? "",
               netWorthAt65: run ? parseFloat(run.net_worth_at_target_age) : 0,
+              monthlyIncomeAtLifeExpectancy: run?.monthly_sustainable_withdrawal
+                ? parseFloat(run.monthly_sustainable_withdrawal)
+                : 0,
               retirementAge: s.retirement_age,
               monthlyContribution: parseFloat(s.monthly_contribution),
               successRate: run?.success_rate

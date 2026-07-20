@@ -184,6 +184,7 @@ export type ApiScenarioRun = {
   engine_version: string;
   method: string;
   net_worth_at_target_age: string;
+  monthly_sustainable_withdrawal: string | null;
   success_rate: string | null;
   trajectory: {
     year: number;

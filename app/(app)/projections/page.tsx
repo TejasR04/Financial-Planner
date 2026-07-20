@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Sparkles } from "lucide-react";
+import { Info, Plus, Sparkles } from "lucide-react";
 import { PageContainer, PageHeader } from "@/components/page-container";
 import { ScenarioCompare } from "@/components/scenario-compare";
 import { ProjectionAssumptions } from "@/components/projection-assumptions";
@@ -77,8 +77,20 @@ export default function ProjectionsPage() {
                 </p>
               </div>
               <div className="text-right">
-                <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
+                <p className="flex items-center justify-end gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
                   Success
+                  <Info
+                    className="size-3 shrink-0 text-muted-foreground/70"
+                    aria-label="Of 1,000 simulated trials with randomized annual returns, the percentage where retirement savings lasted through age 95 without running out. Contributions stop at retirement age; the plan's sustainable withdrawal is taken out each year of retirement."
+                  >
+                    <title>
+                      Of 1,000 simulated trials with randomized annual returns,
+                      the percentage where retirement savings lasted through age
+                      95 without running out. Contributions stop at retirement
+                      age; the plan&apos;s sustainable withdrawal is taken out
+                      each year of retirement.
+                    </title>
+                  </Info>
                 </p>
                 <p className="font-mono text-lg font-semibold text-primary tabular-nums">
                   {s.successRate}%

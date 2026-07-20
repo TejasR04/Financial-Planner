@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { Info } from "lucide-react";
 import { formatCurrency } from "@/lib/data";
 import { useScenariosData } from "@/lib/data-provider";
 import { Panel, PanelHeader } from "@/components/panel";
@@ -10,19 +11,21 @@ import { cn } from "@/lib/utils";
 
 const metrics = [
   {
-    key: "netWorthAt65",
-    label: "Net worth at 65",
-    fmt: (v: number) => formatCurrency(v, { compact: true }),
+    key: "monthlyIncomeAtLifeExpectancy",
+    label: "Monthly retirement income",
+    hint: "Sustainable monthly withdrawal from retirement accounts, assuming a 95-year life expectancy — not the same as total net worth.",
+    fmt: (v: number) => formatCurrency(v),
   },
   { key: "retirementAge", label: "Retirement age", fmt: (v: number) => `${v}` },
   {
     key: "monthlyContribution",
-    label: "Monthly contribution",
+    label: "Monthly retirement contribution",
     fmt: (v: number) => formatCurrency(v),
   },
   {
     key: "successRate",
     label: "Monte Carlo success",
+    hint: "Of 1,000 simulated trials with randomized annual returns, the percentage where retirement savings lasted through age 95 without running out — contributions stop at retirement age, then the plan's sustainable withdrawal is taken out each year of retirement.",
     fmt: (v: number) => `${v}%`,
   },
 ] as const;
@@ -110,7 +113,17 @@ export function ScenarioCompare() {
                   className="border-b border-border/60 last:border-0"
                 >
                   <td className="px-4 py-2.5 text-muted-foreground">
-                    {m.label}
+                    <span className="inline-flex items-center gap-1">
+                      {m.label}
+                      {"hint" in m && m.hint && (
+                        <Info
+                          className="size-3 shrink-0 text-muted-foreground/70"
+                          aria-label={m.hint}
+                        >
+                          <title>{m.hint}</title>
+                        </Info>
+                      )}
+                    </span>
                   </td>
                   {scenarios.map((s) => (
                     <td
