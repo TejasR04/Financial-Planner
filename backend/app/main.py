@@ -28,6 +28,18 @@ app.add_middleware(
 app.include_router(api_router, prefix=settings.api_v1_prefix)
 
 
+@app.on_event("startup")
+async def validate_plaid_config() -> None:
+    """Fail fast and loud at boot if Plaid is configured but the token
+    encryption key is missing/malformed, rather than letting the first
+    user who tries to link an account hit a confusing 500.
+    """
+    if settings.plaid_client_id and settings.plaid_secret:
+        from app.core.crypto import _fernet
+
+        _fernet()
+
+
 _STATUS_BY_ERROR = {
     NotFoundError: 404,
     ValidationError: 422,

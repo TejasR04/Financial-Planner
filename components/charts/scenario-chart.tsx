@@ -12,8 +12,17 @@ import {
 import { useScenariosData } from "@/lib/data-provider";
 import { ChartTooltip } from "./chart-tooltip";
 
-export function ScenarioChart({ activeIds }: { activeIds: string[] }) {
+export type ScenarioChartView = "netWorth" | "income";
+
+export function ScenarioChart({
+  activeIds,
+  view = "netWorth",
+}: {
+  activeIds: string[];
+  view?: ScenarioChartView;
+}) {
   const scenarios = useScenariosData();
+  const isIncome = view === "income";
 
   // Each scenario has its own real trajectory (different retirement ages
   // produce different-length runs), so build the shared x-axis as the
@@ -23,7 +32,8 @@ export function ScenarioChart({ activeIds }: { activeIds: string[] }) {
     const row: Record<string, number | string> = { year };
     scenarios.forEach((s) => {
       const i = s.years.indexOf(year);
-      if (i !== -1) row[s.name] = s.series[i];
+      if (i === -1) return;
+      row[s.id] = isIncome ? s.incomeSeries[i] : s.series[i];
     });
     return row;
   });
@@ -50,15 +60,19 @@ export function ScenarioChart({ activeIds }: { activeIds: string[] }) {
           <YAxis
             tickLine={false}
             axisLine={false}
-            width={40}
+            width={48}
             tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
-            tickFormatter={(v) => `$${v}M`}
+            tickFormatter={(v) => (isIncome ? `$${Math.round(v / 100) / 10}K` : `$${v}M`)}
           />
           <Tooltip
             cursor={{ stroke: "var(--border)", strokeWidth: 1 }}
             content={
               <ChartTooltip
-                formatter={(v) => `$${(v as number).toFixed(2)}M`}
+                formatter={(v) =>
+                  isIncome
+                    ? `$${(v as number).toLocaleString(undefined, { maximumFractionDigits: 0 })}/mo`
+                    : `$${(v as number).toFixed(2)}M`
+                }
               />
             }
           />
@@ -66,7 +80,8 @@ export function ScenarioChart({ activeIds }: { activeIds: string[] }) {
             <Line
               key={s.id}
               type="monotone"
-              dataKey={s.name}
+              dataKey={s.id}
+              name={s.name}
               stroke={s.color}
               strokeWidth={activeIds.includes(s.id) ? 2.25 : 1}
               strokeOpacity={activeIds.includes(s.id) ? 1 : 0.25}

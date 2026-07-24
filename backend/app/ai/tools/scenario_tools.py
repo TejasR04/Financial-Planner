@@ -10,7 +10,12 @@ class RunMonteCarloInput(BaseModel):
     starting_balance: Decimal
     annual_contribution: Decimal
     expected_return: Decimal = Decimal("0.065")
-    return_volatility: Decimal = Decimal("0.15")
+    # Matches the 60/40-portfolio-calibrated default used elsewhere (see
+    # app/simulation/engine.py:implied_return_volatility) rather than a
+    # separate, higher, uncited figure — 0.15 paired with a 6.5% return
+    # implicitly assumed near-100%-equity risk with a much more
+    # conservative return, an inconsistent combination.
+    return_volatility: Decimal = Decimal("0.106")
     years: int
     current_age: int
     target_balance: Decimal

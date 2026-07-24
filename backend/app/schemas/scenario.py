@@ -18,6 +18,7 @@ class ScenarioResponse(BaseModel):
     expected_return: Decimal
     inflation_rate: Decimal
     withdrawal_rate: Decimal
+    desired_monthly_income_today: Decimal | None
     created_at: datetime
     updated_at: datetime
 
@@ -32,7 +33,31 @@ class ScenarioCreateRequest(BaseModel):
     expected_return: Decimal = Decimal("0.065")
     inflation_rate: Decimal = Decimal("0.028")
     withdrawal_rate: Decimal = Decimal("0.04")
+    # Monthly retirement income target in TODAY's dollars. If set, this
+    # replaces withdrawal_rate as what drives feasibility + Monte Carlo.
+    desired_monthly_income_today: Decimal | None = None
     is_baseline: bool = False
+
+
+class ScenarioUpdateRequest(BaseModel):
+    """All fields optional — only what's provided gets updated. Note
+    `current_age` deliberately isn't here: it's not stored on Scenario (see
+    the duplicate-scenario route note), it's supplied fresh on each /run."""
+
+    name: str | None = None
+    description: str | None = None
+    retirement_age: int | None = None
+    savings_rate: Decimal | None = None
+    monthly_contribution: Decimal | None = None
+    expected_return: Decimal | None = None
+    inflation_rate: Decimal | None = None
+    withdrawal_rate: Decimal | None = None
+    desired_monthly_income_today: Decimal | None = None
+    # Explicit flag to CLEAR desired_monthly_income_today and go back to
+    # rate-based mode — needed because ScenarioRepository.update() skips
+    # any field that's None, so passing desired_monthly_income_today=None
+    # alone can't distinguish "don't touch it" from "clear it".
+    clear_income_target: bool = False
 
 
 class ScenarioRunRequest(BaseModel):
@@ -52,6 +77,7 @@ class ScenarioRunResponse(BaseModel):
     monthly_sustainable_withdrawal: Decimal | None
     success_rate: Decimal | None
     trajectory: list[dict]
+    retirement_trajectory: list[dict] | None = None
     created_at: datetime
 
 
@@ -75,3 +101,21 @@ class ScenarioCompareRow(BaseModel):
 
 class ScenarioCompareResponse(BaseModel):
     rows: list[ScenarioCompareRow]
+
+
+class ScenarioSensitivityRequest(BaseModel):
+    current_age: int
+    current_retirement_balance: Decimal
+
+
+class SensitivityRowResponse(BaseModel):
+    label: str
+    kind: str
+    value: Decimal
+    note: str
+
+
+class ScenarioSensitivityResponse(BaseModel):
+    baseline_balance_at_retirement: Decimal
+    baseline_success_rate: Decimal | None
+    rows: list[SensitivityRowResponse]

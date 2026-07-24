@@ -38,6 +38,7 @@ def run_monte_carlo(
     seed: int = 42,
     retirement_years: int = 0,
     annual_withdrawal: Decimal = ZERO,
+    annual_withdrawal_growth_rate: Decimal = ZERO,
 ) -> MonteCarloResult:
     """Runs `trials` independent projections with the annual return sampled
     from a normal distribution around `expected_return`.
@@ -54,19 +55,18 @@ def run_monte_carlo(
     - **Full retirement horizon (`retirement_years > 0`)**: after the same
       `years` of accumulation, each trial continues for `retirement_years`
       more years with NO further contributions, instead withdrawing
-      `annual_withdrawal` at the start of each year (then growing the
-      remainder at that year's sampled return — the standard
+      `annual_withdrawal` at the start of the first retirement year, then
+      growing that withdrawal by `annual_withdrawal_growth_rate` each
+      subsequent year (pass the plan's inflation rate here to hold
+      purchasing power constant — the standard "real spending" retirement
+      model — or 0 to hold it flat in nominal dollars). The remaining
+      balance grows at that year's sampled return (the standard
       sequence-of-returns convention). `success_rate` here means the
       fraction of trials that never hit a zero balance before the end of
       that retirement horizon — i.e. "didn't run out of money" — which is
       what `ScenarioService` uses so "success rate" answers the question
       people actually mean by it for a retirement scenario. `target_balance`
       is ignored in this mode.
-
-    Simplification worth knowing: `annual_withdrawal` is held flat in
-    nominal terms across the retirement horizon (not inflation-adjusted
-    year over year, unlike the classic real-terms "4% rule"). Fine for a
-    v1; a future pass could index it to `inflation_rate` per year.
 
     This is deliberately simple (normal, i.i.d. annual returns) — a
     reasonable default for a v1 that is explicitly designed to be replaced
@@ -82,6 +82,7 @@ def run_monte_carlo(
 
     mean = float(expected_return)
     stdev = float(return_volatility)
+    growth_factor = Decimal("1") + annual_withdrawal_growth_rate
 
     for _ in range(trials):
         balance = starting_balance
@@ -93,16 +94,18 @@ def run_monte_carlo(
                 balance = ZERO
 
         ran_out = False
+        withdrawal = annual_withdrawal
         for _year in range(retirement_years):
             sampled_rate = Decimal(str(rng.normalvariate(mean, stdev)))
-            balance = balance - annual_withdrawal
+            balance = balance - withdrawal
             if balance <= ZERO:
                 balance = ZERO
                 ran_out = True
-                continue
-            balance = balance * (Decimal("1") + sampled_rate)
-            if balance < ZERO:
-                balance = ZERO
+            else:
+                balance = balance * (Decimal("1") + sampled_rate)
+                if balance < ZERO:
+                    balance = ZERO
+            withdrawal = withdrawal * growth_factor
 
         endings.append(balance)
         if retirement_years > 0:

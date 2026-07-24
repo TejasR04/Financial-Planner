@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 
 from app.core.crypto import decrypt_secret, encrypt_secret
+from app.core.exceptions import ProviderError
 from app.domain.entities import Institution
 from app.domain.enums import InstitutionStatus, ProviderType
 from app.persistence.models import InstitutionModel
@@ -43,6 +44,13 @@ class InstitutionRepository(BaseRepository[InstitutionModel]):
         returned — callers get back the domain `Institution`, which has no
         token field at all.
         """
+        try:
+            encrypted_token = encrypt_secret(access_token)
+        except RuntimeError as exc:
+            # Misconfigured PLAID_TOKEN_ENCRYPTION_KEY — surface as a clean
+            # 502 rather than a raw 500 with an internal traceback.
+            raise ProviderError(str(exc)) from exc
+
         row = InstitutionModel(
             id=uuid4(),
             user_id=user_id,
@@ -50,7 +58,7 @@ class InstitutionRepository(BaseRepository[InstitutionModel]):
             provider=ProviderType.PLAID.value,
             status=InstitutionStatus.HEALTHY.value,
             external_item_id=external_item_id,
-            plaid_access_token_encrypted=encrypt_secret(access_token),
+            plaid_access_token_encrypted=encrypted_token,
         )
         self.session.add(row)
         await self.session.flush()

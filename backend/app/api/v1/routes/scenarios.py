@@ -7,6 +7,7 @@ from app.api.deps import get_current_user, get_db
 from app.domain.entities import User
 from app.persistence.repositories.account_repository import AccountRepository
 from app.persistence.repositories.scenario_repository import ScenarioRepository
+from app.persistence.repositories.user_repository import UserRepository
 from app.schemas.scenario import (
     ScenarioCompareRequest,
     ScenarioCompareResponse,
@@ -16,6 +17,10 @@ from app.schemas.scenario import (
     ScenarioRunHistoryResponse,
     ScenarioRunRequest,
     ScenarioRunResponse,
+    ScenarioSensitivityRequest,
+    ScenarioSensitivityResponse,
+    ScenarioUpdateRequest,
+    SensitivityRowResponse,
 )
 from app.services.scenario_service import ScenarioService
 from app.simulation.assumptions import PlanningAssumptions
@@ -47,6 +52,7 @@ async def create_scenario(
         expected_return=body.expected_return,
         inflation_rate=body.inflation_rate,
         withdrawal_rate=body.withdrawal_rate,
+        desired_monthly_income_today=body.desired_monthly_income_today,
     )
     row = await ScenarioRepository(db).create(
         current_user.id, body.name, body.description, assumptions, is_baseline=body.is_baseline
@@ -60,6 +66,23 @@ async def get_scenario(
     scenario_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> ScenarioResponse:
     row = await ScenarioRepository(db).get(scenario_id)
+    return ScenarioResponse.model_validate(row, from_attributes=True)
+
+
+@router.patch("/{scenario_id}", response_model=ScenarioResponse)
+async def update_scenario(
+    scenario_id: UUID,
+    body: ScenarioUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ScenarioResponse:
+    repo = ScenarioRepository(db)
+    fields = body.model_dump(exclude_unset=True, exclude={"clear_income_target"})
+    row = await repo.update(scenario_id, **fields)
+    if body.clear_income_target:
+        row.desired_monthly_income_today = None
+        await db.flush()
+    await db.commit()
     return ScenarioResponse.model_validate(row, from_attributes=True)
 
 
@@ -85,6 +108,7 @@ async def duplicate_scenario(
         expected_return=original.expected_return,
         inflation_rate=original.inflation_rate,
         withdrawal_rate=original.withdrawal_rate,
+        desired_monthly_income_today=original.desired_monthly_income_today,
     )
     # NOTE: current_age isn't stored on Scenario itself (it's a property of
     # the user/point-in-time run), so duplication preserves every stored
@@ -113,6 +137,7 @@ async def run_scenario(
     scenario_repo = ScenarioRepository(db)
     scenario = await scenario_repo.get(scenario_id)
     accounts = await AccountRepository(db).list_for_user(current_user.id)
+    planning_profile = await UserRepository(db).get_planning_profile(current_user.id)
 
     assumptions = PlanningAssumptions(
         current_age=body.current_age,
@@ -122,6 +147,8 @@ async def run_scenario(
         expected_return=scenario.expected_return,
         inflation_rate=scenario.inflation_rate,
         withdrawal_rate=scenario.withdrawal_rate,
+        desired_monthly_income_today=scenario.desired_monthly_income_today,
+        target_equity_allocation=planning_profile.target_equity_allocation,
     )
 
     result = scenario_service.run(
@@ -141,6 +168,10 @@ async def run_scenario(
         }
         for p in result.net_worth_projection.series
     ]
+    retirement_trajectory = [
+        {"year": p.year_index, "age": p.age, "balance": str(p.ending_balance)}
+        for p in result.retirement_projection.accumulation_series
+    ]
     assumptions_snapshot = {
         "current_age": assumptions.current_age,
         "retirement_age": assumptions.retirement_age,
@@ -155,6 +186,7 @@ async def run_scenario(
         net_worth_at_target_age=result.retirement_projection.projected_balance_at_retirement,
         monthly_sustainable_withdrawal=result.retirement_projection.monthly_sustainable_withdrawal,
         trajectory=trajectory,
+        retirement_trajectory=retirement_trajectory,
         assumptions_snapshot=assumptions_snapshot,
         method="monte_carlo" if result.monte_carlo else "deterministic",
         success_rate=(round(result.monte_carlo.success_rate, 4) if result.monte_carlo else None),
@@ -171,6 +203,44 @@ async def list_scenario_runs(
     rows = await ScenarioRepository(db).list_runs(scenario_id)
     return ScenarioRunHistoryResponse(
         data=[ScenarioRunResponse.model_validate(r, from_attributes=True) for r in rows]
+    )
+
+
+@router.post("/{scenario_id}/sensitivity", response_model=ScenarioSensitivityResponse)
+async def scenario_sensitivity(
+    scenario_id: UUID,
+    body: ScenarioSensitivityRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ScenarioSensitivityResponse:
+    """Genuinely re-runs the projection engine with one assumption nudged
+    per row (see `ScenarioService.analyze_sensitivity`) — nothing here is
+    a canned/hardcoded number.
+    """
+    scenario = await ScenarioRepository(db).get(scenario_id)
+    planning_profile = await UserRepository(db).get_planning_profile(current_user.id)
+    assumptions = PlanningAssumptions(
+        current_age=body.current_age,
+        retirement_age=scenario.retirement_age,
+        savings_rate=scenario.savings_rate,
+        monthly_contribution=scenario.monthly_contribution,
+        expected_return=scenario.expected_return,
+        inflation_rate=scenario.inflation_rate,
+        withdrawal_rate=scenario.withdrawal_rate,
+        desired_monthly_income_today=scenario.desired_monthly_income_today,
+        target_equity_allocation=planning_profile.target_equity_allocation,
+    )
+    result = scenario_service.analyze_sensitivity(
+        assumptions=assumptions,
+        current_retirement_balance=body.current_retirement_balance,
+    )
+    return ScenarioSensitivityResponse(
+        baseline_balance_at_retirement=result.baseline_balance_at_retirement,
+        baseline_success_rate=result.baseline_success_rate,
+        rows=[
+            SensitivityRowResponse(label=r.label, kind=r.kind, value=r.value, note=r.note)
+            for r in result.rows
+        ],
     )
 
 

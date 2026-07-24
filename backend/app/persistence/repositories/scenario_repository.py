@@ -35,8 +35,19 @@ class ScenarioRepository(BaseRepository[ScenarioModel]):
             expected_return=assumptions.expected_return,
             inflation_rate=assumptions.inflation_rate,
             withdrawal_rate=assumptions.withdrawal_rate,
+            desired_monthly_income_today=assumptions.desired_monthly_income_today,
         )
         self.session.add(row)
+        await self.session.flush()
+        return row
+
+    async def update(self, scenario_id: UUID, **fields) -> ScenarioModel:
+        """Partial update — only overwrites fields explicitly passed (not
+        None). Used by PATCH /scenarios/{id}."""
+        row = await self._get_or_raise("Scenario", scenario_id)
+        for key, value in fields.items():
+            if value is not None:
+                setattr(row, key, value)
         await self.session.flush()
         return row
 
@@ -48,7 +59,7 @@ class ScenarioRepository(BaseRepository[ScenarioModel]):
     async def record_run(
         self, scenario_id: UUID, engine_version: str, net_worth_at_target_age, trajectory: dict,
         assumptions_snapshot: dict, method: str = "deterministic", success_rate=None, seed: int | None = None,
-        monthly_sustainable_withdrawal=None,
+        monthly_sustainable_withdrawal=None, retirement_trajectory: dict | None = None,
     ) -> SimulationRunModel:
         row = SimulationRunModel(
             id=uuid4(),
@@ -59,6 +70,7 @@ class ScenarioRepository(BaseRepository[ScenarioModel]):
             monthly_sustainable_withdrawal=monthly_sustainable_withdrawal,
             success_rate=success_rate,
             trajectory=trajectory,
+            retirement_trajectory=retirement_trajectory,
             assumptions_snapshot=assumptions_snapshot,
             seed=seed,
         )

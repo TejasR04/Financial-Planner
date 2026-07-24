@@ -26,10 +26,21 @@ class DecryptionError(Exception):
 @lru_cache
 def _fernet() -> Fernet:
     settings = get_settings()
-    key = settings.plaid_token_encryption_key
+    key = (settings.plaid_token_encryption_key or "").strip()
     if not key:
-        raise RuntimeError("PLAID_TOKEN_ENCRYPTION_KEY is not configured")
-    return Fernet(key.encode() if isinstance(key, str) else key)
+        raise RuntimeError(
+            "PLAID_TOKEN_ENCRYPTION_KEY is not configured. Generate one with:\n"
+            '  python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
+        )
+    try:
+        return Fernet(key.encode())
+    except (ValueError, TypeError) as exc:
+        raise RuntimeError(
+            "PLAID_TOKEN_ENCRYPTION_KEY is not a valid Fernet key (must be 32 url-safe "
+            "base64-encoded bytes — 44 characters, ending in '='). Check for stray quotes, "
+            "whitespace, or line breaks copied into .env, or regenerate one with:\n"
+            '  python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"'
+        ) from exc
 
 
 def encrypt_secret(plaintext: str) -> str:

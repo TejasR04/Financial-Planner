@@ -250,3 +250,62 @@ def safe_withdrawal_amount(portfolio_balance: Decimal, withdrawal_rate: Decimal)
     rule). A thin, explicit wrapper kept separate from RetirementProjectionService
     so it can also be used directly as an AI tool primitive."""
     return portfolio_balance * withdrawal_rate
+
+
+def inflate_to_future_dollars(amount_today: Decimal, inflation_rate: Decimal, years: int) -> Decimal:
+    """Converts a today's-purchasing-power dollar amount into the nominal
+    dollar amount needed `years` from now to buy the same thing, given
+    `inflation_rate` compounded annually. Used to turn a user's "I want
+    $X/month in today's dollars" retirement-income target into the actual
+    nominal figure the plan needs to produce at retirement.
+    """
+    if years <= 0:
+        return amount_today
+    return amount_today * (Decimal("1") + inflation_rate) ** years
+
+
+# Annual return standard deviation (volatility), by equity allocation
+# fraction (0 = all bonds, 1 = all equities). Anchor points are real,
+# cited figures rather than a single made-up constant:
+#   0.19 -> 5.80%   MoneyGuidePro "Defensive" portfolio, 19% equities
+#                    (via Bogleheads forum thread on MoneyGuidePro output)
+#   0.405 -> 8.32%  MoneyGuidePro "Cautious" portfolio, 40.5% equities
+#   0.60 -> 10.6%   Average of two independent 60/40 citations:
+#                    Kitces/Tharp using 1871-2015 historical US data (11.2%),
+#                    and a UK retirement Monte Carlo tool's published
+#                    assumption (10%)
+#   0.9425 -> 16.06% MoneyGuidePro "Aggressive" portfolio, 94.25% equities
+# Piecewise-linear between these; clamped/extrapolated at the edges using
+# the nearest segment's slope. This replaces a single flat volatility
+# assumption that implicitly (and often wrongly) treated every user as
+# holding the same 60/40-ish portfolio regardless of their actual target
+# allocation.
+_VOLATILITY_ANCHORS: list[tuple[Decimal, Decimal]] = [
+    (Decimal("0.19"), Decimal("0.0580")),
+    (Decimal("0.405"), Decimal("0.0832")),
+    (Decimal("0.60"), Decimal("0.1060")),
+    (Decimal("0.9425"), Decimal("0.1606")),
+]
+
+
+def implied_return_volatility(equity_allocation: Decimal) -> Decimal:
+    """Estimated annual return standard deviation for a portfolio holding
+    `equity_allocation` (0-1) in equities, the rest in bonds/cash — derived
+    by interpolating between real, cited volatility figures rather than
+    using one fixed number for every user regardless of their actual risk
+    profile. See `_VOLATILITY_ANCHORS` for sources.
+    """
+    x = max(Decimal("0"), min(Decimal("1"), equity_allocation))
+
+    if x <= _VOLATILITY_ANCHORS[0][0]:
+        (x0, y0), (x1, y1) = _VOLATILITY_ANCHORS[0], _VOLATILITY_ANCHORS[1]
+    elif x >= _VOLATILITY_ANCHORS[-1][0]:
+        (x0, y0), (x1, y1) = _VOLATILITY_ANCHORS[-2], _VOLATILITY_ANCHORS[-1]
+    else:
+        (x0, y0), (x1, y1) = next(
+            (lo, hi) for lo, hi in zip(_VOLATILITY_ANCHORS, _VOLATILITY_ANCHORS[1:]) if lo[0] <= x <= hi[0]
+        )
+
+    result = y0 + (x - x0) * ((y1 - y0) / (x1 - x0))
+    # Guard against pathological extrapolation at extreme allocations.
+    return max(Decimal("0.03"), min(Decimal("0.25"), result))

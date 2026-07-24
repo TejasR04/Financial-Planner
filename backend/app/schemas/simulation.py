@@ -87,7 +87,9 @@ class MonteCarloSimulationRequest(BaseModel):
     years: int
     target_balance: Decimal
     expected_return: Decimal = Decimal("0.065")
-    return_volatility: Decimal = Decimal("0.15")
+    # See app/simulation/engine.py:implied_return_volatility — matches the
+    # calibrated 60/40-portfolio default used elsewhere in the app.
+    return_volatility: Decimal = Decimal("0.106")
     trials: int = 1000
     seed: int = 42
 

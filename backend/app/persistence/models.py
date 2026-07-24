@@ -182,17 +182,24 @@ class ScenarioModel(Base):
     expected_return: Mapped[Decimal] = mapped_column(Numeric(5, 4))
     inflation_rate: Mapped[Decimal] = mapped_column(Numeric(5, 4))
     withdrawal_rate: Mapped[Decimal] = mapped_column(Numeric(5, 4))
+    # If set, drives retirement feasibility + Monte Carlo instead of
+    # withdrawal_rate — a monthly income target in TODAY's dollars, which
+    # the projection inflates forward to the actual nominal amount needed
+    # at retirement (see app/simulation/engine.py:inflate_to_future_dollars).
+    desired_monthly_income_today: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
-    runs: Mapped[list["SimulationRunModel"]] = relationship(back_populates="scenario")
+    runs: Mapped[list["SimulationRunModel"]] = relationship(back_populates="scenario", passive_deletes=True)
 
 
 class SimulationRunModel(Base):
     __tablename__ = "simulation_runs"
 
     id: Mapped[uuid.UUID] = _uuid_pk()
-    scenario_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("scenarios.id"), index=True)
+    scenario_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("scenarios.id", ondelete="CASCADE"), index=True
+    )
     engine_version: Mapped[str] = mapped_column(String(20))
     seed: Mapped[int | None] = mapped_column(Integer, nullable=True)
     method: Mapped[str] = mapped_column(String(20), default="deterministic")
@@ -200,6 +207,10 @@ class SimulationRunModel(Base):
     monthly_sustainable_withdrawal: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     success_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 4), nullable=True)
     trajectory: Mapped[dict] = mapped_column(JSONB)
+    # Year-by-year RETIREMENT-ACCOUNT-ONLY balance (a subset of `trajectory`,
+    # which is total net worth) — lets the frontend toggle the projection
+    # chart between "total net worth" and "retirement balance / income".
+    retirement_trajectory: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     assumptions_snapshot: Mapped[dict] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 

@@ -3,10 +3,11 @@
 import { useEffect, useState } from "react";
 import { Info } from "lucide-react";
 import { formatCurrency } from "@/lib/data";
-import { useScenariosData } from "@/lib/data-provider";
+import { useDataRefresh, useScenariosData } from "@/lib/data-provider";
 import { Panel, PanelHeader } from "@/components/panel";
-import { ScenarioChart } from "@/components/charts/scenario-chart";
+import { ScenarioChart, type ScenarioChartView } from "@/components/charts/scenario-chart";
 import { Button } from "@/components/ui/button";
+import { api, ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
 
 const metrics = [
@@ -25,20 +26,48 @@ const metrics = [
   {
     key: "successRate",
     label: "Monte Carlo success",
-    hint: "Of 1,000 simulated trials with randomized annual returns, the percentage where retirement savings lasted through age 95 without running out — contributions stop at retirement age, then the plan's sustainable withdrawal is taken out each year of retirement.",
+    hint: "Of 1,000 simulated trials with randomized annual returns, the percentage where retirement savings lasted through age 95 without running out — contributions stop at retirement age, then the plan's sustainable withdrawal (a % of that scenario's own balance) is taken out each year of retirement. Because the withdrawal scales with the balance, a bigger balance alone doesn't raise this number much — it mainly reflects withdrawal rate, expected return, and volatility.",
     fmt: (v: number) => `${v}%`,
   },
 ] as const;
 
-export function ScenarioCompare() {
+export function ScenarioCompare({
+  onDuplicated,
+}: {
+  onDuplicated?: (newScenarioId: string) => void;
+}) {
   const scenarios = useScenariosData();
+  const refresh = useDataRefresh();
   const [active, setActive] = useState<string[]>([]);
+  const [chartView, setChartView] = useState<ScenarioChartView>("netWorth");
+  const [duplicateSourceId, setDuplicateSourceId] = useState<string>("");
+  const [duplicating, setDuplicating] = useState(false);
+  const [duplicateError, setDuplicateError] = useState<string | null>(null);
 
   // Scenarios load asynchronously; default every scenario to "active" the
-  // first time the real list arrives.
+  // first time the real list arrives, and default the duplicate-source
+  // picker to the first scenario.
   useEffect(() => {
-    if (scenarios.length > 0) setActive(scenarios.map((s) => s.id));
+    if (scenarios.length > 0) {
+      setActive(scenarios.map((s) => s.id));
+      setDuplicateSourceId((prev) => (scenarios.some((s) => s.id === prev) ? prev : scenarios[0].id));
+    }
   }, [scenarios.length]);
+
+  const handleDuplicate = async () => {
+    if (!duplicateSourceId) return;
+    setDuplicating(true);
+    setDuplicateError(null);
+    try {
+      const copy = await api.scenarios.duplicate(duplicateSourceId);
+      refresh();
+      onDuplicated?.(copy.id);
+    } catch (err) {
+      setDuplicateError(err instanceof ApiError ? err.message : "Couldn't duplicate that scenario.");
+    } finally {
+      setDuplicating(false);
+    }
+  };
 
   const toggle = (id: string) =>
     setActive((prev) =>
@@ -49,36 +78,65 @@ export function ScenarioCompare() {
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
       <Panel className="xl:col-span-2">
         <PanelHeader
-          title="Projected net worth by scenario"
-          description="Modeled to age 65 · nominal dollars"
+          title={chartView === "netWorth" ? "Projected net worth by scenario" : "Projected retirement income by scenario"}
+          description={
+            chartView === "netWorth"
+              ? "Total net worth across all accounts · nominal dollars"
+              : "Sustainable monthly withdrawal from retirement accounts only, at each year's balance"
+          }
           actions={
-            <div className="flex items-center gap-1">
-              {scenarios.map((s) => {
-                const on = active.includes(s.id);
-                return (
+            <div className="flex items-center gap-2">
+              <div className="flex items-center gap-0.5 rounded-md border border-border p-0.5">
+                {(
+                  [
+                    { key: "netWorth", label: "Net worth" },
+                    { key: "income", label: "Retirement income" },
+                  ] as const
+                ).map((opt) => (
                   <button
-                    key={s.id}
+                    key={opt.key}
                     type="button"
-                    onClick={() => toggle(s.id)}
+                    onClick={() => setChartView(opt.key)}
                     className={cn(
-                      "flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors",
-                      on
-                        ? "border-border bg-muted text-foreground"
-                        : "border-transparent text-muted-foreground hover:bg-muted/50",
+                      "rounded-[5px] px-2 py-1 text-[11px] font-medium transition-colors",
+                      chartView === opt.key
+                        ? "bg-muted text-foreground"
+                        : "text-muted-foreground hover:text-foreground",
                     )}
                   >
-                    <span
-                      className="size-2 rounded-[2px]"
-                      style={{ background: s.color, opacity: on ? 1 : 0.4 }}
-                    />
-                    {s.name}
+                    {opt.label}
                   </button>
-                );
-              })}
+                ))}
+              </div>
+              <div className="h-4 w-px bg-border" />
+              <div className="flex items-center gap-1">
+                {scenarios.map((s) => {
+                  const on = active.includes(s.id);
+                  return (
+                    <button
+                      key={s.id}
+                      type="button"
+                      onClick={() => toggle(s.id)}
+                      className={cn(
+                        "flex items-center gap-1.5 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors",
+                        on
+                          ? "border-border bg-muted text-foreground"
+                          : "border-transparent text-muted-foreground hover:bg-muted/50",
+                      )}
+                    >
+                      <span
+                        className="size-2 rounded-[2px]"
+                        style={{ background: s.color, opacity: on ? 1 : 0.4 }}
+                      />
+                      {s.name}
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           }
         />
-        <ScenarioChart activeIds={active} />
+        <ScenarioChart activeIds={active} view={chartView} />
       </Panel>
 
       <Panel>
@@ -139,9 +197,31 @@ export function ScenarioCompare() {
           </table>
         </div>
         <div className="border-t border-border p-3">
-          <Button variant="outline" size="sm" className="w-full">
-            Duplicate &amp; edit scenario
+          {scenarios.length > 1 && (
+            <select
+              value={duplicateSourceId}
+              onChange={(e) => setDuplicateSourceId(e.target.value)}
+              className="mb-2 h-8 w-full rounded-md border border-border bg-background px-2 text-[12px] text-foreground outline-none focus:border-ring"
+            >
+              {scenarios.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.name}
+                </option>
+              ))}
+            </select>
+          )}
+          <Button
+            variant="outline"
+            size="sm"
+            className="w-full"
+            onClick={handleDuplicate}
+            disabled={duplicating || !duplicateSourceId}
+          >
+            {duplicating ? "Duplicating…" : "Duplicate & edit scenario"}
           </Button>
+          {duplicateError && (
+            <p className="mt-1.5 text-[11px] text-destructive">{duplicateError}</p>
+          )}
         </div>
       </Panel>
     </div>

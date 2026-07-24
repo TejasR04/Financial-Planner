@@ -91,12 +91,16 @@ export function PlaidLinkButton({ label = "Link account", className, onLinked, v
   const busy = status === "fetching_token" || status === "linking";
 
   return (
-    <div className="inline-flex flex-col items-start gap-1">
+    <div className="relative inline-block">
       <Button variant={variant} size={size} className={className} onClick={handleClick} disabled={busy}>
         {busy ? <Loader2 className="animate-spin" /> : <Plus />}
         {label}
       </Button>
-      {errorMessage && <p className="max-w-64 text-xs text-destructive">{errorMessage}</p>}
+      {errorMessage && (
+        <p className="absolute right-0 top-full z-50 mt-1.5 w-56 rounded-md border border-destructive/30 bg-background p-2 text-xs text-destructive shadow-md">
+          {errorMessage}
+        </p>
+      )}
     </div>
   );
 }

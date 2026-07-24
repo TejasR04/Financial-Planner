@@ -4,7 +4,7 @@ import { useEffect, useState } from "react";
 import { Panel, PanelHeader } from "@/components/panel";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/data";
-import { useProfileSummary } from "@/lib/data-provider";
+import { useDataRefresh, useProfileSummary } from "@/lib/data-provider";
 import { api, ApiError } from "@/lib/api-client";
 
 type Assumption = {
@@ -18,45 +18,22 @@ type Assumption = {
 };
 
 const FALLBACK_ASSUMPTIONS: Assumption[] = [
-  {
-    key: "age",
-    label: "Target retirement age",
-    min: 45,
-    max: 75,
-    step: 1,
-    value: 65,
-    suffix: "yrs",
-  },
-  {
-    key: "contribution",
-    label: "Monthly savings contribution",
-    min: 0,
-    max: 10000,
-    step: 100,
-    value: 500,
-    suffix: "$",
-  },
-  {
-    key: "return",
-    label: "Expected real return",
-    min: 2,
-    max: 10,
-    step: 0.1,
-    value: 6.5,
-    suffix: "%",
-  },
+  { key: "age", label: "Target retirement age", min: 45, max: 75, step: 1, value: 65, suffix: "yrs" },
+  { key: "contribution", label: "Monthly savings contribution", min: 0, max: 10000, step: 100, value: 500, suffix: "$" },
+  { key: "return", label: "Expected real return", min: 2, max: 10, step: 0.1, value: 6.5, suffix: "%" },
 ];
 
 export function ProjectionAssumptions() {
   const profile = useProfileSummary();
-  const [assumptions, setAssumptions] =
-    useState<Assumption[]>(FALLBACK_ASSUMPTIONS);
+  const refresh = useDataRefresh();
+  const [assumptions, setAssumptions] = useState<Assumption[]>(FALLBACK_ASSUMPTIONS);
   const [initialized, setInitialized] = useState(false);
-  const [result, setResult] = useState<{ fv: number; years: number } | null>(
-    null,
-  );
+  const [result, setResult] = useState<{ fv: number; years: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [saving, setSaving] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [saved, setSaved] = useState(false);
 
   // Seed sliders from the user's real profile + cash-flow-derived surplus
   // the first time it becomes available, rather than a hardcoded salary.
@@ -94,18 +71,39 @@ export function ProjectionAssumptions() {
     setInitialized(true);
   }, [profile, initialized]);
 
-  const update = (key: string, value: number) =>
+  const update = (key: string, value: number) => {
     setAssumptions((prev) =>
       prev.map((a) => (a.key === key ? { ...a, value } : a)),
     );
+    setSaved(false);
+    setSaveError(null);
+  };
 
   const age = assumptions.find((a) => a.key === "age")!.value;
   const contribution = assumptions.find((a) => a.key === "contribution")!.value;
   const ret = assumptions.find((a) => a.key === "return")!.value;
-  const years = Math.max(
-    1,
-    Math.round(age - (profile?.currentAge ?? age - 30)),
-  );
+  const years = Math.max(1, Math.round(age - (profile?.currentAge ?? age - 30)));
+
+  const handleSaveAsScenario = async () => {
+    setSaving(true);
+    setSaveError(null);
+    setSaved(false);
+    try {
+      await api.scenarios.create({
+        name: `Retire at ${age}`,
+        current_age: profile?.currentAge ?? age - 30,
+        retirement_age: age,
+        monthly_contribution: String(contribution),
+        expected_return: (ret / 100).toFixed(4),
+      });
+      refresh();
+      setSaved(true);
+    } catch (err) {
+      setSaveError(err instanceof ApiError ? err.message : "Couldn't save that scenario.");
+    } finally {
+      setSaving(false);
+    }
+  };
 
   // Debounced call to the real simulation endpoint — this replaces the old
   // hardcoded-salary compound-interest formula (ARCHITECTURE.md §11).
@@ -122,16 +120,9 @@ export function ProjectionAssumptions() {
           expected_return: String(ret / 100),
           annual_net_contribution: String(contribution * 12),
         });
-        setResult({
-          fv: parseFloat(sim.projected_net_worth_at_horizon),
-          years,
-        });
+        setResult({ fv: parseFloat(sim.projected_net_worth_at_horizon), years });
       } catch (err) {
-        setError(
-          err instanceof ApiError
-            ? err.message
-            : "Couldn't run the projection.",
-        );
+        setError(err instanceof ApiError ? err.message : "Couldn't run the projection.");
       } finally {
         setLoading(false);
       }
@@ -155,9 +146,7 @@ export function ProjectionAssumptions() {
               <span className="font-mono text-[13px] font-medium text-foreground tabular-nums">
                 {a.suffix === "$" ? formatCurrency(a.value) : a.value}
                 {a.suffix !== "$" && (
-                  <span className="ml-0.5 text-muted-foreground">
-                    {a.suffix}
-                  </span>
+                  <span className="ml-0.5 text-muted-foreground">{a.suffix}</span>
                 )}
               </span>
             </div>
@@ -180,11 +169,7 @@ export function ProjectionAssumptions() {
           Projected total net worth at retirement
         </p>
         <p className="mt-1 font-mono text-2xl font-semibold tracking-tight text-primary tabular-nums">
-          {result
-            ? formatCurrency(result.fv, { compact: true })
-            : loading
-              ? "…"
-              : "—"}
+          {result ? formatCurrency(result.fv, { compact: true }) : loading ? "…" : "—"}
         </p>
         <p className="mt-0.5 text-[11px] text-muted-foreground">
           {error
@@ -193,9 +178,10 @@ export function ProjectionAssumptions() {
         </p>
       </div>
       <div className="border-t border-border p-3">
-        <Button size="sm" className="w-full">
-          Save as scenario
+        <Button size="sm" className="w-full" onClick={handleSaveAsScenario} disabled={saving}>
+          {saving ? "Saving…" : saved ? "Saved as scenario ✓" : "Save as scenario"}
         </Button>
+        {saveError && <p className="mt-1.5 text-[11px] text-destructive">{saveError}</p>}
       </div>
     </Panel>
   );

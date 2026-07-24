@@ -1,30 +1,73 @@
 "use client";
 
-import { useState } from "react";
-import { Info, Plus, Sparkles } from "lucide-react";
+import { useEffect, useState } from "react";
+import { Info, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
 import { PageContainer, PageHeader } from "@/components/page-container";
 import { ScenarioCompare } from "@/components/scenario-compare";
 import { ProjectionAssumptions } from "@/components/projection-assumptions";
+import { SensitivityAnalysis } from "@/components/sensitivity-analysis";
 import { NewScenarioDialog } from "@/components/new-scenario-dialog";
 import { Panel, PanelHeader } from "@/components/panel";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { formatCurrency } from "@/lib/data";
-import { useScenariosData } from "@/lib/data-provider";
+import { api, ApiError } from "@/lib/api-client";
+import { formatCurrency, type Scenario } from "@/lib/data";
+import { useDataRefresh, useScenariosData } from "@/lib/data-provider";
 
 export default function ProjectionsPage() {
   const scenarios = useScenariosData();
-  const [newScenarioOpen, setNewScenarioOpen] = useState(false);
+  const refresh = useDataRefresh();
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingScenario, setEditingScenario] = useState<Scenario | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [pendingEditId, setPendingEditId] = useState<string | null>(null);
   const best =
     scenarios.length > 0
       ? scenarios.reduce((a, b) => (b.successRate > a.successRate ? b : a))
       : null;
 
+  // After "Duplicate & edit" creates a copy, open the edit dialog on it as
+  // soon as the refreshed scenario list actually contains it.
+  useEffect(() => {
+    if (!pendingEditId) return;
+    const found = scenarios.find((s) => s.id === pendingEditId);
+    if (found) {
+      setEditingScenario(found);
+      setDialogOpen(true);
+      setPendingEditId(null);
+    }
+  }, [scenarios, pendingEditId]);
+
+  const openCreate = () => {
+    setEditingScenario(null);
+    setDialogOpen(true);
+  };
+  const openEdit = (s: Scenario) => {
+    setEditingScenario(s);
+    setDialogOpen(true);
+  };
+  const confirmDelete = async (id: string) => {
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await api.scenarios.delete(id);
+      refresh();
+      setPendingDeleteId(null);
+    } catch (err) {
+      setDeleteError(err instanceof ApiError ? err.message : "Couldn't delete that scenario.");
+    } finally {
+      setDeleting(false);
+    }
+  };
+
   return (
     <PageContainer>
       <NewScenarioDialog
-        open={newScenarioOpen}
-        onClose={() => setNewScenarioOpen(false)}
+        open={dialogOpen}
+        onClose={() => setDialogOpen(false)}
+        scenario={editingScenario}
       />
       <PageHeader
         title="Projections"
@@ -35,7 +78,7 @@ export default function ProjectionsPage() {
               <Sparkles />
               Optimize
             </Button>
-            <Button size="sm" onClick={() => setNewScenarioOpen(true)}>
+            <Button size="sm" onClick={openCreate}>
               <Plus />
               New scenario
             </Button>
@@ -59,11 +102,64 @@ export default function ProjectionsPage() {
                 <span className="text-[13px] font-semibold text-foreground">
                   {s.name}
                 </span>
+                {s.desiredMonthlyIncomeToday != null && (
+                  <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
+                    ${s.desiredMonthlyIncomeToday.toLocaleString()}/mo target
+                  </span>
+                )}
               </div>
-              {s.id === best?.id && (
-                <Badge variant="positive">Recommended</Badge>
-              )}
+              <div className="flex items-center gap-1">
+                {s.id === best?.id && (
+                  <Badge variant="positive">Recommended</Badge>
+                )}
+                <button
+                  type="button"
+                  onClick={() => openEdit(s)}
+                  className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-accent hover:text-foreground"
+                  aria-label={`Edit ${s.name}`}
+                >
+                  <Pencil className="size-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDeleteError(null);
+                    setPendingDeleteId(s.id);
+                  }}
+                  className="rounded-md p-1 text-muted-foreground transition-colors hover:bg-destructive/10 hover:text-destructive"
+                  aria-label={`Delete ${s.name}`}
+                >
+                  <Trash2 className="size-3.5" />
+                </button>
+              </div>
             </div>
+            {pendingDeleteId === s.id && (
+              <div className="mt-2 flex items-center justify-between gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-1.5">
+                <span className="text-[12px] text-destructive">Delete this scenario?</span>
+                <div className="flex gap-1.5">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-6 px-2 text-[11px]"
+                    onClick={() => setPendingDeleteId(null)}
+                    disabled={deleting}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-6 bg-destructive px-2 text-[11px] text-destructive-foreground hover:bg-destructive/90"
+                    onClick={() => confirmDelete(s.id)}
+                    disabled={deleting}
+                  >
+                    Delete
+                  </Button>
+                </div>
+              </div>
+            )}
+            {deleteError && pendingDeleteId === s.id && (
+              <p className="mt-1 text-[11px] text-destructive">{deleteError}</p>
+            )}
             <p className="mt-2 text-xs leading-relaxed text-muted-foreground text-pretty">
               {s.description}
             </p>
@@ -81,14 +177,16 @@ export default function ProjectionsPage() {
                   Success
                   <Info
                     className="size-3 shrink-0 text-muted-foreground/70"
-                    aria-label="Of 1,000 simulated trials with randomized annual returns, the percentage where retirement savings lasted through age 95 without running out. Contributions stop at retirement age; the plan's sustainable withdrawal is taken out each year of retirement."
+                    aria-label="Of 1,000 simulated trials with randomized annual returns, the percentage where retirement savings lasted through age 95 without running out. Contributions stop at retirement age; the plan's sustainable withdrawal (a % of that scenario's own balance) is taken out each year of retirement. Because withdrawal scales with balance, a bigger balance alone doesn't raise this number much."
                   >
                     <title>
-                      Of 1,000 simulated trials with randomized annual returns,
-                      the percentage where retirement savings lasted through age
-                      95 without running out. Contributions stop at retirement
-                      age; the plan&apos;s sustainable withdrawal is taken out
-                      each year of retirement.
+                      Of 1,000 simulated trials with randomized annual returns, the percentage
+                      where retirement savings lasted through age 95 without running out.
+                      Contributions stop at retirement age; the plan&apos;s sustainable withdrawal
+                      (a % of that scenario&apos;s own balance) is taken out each year of
+                      retirement. Because withdrawal scales with balance, a bigger balance alone
+                      doesn&apos;t raise this number much — it mainly reflects withdrawal rate,
+                      expected return, and volatility.
                     </title>
                   </Info>
                 </p>
@@ -103,7 +201,7 @@ export default function ProjectionsPage() {
 
       {/* Comparison */}
       <div className="mt-4">
-        <ScenarioCompare />
+        <ScenarioCompare onDuplicated={setPendingEditId} />
       </div>
 
       {/* Assumptions + notes */}
@@ -112,70 +210,7 @@ export default function ProjectionsPage() {
           <ProjectionAssumptions />
         </div>
 
-        <Panel className="xl:col-span-2">
-          <PanelHeader
-            title="Sensitivity analysis"
-            description="How each input moves the projected outcome"
-          />
-          <div className="p-4">
-            <div className="space-y-3">
-              {[
-                {
-                  label: "+1% savings rate",
-                  delta: 4.1,
-                  note: "$248K by age 65",
-                },
-                {
-                  label: "+1% real return",
-                  delta: 12.6,
-                  note: "$770K by age 65",
-                },
-                {
-                  label: "-2 years to retirement",
-                  delta: -8.3,
-                  note: "$505K less accrued",
-                },
-                {
-                  label: "+0.5% withdrawal rate",
-                  delta: -5.4,
-                  note: "Success falls to 79%",
-                },
-                {
-                  label: "Max tax-advantaged space",
-                  delta: 6.2,
-                  note: "$378K + tax savings",
-                },
-              ].map((row) => {
-                const pos = row.delta >= 0;
-                return (
-                  <div key={row.label} className="flex items-center gap-3">
-                    <span className="w-48 shrink-0 text-[13px] text-foreground">
-                      {row.label}
-                    </span>
-                    <div className="relative flex h-6 flex-1 items-center">
-                      <div className="absolute left-1/2 h-full w-px bg-border" />
-                      <div
-                        className={`absolute h-2.5 rounded-[2px] ${pos ? "left-1/2 bg-positive" : "right-1/2 bg-destructive"}`}
-                        style={{
-                          width: `${Math.min(Math.abs(row.delta) * 3, 46)}%`,
-                        }}
-                      />
-                    </div>
-                    <span
-                      className={`w-14 shrink-0 text-right font-mono text-[13px] font-medium tabular-nums ${pos ? "text-positive" : "text-destructive"}`}
-                    >
-                      {pos ? "+" : ""}
-                      {row.delta}%
-                    </span>
-                    <span className="hidden w-40 shrink-0 text-right text-[11px] text-muted-foreground lg:block">
-                      {row.note}
-                    </span>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        </Panel>
+        <SensitivityAnalysis scenarios={scenarios} />
       </div>
     </PageContainer>
   );

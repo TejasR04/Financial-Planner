@@ -23,6 +23,19 @@ class PlanningAssumptions:
     withdrawal_rate: Decimal = Decimal("0.04")             # in retirement
     employer_match_rate: Decimal = Decimal("0")               # fraction of salary matched
     employer_match_cap: Decimal = Decimal("0")                 # fraction of salary, cap on match
+    # If set, this REPLACES the withdrawal_rate-derived spending target for
+    # both the deterministic projection and Monte Carlo: the user names a
+    # monthly lifestyle cost in TODAY's purchasing power, it gets inflated
+    # forward to the dollar amount actually needed at retirement, and (in
+    # Monte Carlo) continues escalating with inflation through retirement
+    # so purchasing power stays constant rather than eroding. When None,
+    # scenarios fall back to the old withdrawal_rate % of balance.
+    desired_monthly_income_today: Decimal | None = None
+    # User's target equity allocation (0-1), used to derive a return-
+    # volatility assumption for Monte Carlo (see
+    # app/simulation/engine.py:implied_return_volatility) instead of one
+    # fixed number for every user regardless of actual risk profile.
+    target_equity_allocation: Decimal = Decimal("0.60")
 
     def __post_init__(self):
         if self.retirement_age <= self.current_age:
