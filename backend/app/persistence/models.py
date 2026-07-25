@@ -34,6 +34,7 @@ class UserModel(Base):
     date_of_birth: Mapped[date | None] = mapped_column(Date, nullable=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
     profile: Mapped["PlanningProfileModel"] = relationship(back_populates="user", uselist=False)
     accounts: Mapped[list["AccountModel"]] = relationship(back_populates="user")
@@ -91,6 +92,7 @@ class AccountModel(Base):
     status: Mapped[str] = mapped_column(String(20), default="manual")
     external_account_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+    archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
     user: Mapped["UserModel"] = relationship(back_populates="accounts")
     holdings: Mapped[list["HoldingModel"]] = relationship(back_populates="account")

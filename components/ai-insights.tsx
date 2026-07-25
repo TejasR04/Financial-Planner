@@ -7,6 +7,8 @@ import {
   Info,
   ArrowRight,
 } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useState } from "react";
 import { type Insight } from "@/lib/data";
 import { useInsightsData } from "@/lib/data-provider";
 import { cn } from "@/lib/utils";
@@ -37,6 +39,18 @@ const config: Record<
 
 export function AiInsights({ className }: { className?: string }) {
   const insights = useInsightsData();
+  const router = useRouter();
+  const [now] = useState(() => Date.now());
+  const latest = insights.reduce<string | null>((current, insight) => {
+    if (!insight.generatedAt) return current;
+    return !current || insight.generatedAt > current ? insight.generatedAt : current;
+  }, null);
+  const updated = latest
+    ? new Intl.RelativeTimeFormat("en", { numeric: "auto" }).format(
+        -Math.max(0, Math.round((now - new Date(latest).getTime()) / 60_000)),
+        "minute",
+      )
+    : "Not generated";
   return (
     <div
       className={cn(
@@ -54,8 +68,8 @@ export function AiInsights({ className }: { className?: string }) {
           </h2>
         </div>
         <span className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
-          <span className="size-1.5 animate-pulse rounded-full bg-positive" />
-          Updated 4m ago
+          {latest && <span className="size-1.5 rounded-full bg-positive" />}
+          {updated}
         </span>
       </div>
 
@@ -89,10 +103,16 @@ export function AiInsights({ className }: { className?: string }) {
             </li>
           );
         })}
+        {insights.length === 0 && (
+          <li className="px-4 py-8 text-center text-[13px] text-muted-foreground">
+            Run analysis from Insights to generate personalized observations.
+          </li>
+        )}
       </ul>
 
       <button
         type="button"
+        onClick={() => router.push("/insights")}
         className="flex items-center justify-center gap-1.5 border-t border-border px-4 py-2.5 text-[12px] font-medium text-primary transition-colors hover:bg-accent/50"
       >
         View full analysis

@@ -14,10 +14,14 @@ const dot: Record<Milestone["status"], string> = {
 
 export function Timeline() {
   const milestones = useMilestones();
+  const chronologicalMilestones = [...milestones].sort((a, b) => Number(a.year) - Number(b.year));
+  if (chronologicalMilestones.length === 0) {
+    return <p className="px-4 py-10 text-center text-[13px] text-muted-foreground">Add a goal to start your life plan.</p>;
+  }
   return (
     <ol className="relative px-4 py-4">
-      {milestones.map((m, i) => {
-        const last = i === milestones.length - 1;
+      {chronologicalMilestones.map((m, i) => {
+        const last = i === chronologicalMilestones.length - 1;
         return (
           <li key={m.id} className="relative flex gap-3.5 pb-5 last:pb-0">
             {!last && (

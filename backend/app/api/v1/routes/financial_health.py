@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
@@ -29,10 +29,9 @@ async def get_financial_health(
 ) -> FinancialHealthScoreResponse:
     row = await FinancialHealthScoreRepository(db).get_latest(current_user.id)
     if row is None:
-        # No score computed yet — recalculate once with defaults so the
-        # first visit to the Insights page isn't empty.
-        return await recalculate_financial_health(
-            FinancialHealthRecalculateRequest(), current_user, db
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No financial-health score has been calculated yet.",
         )
     return FinancialHealthScoreResponse(
         overall=row.overall, liquidity=row.liquidity, diversification=row.diversification,

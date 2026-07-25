@@ -9,7 +9,7 @@ import {
   useState,
 } from "react";
 import { useAuth } from "@/lib/auth-context";
-import { api, type ApiAccount, type ApiScenarioRun } from "@/lib/api-client";
+import { api, type ApiAccount, type ApiScenarioRun, type ApiTransaction } from "@/lib/api-client";
 import {
   formatCurrency,
   type Account,
@@ -17,6 +17,7 @@ import {
   type CashflowPoint,
   type FinancialHealth,
   type Insight,
+  type Institution,
   type Kpi,
   type Milestone,
   type NetWorthPoint,
@@ -57,6 +58,47 @@ function formatRelativeTime(iso: string | null): string {
 function formatShortDate(iso: string): string {
   const d = new Date(`${iso}T00:00:00`);
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+}
+
+function monthKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+}
+
+function twelveMonthWindow(today = new Date()) {
+  const start = new Date(today.getFullYear(), today.getMonth() - 11, 1);
+  const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+  return {
+    start,
+    startDate: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-01`,
+    end,
+  };
+}
+
+function buildCashflowSeries(transactions: ApiTransaction[], start: Date, end: Date): CashflowPoint[] {
+  const buckets = new Map<string, { income: number; expenses: number }>();
+  const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+  while (cursor <= end) {
+    buckets.set(monthKey(cursor), { income: 0, expenses: 0 });
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+
+  for (const transaction of transactions) {
+    const posted = new Date(`${transaction.posted_at}T00:00:00`);
+    const bucket = buckets.get(monthKey(posted));
+    if (!bucket) continue;
+    const amount = Math.abs(parseFloat(transaction.amount));
+    if (transaction.type === "income") bucket.income += amount;
+    if (transaction.type === "expense") bucket.expenses += amount;
+  }
+
+  return Array.from(buckets.entries()).map(([key, value]) => {
+    const [year, month] = key.split("-");
+    return {
+      month: new Date(Number(year), Number(month) - 1, 1).toLocaleDateString("en-US", { month: "short" }),
+      income: value.income,
+      expenses: value.expenses,
+    };
+  });
 }
 
 const ACCOUNT_TYPE_LABEL: Record<ApiAccount["type"], Account["type"]> = {
@@ -121,6 +163,7 @@ type DataState = {
   allocationMeta: AllocationMeta | null;
   cashflowSeries: CashflowPoint[];
   accounts: Account[];
+  institutions: Institution[];
   transactions: Transaction[];
   milestones: Milestone[];
   recommendations: Recommendation[];
@@ -143,6 +186,7 @@ const emptyState: Omit<DataState, "loading" | "error" | "refresh"> = {
   allocationMeta: null,
   cashflowSeries: [],
   accounts: [],
+  institutions: [],
   transactions: [],
   milestones: [],
   recommendations: [],
@@ -170,29 +214,39 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       setLoading(true);
       setError(null);
       try {
+        const warnings: string[] = [];
+        const optional = async <T,>(label: string, request: Promise<T>, fallback: T, report = true): Promise<T> => {
+          try {
+            return await request;
+          } catch {
+            if (report) warnings.push(label);
+            return fallback;
+          }
+        };
         const [
           user,
           planningProfile,
           accountList,
+          institutionRows,
           transactionList,
           goals,
           scenarioRows,
           recommendationRows,
-          insightRows,
           health,
           allocationAnalysis,
         ] = await Promise.all([
           api.users.me(),
           api.users.planningProfile(),
           api.accounts.list(),
-          api.transactions.list({ limit: 200 }),
-          api.goals.list(),
-          api.scenarios.list(),
-          api.recommendations.list(),
-          api.insights.list(),
-          api.financialHealth.get(),
-          api.accounts.allocation(),
+          optional("institutions", api.accounts.institutions(), []),
+          optional("recent transactions", api.transactions.list({ limit: 1000, since: twelveMonthWindow().startDate }), { data: [], total: 0, limit: 1000, offset: 0 }),
+          optional("goals", api.goals.list(), []),
+          optional("scenarios", api.scenarios.list(), []),
+          optional("recommendations", api.recommendations.list(), []),
+          optional("financial health", api.financialHealth.get(), null, false),
+          optional("allocation", api.accounts.allocation(), null),
         ]);
+        const insightRows = await optional("insights", api.insights.list(), []);
 
         const currentAge = ageFromBirthDate(user.date_of_birth);
         const currentYear = new Date().getFullYear();
@@ -202,21 +256,53 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           id: a.id,
           name: a.name,
           institution: a.institution ?? undefined,
+          institutionId: a.institution_id ?? undefined,
+          institutionStatus: a.institution_status ?? undefined,
           type: ACCOUNT_TYPE_LABEL[a.type],
           mask: a.mask ?? "—",
           balance: parseFloat(a.balance),
           apy: a.apy != null ? parseFloat(a.apy) : undefined,
-          status: a.status,
-          updated: formatRelativeTime(a.updated_at),
+          status: a.institution_status === "error" || a.institution_status === "action_required" ? "attention" : a.status,
+          updated: formatRelativeTime(a.institution_last_synced_at ?? a.updated_at),
+        }));
+        const institutions: Institution[] = institutionRows.map((institution) => ({
+          id: institution.id,
+          name: institution.name,
+          provider: institution.provider,
+          status: institution.status,
+          lastSyncedAt: institution.last_synced_at,
+          accountCount: institution.account_count,
         }));
         const accountNameById = new Map(accountList.data.map((a) => [a.id, a.name]));
 
-        // --- kpis (net worth + liquid assets are real; no fabricated
-        // deltas/sparklines — see lib/data.ts) -------------------------
+        const window = twelveMonthWindow();
+
+        // --- transactions + cashflow -----------------------------------
+        const transactions: Transaction[] = transactionList.data.map((t) => ({
+          id: t.id,
+          postedAt: t.posted_at,
+          date: formatShortDate(t.posted_at),
+          merchant: t.merchant,
+          category: t.category,
+          account: accountNameById.get(t.account_id) ?? "Account",
+          amount: parseFloat(t.amount),
+          type: t.type,
+          status: t.status,
+        }));
+        const cashflowSeries = buildCashflowSeries(transactionList.data, window.start, window.end);
+        const averageMonthlyIncome = cashflowSeries.reduce((sum, month) => sum + month.income, 0) / cashflowSeries.length;
+        const averageMonthlyExpenses = cashflowSeries.reduce((sum, month) => sum + month.expenses, 0) / cashflowSeries.length;
+        const averageMonthlySurplus = averageMonthlyIncome - averageMonthlyExpenses;
+
+        // --- kpis (all values are based on the selected trailing window)
         const netWorthToday = parseFloat(accountList.net_worth);
+        const cashHoldings = (allocationAnalysis?.breakdown ?? [])
+          .filter((item) => item.asset_class === "cash")
+          .reduce((sum, item) => sum + parseFloat(item.market_value), 0);
         const liquidAssets = accountList.data
           .filter((a) => a.type === "depository")
-          .reduce((s, a) => s + parseFloat(a.balance), 0);
+          .reduce((s, a) => s + parseFloat(a.balance), 0) + cashHoldings;
+        const savingsRate = averageMonthlyIncome > 0 ? (averageMonthlySurplus / averageMonthlyIncome) * 100 : null;
         const kpis: Kpi[] = [
           {
             id: "net-worth",
@@ -230,7 +316,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             label: "Liquid Assets",
             value: formatCurrency(liquidAssets),
             raw: liquidAssets,
-            hint: "Cash and cash-equivalent holdings",
+            hint: "Depository balances plus cash-equivalent investment holdings",
+          },
+          {
+            id: "monthly-cash-flow",
+            label: "Monthly Cash Flow",
+            value: formatCurrency(averageMonthlySurplus, { sign: true }),
+            raw: averageMonthlySurplus,
+            hint: "Average monthly income less expenses over the last 12 months",
+          },
+          {
+            id: "savings-rate",
+            label: "Savings Rate",
+            value: savingsRate == null ? "—" : `${savingsRate.toFixed(1)}%`,
+            raw: savingsRate ?? 0,
+            hint: "Average income retained after expenses over the last 12 months",
           },
         ];
 
@@ -247,8 +347,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           const projection = await api.simulations.netWorth({
             current_age: currentAge,
             retirement_age: planningProfile.target_retirement_age,
-            years: 10,
+            years: Math.max(1, planningProfile.target_retirement_age - currentAge),
             expected_return: planningProfile.expected_return,
+            annual_net_contribution: String(Math.max(0, averageMonthlySurplus) * 12),
           });
           netWorthSeries = [
             ...netWorthSeries,
@@ -267,7 +368,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }
 
         // --- allocation --------------------------------------------------
-        const allocation: AllocationSlice[] = allocationAnalysis.breakdown.map(
+        const allocation: AllocationSlice[] = (allocationAnalysis?.breakdown ?? []).map(
           (b, i) => ({
             name: ASSET_CLASS_LABEL[b.asset_class] ?? b.asset_class,
             value: Math.round(parseFloat(b.weight) * 1000) / 10,
@@ -275,43 +376,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             color: CHART_COLORS[i % CHART_COLORS.length],
           }),
         );
-        const allocationMeta: AllocationMeta = {
-          targetEquityPercent: Math.round(parseFloat(allocationAnalysis.target_equity_allocation) * 1000) / 10,
-          driftPercent: Math.round(parseFloat(allocationAnalysis.drift) * 1000) / 10,
-          isWithinTolerance: allocationAnalysis.is_within_tolerance,
-        };
-
-        // --- transactions + cashflow (real, aggregated from posted_at) --
-        const transactions: Transaction[] = transactionList.data.map((t) => ({
-          id: t.id,
-          date: formatShortDate(t.posted_at),
-          merchant: t.merchant,
-          category: t.category,
-          account: accountNameById.get(t.account_id) ?? "Account",
-          amount: parseFloat(t.amount),
-          status: t.status,
-        }));
-
-        const cashflowByMonth = new Map<string, { income: number; expenses: number }>();
-        for (const t of transactionList.data) {
-          const d = new Date(`${t.posted_at}T00:00:00`);
-          const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-          const bucket = cashflowByMonth.get(key) ?? { income: 0, expenses: 0 };
-          const amount = parseFloat(t.amount);
-          if (amount >= 0) bucket.income += amount;
-          else bucket.expenses += -amount;
-          cashflowByMonth.set(key, bucket);
-        }
-        const cashflowSeries: CashflowPoint[] = Array.from(cashflowByMonth.entries())
-          .sort(([a], [b]) => a.localeCompare(b))
-          .slice(-6)
-          .map(([key, v]) => {
-            const [y, m] = key.split("-");
-            const label = new Date(Number(y), Number(m) - 1, 1).toLocaleDateString("en-US", {
-              month: "short",
-            });
-            return { month: label, income: v.income, expenses: v.expenses };
-          });
+        const allocationMeta: AllocationMeta | null = allocationAnalysis
+          ? {
+              targetEquityPercent: Math.round(parseFloat(allocationAnalysis.target_equity_allocation) * 1000) / 10,
+              driftPercent: Math.round(parseFloat(allocationAnalysis.drift) * 1000) / 10,
+              isWithinTolerance: allocationAnalysis.is_within_tolerance,
+            }
+          : null;
 
         // --- milestones (from Goals) -------------------------------------
         const milestones: Milestone[] = goals.map((g) => {
@@ -331,15 +402,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         });
 
         // --- recommendations ----------------------------------------------
-        let recRows = recommendationRows;
-        if (recRows.length === 0) {
-          try {
-            recRows = await api.recommendations.generate();
-          } catch {
-            // leave empty if generation fails — page still renders
-          }
-        }
-        const recommendations: Recommendation[] = recRows.map((r) => ({
+        const recommendations: Recommendation[] = recommendationRows.map((r) => ({
           id: r.id,
           title: r.title,
           body: r.body,
@@ -361,14 +424,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             try {
               const runHistory = await api.scenarios.runs(s.id);
               run = runHistory.data[0] ?? null;
-              if (!run) {
-                run = await api.scenarios.run(s.id, {
-                  current_age: currentAge,
-                  current_retirement_balance: String(retirementBalance),
-                  include_monte_carlo: true,
-                  monte_carlo_trials: 1000,
-                });
-              }
             } catch {
               run = null;
             }
@@ -411,27 +466,26 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           kind: ins.kind,
           text: ins.text,
           meta: ins.meta,
+          generatedAt: ins.generated_at,
         }));
 
-        const financialHealth: FinancialHealth = {
-          overall: health.overall,
-          liquidity: health.liquidity,
-          diversification: health.diversification,
-          debtRatio: health.debt_ratio,
-          savingsDiscipline: health.savings_discipline,
-        };
+        const financialHealth: FinancialHealth | null = health
+          ? {
+              overall: health.overall,
+              liquidity: health.liquidity,
+              diversification: health.diversification,
+              debtRatio: health.debt_ratio,
+              savingsDiscipline: health.savings_discipline,
+            }
+          : null;
 
-        const avgMonthlySurplus =
-          cashflowSeries.length > 0
-            ? cashflowSeries.reduce((s, c) => s + (c.income - c.expenses), 0) / cashflowSeries.length
-            : 0;
         const profile: ProfileSummary = {
           currentAge,
           currentRetirementBalance: retirementBalance,
           netWorthToday,
           targetRetirementAge: planningProfile.target_retirement_age,
           expectedReturn: planningProfile.expected_return,
-          monthlySurplusEstimate: Math.max(0, Math.round(avgMonthlySurplus)),
+          monthlySurplusEstimate: Math.max(0, Math.round(averageMonthlySurplus)),
         };
 
         const userAccount: UserAccountDetails = {
@@ -446,6 +500,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         };
 
         if (!cancelled) {
+          setError(warnings.length ? `Some dashboard data could not be loaded: ${warnings.join(", ")}.` : null);
           setState({
             kpis,
             netWorthSeries,
@@ -453,6 +508,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             allocationMeta,
             cashflowSeries,
             accounts,
+            institutions,
             transactions,
             milestones,
             recommendations,
@@ -465,7 +521,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }
       } catch (err) {
         if (!cancelled) {
-          setError(err instanceof Error ? err.message : "Failed to load your data.");
+          setError(err instanceof Error ? err.message : "Failed to load your essential account data.");
         }
       } finally {
         if (!cancelled) setLoading(false);
@@ -506,6 +562,7 @@ export const useAllocation = () => useData().allocation;
 export const useAllocationMeta = () => useData().allocationMeta;
 export const useCashflowSeries = () => useData().cashflowSeries;
 export const useAccountsData = () => useData().accounts;
+export const useInstitutionsData = () => useData().institutions;
 export const useTransactionsData = () => useData().transactions;
 export const useMilestones = () => useData().milestones;
 export const useRecommendationsData = () => useData().recommendations;
@@ -517,3 +574,4 @@ export const useFinancialHealthData = () => useData().financialHealth;
 export const useProfileSummary = () => useData().profile;
 export const useUserAccount = () => useData().userAccount;
 export const useDataRefresh = () => useData().refresh;
+export const useDataError = () => useData().error;

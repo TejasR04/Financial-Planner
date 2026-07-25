@@ -74,7 +74,7 @@ export type ApiUser = {
   id: string;
   email: string;
   full_name: string;
-  base_currency: string;
+  base_currency: "USD";
   date_of_birth: string | null;
 };
 
@@ -92,12 +92,24 @@ export type ApiAccount = {
   name: string;
   type: "investment" | "depository" | "retirement" | "credit" | "loan" | "property";
   balance: string;
-  currency: string;
+  currency: "USD";
   mask: string | null;
   apy: string | null;
   status: "connected" | "attention" | "manual";
   institution: string | null;
+  institution_id: string | null;
+  institution_status: "healthy" | "action_required" | "error" | null;
+  institution_last_synced_at: string | null;
   updated_at: string | null;
+};
+
+export type ApiInstitution = {
+  id: string;
+  name: string;
+  provider: "plaid" | "manual" | "csv";
+  status: "healthy" | "action_required" | "error";
+  last_synced_at: string | null;
+  account_count: number;
 };
 
 export type ApiPlaidLinkToken = { link_token: string; expiration: string };
@@ -258,7 +270,7 @@ export const api = {
   },
   users: {
     me: () => get<ApiUser>("/users/me"),
-    updateMe: (body: { full_name?: string; base_currency?: string; date_of_birth?: string }) =>
+    updateMe: (body: { full_name?: string; base_currency?: "USD"; date_of_birth?: string }) =>
       patch<ApiUser>("/users/me", body),
     planningProfile: () => get<ApiPlanningProfile>("/users/me/planning-profile"),
     updatePlanningProfile: (body: Partial<{
@@ -271,7 +283,23 @@ export const api = {
     }>) => patch<ApiPlanningProfile>("/users/me/planning-profile", body),
   },
   accounts: {
-    list: () => get<ApiAccountList>("/accounts"),
+    list: (params?: { type?: ApiAccount["type"] }) => {
+      const suffix = params?.type ? `?type=${params.type}` : "";
+      return get<ApiAccountList>(`/accounts${suffix}`);
+    },
+    create: (body: {
+      name: string;
+      type: ApiAccount["type"];
+      balance: string;
+      mask?: string;
+      apy?: string;
+    }) => post<ApiAccount>("/accounts", body),
+    update: (accountId: string, body: { name?: string; balance?: string; mask?: string; apy?: string }) =>
+      patch<ApiAccount>(`/accounts/${accountId}`, body),
+    delete: (accountId: string) => del(`/accounts/${accountId}`),
+    sync: (accountId: string) => post<ApiPlaidRefreshInstitution>(`/accounts/${accountId}/sync`),
+    institutions: () => get<ApiInstitution[]>("/accounts/institutions"),
+    unlinkInstitution: (institutionId: string) => del(`/accounts/institutions/${institutionId}`),
     allocation: () => get<ApiAllocationAnalysis>("/accounts/allocation"),
   },
   plaid: {
@@ -288,10 +316,21 @@ export const api = {
     refresh: () => post<ApiPlaidRefreshResponse>("/plaid/refresh"),
   },
   transactions: {
-    list: (params?: { limit?: number; offset?: number }) => {
+    list: (params?: {
+      limit?: number;
+      offset?: number;
+      accountId?: string;
+      category?: string;
+      since?: string;
+      until?: string;
+    }) => {
       const qs = new URLSearchParams();
       if (params?.limit) qs.set("limit", String(params.limit));
       if (params?.offset) qs.set("offset", String(params.offset));
+      if (params?.accountId) qs.set("account_id", params.accountId);
+      if (params?.category) qs.set("category", params.category);
+      if (params?.since) qs.set("since", params.since);
+      if (params?.until) qs.set("until", params.until);
       const suffix = qs.toString() ? `?${qs}` : "";
       return get<ApiTransactionList>(`/transactions${suffix}`);
     },
@@ -367,6 +406,7 @@ export const api = {
   },
   insights: {
     list: () => get<ApiInsight[]>("/insights"),
+    generate: () => post<ApiInsight[]>("/insights/generate"),
   },
   financialHealth: {
     get: () => get<ApiFinancialHealth>("/financial-health"),

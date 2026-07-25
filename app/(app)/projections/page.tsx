@@ -12,17 +12,21 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api, ApiError } from "@/lib/api-client";
 import { formatCurrency, type Scenario } from "@/lib/data";
-import { useDataRefresh, useScenariosData } from "@/lib/data-provider";
+import { useCurrentAge, useCurrentRetirementBalance, useDataRefresh, useScenariosData } from "@/lib/data-provider";
 
 export default function ProjectionsPage() {
   const scenarios = useScenariosData();
   const refresh = useDataRefresh();
+  const currentAge = useCurrentAge();
+  const currentRetirementBalance = useCurrentRetirementBalance();
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingScenario, setEditingScenario] = useState<Scenario | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [pendingEditId, setPendingEditId] = useState<string | null>(null);
+  const [runningScenarioId, setRunningScenarioId] = useState<string | null>(null);
+  const [runError, setRunError] = useState<string | null>(null);
   const best =
     scenarios.length > 0
       ? scenarios.reduce((a, b) => (b.successRate > a.successRate ? b : a))
@@ -59,6 +63,24 @@ export default function ProjectionsPage() {
       setDeleteError(err instanceof ApiError ? err.message : "Couldn't delete that scenario.");
     } finally {
       setDeleting(false);
+    }
+  };
+  const runScenario = async (scenarioId: string) => {
+    if (currentAge == null || currentRetirementBalance == null) return;
+    setRunningScenarioId(scenarioId);
+    setRunError(null);
+    try {
+      await api.scenarios.run(scenarioId, {
+        current_age: currentAge,
+        current_retirement_balance: String(currentRetirementBalance),
+        include_monte_carlo: true,
+        monte_carlo_trials: 1000,
+      });
+      refresh();
+    } catch (err) {
+      setRunError(err instanceof ApiError ? err.message : "Couldn't run this scenario.");
+    } finally {
+      setRunningScenarioId(null);
     }
   };
 
@@ -195,6 +217,19 @@ export default function ProjectionsPage() {
                 </p>
               </div>
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="mt-3 w-full"
+              onClick={() => runScenario(s.id)}
+              disabled={runningScenarioId !== null || currentAge == null || currentRetirementBalance == null}
+            >
+              <Sparkles />
+              {runningScenarioId === s.id ? "Running simulation…" : "Run analysis"}
+            </Button>
+            {runError && (
+              <p className="mt-1.5 text-[11px] text-destructive">{runError}</p>
+            )}
           </div>
         ))}
       </div>

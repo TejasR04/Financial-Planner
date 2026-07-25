@@ -9,6 +9,7 @@ import { useTheme } from "@/components/theme-provider";
 const titles: Record<string, string> = {
   "/": "Overview",
   "/accounts": "Accounts",
+  "/transactions": "Transactions",
   "/projections": "Projections",
   "/insights": "Insights",
   "/settings": "Settings",

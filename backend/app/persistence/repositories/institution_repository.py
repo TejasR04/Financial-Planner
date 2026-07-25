@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 
 from app.core.crypto import decrypt_secret, encrypt_secret
-from app.core.exceptions import ProviderError
+from app.core.exceptions import NotFoundError, ProviderError
 from app.domain.entities import Institution
 from app.domain.enums import InstitutionStatus, ProviderType
 from app.persistence.models import InstitutionModel
@@ -40,6 +40,54 @@ class InstitutionRepository(BaseRepository[InstitutionModel]):
         )
         result = await self.session.execute(query.order_by(InstitutionModel.name))
         return [_to_domain(row) for row in result.scalars().all()]
+
+    async def list_for_user(self, user_id: UUID) -> list[Institution]:
+        result = await self.session.execute(
+            select(InstitutionModel)
+            .where(InstitutionModel.user_id == user_id)
+            .order_by(InstitutionModel.name, InstitutionModel.id)
+        )
+        return [_to_domain(row) for row in result.scalars().all()]
+
+    async def get_for_user(self, user_id: UUID, institution_id: UUID) -> Institution:
+        result = await self.session.execute(
+            select(InstitutionModel).where(
+                InstitutionModel.id == institution_id,
+                InstitutionModel.user_id == user_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            raise NotFoundError("Institution", str(institution_id))
+        return _to_domain(row)
+
+    async def lock_for_sync(self, user_id: UUID, institution_id: UUID) -> Institution:
+        result = await self.session.execute(
+            select(InstitutionModel)
+            .where(
+                InstitutionModel.id == institution_id,
+                InstitutionModel.user_id == user_id,
+                InstitutionModel.provider == ProviderType.PLAID.value,
+            )
+            .with_for_update()
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            raise NotFoundError("Institution", str(institution_id))
+        return _to_domain(row)
+
+    async def delete_for_user(self, user_id: UUID, institution_id: UUID) -> None:
+        result = await self.session.execute(
+            select(InstitutionModel).where(
+                InstitutionModel.id == institution_id,
+                InstitutionModel.user_id == user_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            raise NotFoundError("Institution", str(institution_id))
+        await self.session.delete(row)
+        await self.session.flush()
 
     async def get_sync_cursor(self, institution_id: UUID) -> str | None:
         row = await self._get_or_raise("Institution", institution_id)
@@ -112,7 +160,7 @@ class InstitutionRepository(BaseRepository[InstitutionModel]):
         result = await self.session.execute(query)
         row = result.scalar_one_or_none()
         if row is None:
-            raise ProviderError("Linked institution was not found")
+            raise NotFoundError("Institution", str(institution_id))
         if row.plaid_access_token_encrypted is None:
             raise ProviderError("Linked institution cannot be reconnected")
         return decrypt_secret(row.plaid_access_token_encrypted)

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
@@ -20,17 +20,22 @@ async def list_insights(
     current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> list[InsightResponse]:
     existing = await InsightRepository(db).list_for_user(current_user.id, limit=20)
-    if existing:
-        return [InsightResponse.model_validate(i, from_attributes=True) for i in existing]
+    return [InsightResponse.model_validate(i, from_attributes=True) for i in existing]
 
-    # No insights generated yet for this user: derive them now from the
-    # latest health score (or a fresh one if none exists) rather than
-    # returning an empty feed on a user's first visit.
+
+@router.post("/generate", response_model=list[InsightResponse])
+async def generate_insights(
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> list[InsightResponse]:
+    """Generate a new insight set only when the user explicitly requests analysis."""
     snapshot = await build_financial_snapshot(db, current_user.id)
     health_repo = FinancialHealthScoreRepository(db)
     latest_score_row = await health_repo.get_latest(current_user.id)
     if latest_score_row is None:
-        return []
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Calculate financial health before generating insights.",
+        )
     score = FinancialHealthScore(
         overall=latest_score_row.overall,
         liquidity=latest_score_row.liquidity,

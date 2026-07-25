@@ -79,10 +79,11 @@ class Account:
     status: AccountStatus = AccountStatus.MANUAL
     updated_at: datetime | None = None
     external_account_id: str | None = None
+    archived_at: datetime | None = None
 
     @property
     def is_liability(self) -> bool:
-        return self.type in (AccountType.CREDIT, AccountType.LOAN) or self.balance < 0
+        return self.type in (AccountType.CREDIT, AccountType.LOAN)
 
 
 @dataclass(slots=True)

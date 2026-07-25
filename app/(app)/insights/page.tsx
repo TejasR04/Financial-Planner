@@ -29,7 +29,8 @@ export default function InsightsPage() {
   async function handleRerun() {
     setRerunning(true);
     try {
-      await Promise.all([api.recommendations.generate(), api.financialHealth.recalculate()]);
+      await api.financialHealth.recalculate();
+      await Promise.all([api.recommendations.generate(), api.insights.generate()]);
       refresh();
     } finally {
       setRerunning(false);

@@ -140,12 +140,14 @@ class PlaidClient:
             "language": "en",
         }
         if update_access_token is None:
-            request_args["products"] = [Products("transactions"), Products("investments")]
+            # Keep first-time linking broadly compatible with everyday U.S.
+            # checking, savings, and credit institutions. Investments can be
+            # enabled as a separate consented product later when needed.
+            request_args["products"] = [Products("transactions")]
         else:
-            # Existing Items need update mode to grant a newly requested
-            # product under Plaid's Data Transparency Messaging rules.
+            # Credential-repair update mode keeps the access token and does
+            # not need to request a new product consent.
             request_args["access_token"] = update_access_token
-            request_args["additional_consented_products"] = [Products("investments")]
         request = LinkTokenCreateRequest(**request_args)
         try:
             response = await asyncio.to_thread(self._client.link_token_create, request)

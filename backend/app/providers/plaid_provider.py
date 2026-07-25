@@ -171,13 +171,35 @@ class PlaidProvider(FinancialDataProvider):
                 )
         return results
 
+    async def refresh_institution(self, user_id: UUID, institution_id: UUID) -> PlaidRefreshResult:
+        """Refresh one linked Item after verifying ownership and serializing
+        cursor updates for that Item."""
+        institution = await self._institutions.get_for_user(user_id, institution_id)
+        if institution.provider.value != "plaid":
+            raise ProviderError("Only Plaid institutions can be synced")
+        try:
+            async with self.session.begin_nested():
+                return await self._refresh_institution(user_id, institution)
+        except ProviderError:
+            await self._institutions.mark_sync_error(institution_id)
+            raise
+
     async def _refresh_institution(self, user_id: UUID, institution: Institution) -> PlaidRefreshResult:
+        # Lock the Item row before reading or advancing its transaction
+        # cursor. This prevents concurrent browser sessions from applying
+        # overlapping patches out of order.
+        institution = await self._institutions.lock_for_sync(user_id, institution.id)
         access_token = await self._institutions.get_decrypted_access_token(institution.id)
         raw_accounts = await self._client.get_accounts(access_token)
         for raw_account in raw_accounts:
             await self._accounts.upsert_from_plaid(
                 user_id, _to_account_entity(user_id, institution.id, raw_account)
             )
+        await self._accounts.archive_missing_from_plaid(
+            user_id,
+            institution.id,
+            [account.external_account_id for account in raw_accounts],
+        )
 
         cursor = await self._institutions.get_sync_cursor(institution.id)
         transaction_patch = await self._client.sync_transactions(access_token, cursor)
@@ -191,18 +213,24 @@ class PlaidProvider(FinancialDataProvider):
             transactions, transaction_patch.removed_external_transaction_ids
         )
 
-        holding_account_external_ids, raw_holdings = await self._client.get_holdings(access_token)
-        holding_account_ids = [
-            account_map[external_id]
-            for external_id in holding_account_external_ids
-            if external_id in account_map
-        ]
-        holdings = [
-            _to_holding_entity(raw, account_map[raw.external_account_id])
-            for raw in raw_holdings
-            if raw.external_account_id in account_map
-        ]
-        saved_holdings = await self._holdings.replace_for_accounts(holding_account_ids, holdings)
+        # Investment holdings are optional for a Transactions-linked Item.
+        # A bank without Investments support must still sync balances and
+        # transactions successfully.
+        try:
+            holding_account_external_ids, raw_holdings = await self._client.get_holdings(access_token)
+            holding_account_ids = [
+                account_map[external_id]
+                for external_id in holding_account_external_ids
+                if external_id in account_map
+            ]
+            holdings = [
+                _to_holding_entity(raw, account_map[raw.external_account_id])
+                for raw in raw_holdings
+                if raw.external_account_id in account_map
+            ]
+            saved_holdings = await self._holdings.replace_for_accounts(holding_account_ids, holdings)
+        except ProviderError:
+            saved_holdings = []
         await self._institutions.mark_sync_success(institution.id, transaction_patch.next_cursor)
         return PlaidRefreshResult(
             institution_id=institution.id,
@@ -224,9 +252,7 @@ class PlaidProvider(FinancialDataProvider):
         return await self._transactions.list_since_for_income_expense(user_id, since)
 
     async def get_holdings(self, user_id: UUID, account_id: UUID) -> list[Holding]:
-        account = await self._accounts.get_by_id(account_id)
-        if account.user_id != user_id:
-            raise ProviderError("Account does not belong to the authenticated user")
+        await self._accounts.get_for_user(user_id, account_id)
         await self.refresh(user_id)
         return await self._holdings.list_for_account(account_id)
 
@@ -240,6 +266,8 @@ class PlaidProvider(FinancialDataProvider):
 
 
 def _to_account_entity(user_id: UUID, institution_id: UUID, raw: RawPlaidAccount) -> Account:
+    if raw.currency != "USD":
+        raise ProviderError("Meridian currently supports U.S. dollar accounts only")
     account_type = _map_account_type(raw)
     return Account(
         id=uuid4(),

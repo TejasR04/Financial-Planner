@@ -81,6 +81,8 @@ export type Account = {
   // (manual accounts have none), so this is optional rather than a
   // guessed placeholder.
   institution?: string;
+  institutionId?: string;
+  institutionStatus?: "healthy" | "action_required" | "error";
   type:
     | "Investment"
     | "Depository"
@@ -98,13 +100,24 @@ export type Account = {
   updated: string;
 };
 
+export type Institution = {
+  id: string;
+  name: string;
+  provider: "plaid" | "manual" | "csv";
+  status: "healthy" | "action_required" | "error";
+  lastSyncedAt: string | null;
+  accountCount: number;
+};
+
 export type Transaction = {
   id: string;
+  postedAt: string;
   date: string;
   merchant: string;
   category: string;
   account: string;
   amount: number;
+  type: "income" | "expense" | "transfer" | "contribution";
   status: "cleared" | "pending";
 };
 
@@ -164,6 +177,7 @@ export type Insight = {
   kind: "observation" | "alert" | "opportunity";
   text: string;
   meta: string;
+  generatedAt: string | null;
 };
 
 export type FinancialHealth = {

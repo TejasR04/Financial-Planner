@@ -5,6 +5,7 @@ import {
   AreaChart,
   CartesianGrid,
   ResponsiveContainer,
+  ReferenceLine,
   Tooltip,
   XAxis,
   YAxis,
@@ -60,6 +61,22 @@ export function NetWorthChart() {
             fill="url(#nw-net)"
             dot={false}
             activeDot={{ r: 3, strokeWidth: 0 }}
+          />
+          <Area
+            type="monotone"
+            dataKey="liabilities"
+            name="Liabilities"
+            stroke="var(--chart-4)"
+            strokeWidth={1.25}
+            strokeDasharray="3 3"
+            fill="none"
+            dot={false}
+          />
+          <ReferenceLine
+            x="Today"
+            stroke="var(--muted-foreground)"
+            strokeDasharray="3 3"
+            label={{ value: "Projection starts", position: "insideTopLeft", fill: "var(--muted-foreground)", fontSize: 10 }}
           />
           <Area
             type="monotone"

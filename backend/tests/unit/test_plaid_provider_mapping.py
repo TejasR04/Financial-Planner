@@ -7,6 +7,9 @@ from decimal import Decimal
 from types import SimpleNamespace
 from uuid import uuid4
 
+import pytest
+
+from app.core.exceptions import ProviderError
 from app.domain.enums import AccountType, AssetClass, TransactionStatus, TransactionType
 from app.providers.plaid_client import (
     RawPlaidAccount,
@@ -18,6 +21,7 @@ from app.providers.plaid_provider import (
     _map_account_type,
     _map_asset_class,
     _map_balance,
+    _to_account_entity,
     _to_holding_entity,
     _to_transaction_entity,
 )
@@ -76,6 +80,14 @@ def test_missing_balance_defaults_to_zero():
     raw = _raw("depository", "checking", None)
     account_type = _map_account_type(raw)
     assert _map_balance(raw, account_type) == Decimal("0")
+
+
+def test_non_usd_account_is_rejected():
+    raw = _raw("depository", "checking", Decimal("1500.00"))
+    raw.currency = "CAD"
+
+    with pytest.raises(ProviderError, match="U.S. dollar"):
+        _to_account_entity(uuid4(), uuid4(), raw)
 
 
 def test_plaid_outflow_amount_is_inverted_for_normalized_cash_flow():

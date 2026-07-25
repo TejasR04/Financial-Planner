@@ -57,6 +57,13 @@ export function TransactionsTable() {
               </td>
             </tr>
           ))}
+          {transactions.length === 0 && (
+            <tr>
+              <td colSpan={5} className="px-4 py-10 text-center text-sm text-muted-foreground">
+                No transactions have been synced in the last 12 months.
+              </td>
+            </tr>
+          )}
         </tbody>
       </table>
     </div>

@@ -9,6 +9,14 @@ export function AllocationChart() {
   const allocation = useAllocation();
   const total = allocation.reduce((s, a) => s + a.amount, 0);
 
+  if (allocation.length === 0) {
+    return (
+      <p className="flex h-[180px] items-center justify-center px-4 text-center text-[13px] text-muted-foreground">
+        Investment holdings will appear here after an account with positions is synced.
+      </p>
+    );
+  }
+
   return (
     <div className="flex items-center gap-4 p-4">
       <div className="relative h-[148px] w-[148px] shrink-0">

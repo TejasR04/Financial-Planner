@@ -1,5 +1,6 @@
 from datetime import date
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict
@@ -11,13 +12,13 @@ class UserResponse(BaseModel):
     id: UUID
     email: str
     full_name: str
-    base_currency: str
+    base_currency: Literal["USD"]
     date_of_birth: date | None
 
 
 class UserUpdateRequest(BaseModel):
     full_name: str | None = None
-    base_currency: str | None = None
+    base_currency: Literal["USD"] | None = None
     date_of_birth: date | None = None
 
 

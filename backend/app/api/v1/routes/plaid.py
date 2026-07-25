@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
 from app.core.config import get_settings
+from app.core.exceptions import ProviderError
 from app.domain.entities import User
 from app.persistence.repositories.account_repository import AccountRepository
 from app.providers.plaid_provider import PlaidProvider
@@ -62,6 +63,15 @@ async def exchange_public_token(
     saved_accounts = [
         await account_repo.upsert_from_plaid(current_user.id, account) for account in result.accounts
     ]
+    await db.commit()
+
+    # A U.S. institution may take a moment to make Transactions available
+    # after Link. Keep the successful account link, but immediately attempt
+    # the first complete sync and retain any actionable sync error.
+    try:
+        await provider.refresh_institution(current_user.id, result.institution.id)
+    except ProviderError:
+        pass
     await db.commit()
 
     return PlaidExchangePublicTokenResponse(

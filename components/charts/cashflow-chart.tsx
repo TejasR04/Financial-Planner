@@ -11,15 +11,16 @@ import {
 } from "recharts";
 import { formatCurrency } from "@/lib/data";
 import { useCashflowSeries } from "@/lib/data-provider";
+import type { CashflowPoint } from "@/lib/data";
 import { ChartTooltip } from "./chart-tooltip";
 
-export function CashflowChart() {
+export function CashflowChart({ data }: { data?: CashflowPoint[] }) {
   const cashflowSeries = useCashflowSeries();
   return (
     <div className="h-[220px] w-full px-2 pb-2 pt-4">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart
-          data={cashflowSeries}
+          data={data ?? cashflowSeries}
           margin={{ top: 4, right: 12, left: 4, bottom: 0 }}
           barGap={4}
         >

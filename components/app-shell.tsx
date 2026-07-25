@@ -5,10 +5,12 @@ import { ThemeProvider } from "@/components/theme-provider";
 import { Sidebar } from "@/components/sidebar";
 import { Topbar } from "@/components/topbar";
 import { CommandPalette } from "@/components/command-palette";
+import { useDataError } from "@/lib/data-provider";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
+  const dataError = useDataError();
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -30,7 +32,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         />
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar onOpenCommand={() => setCommandOpen(true)} />
-          <main className="flex-1 overflow-y-auto">{children}</main>
+          <main className="flex-1 overflow-y-auto">
+            {dataError && (
+              <div role="alert" className="border-b border-warning/30 bg-warning/10 px-5 py-2 text-xs text-foreground">
+                {dataError}
+              </div>
+            )}
+            {children}
+          </main>
         </div>
       </div>
       <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />

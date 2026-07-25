@@ -18,7 +18,6 @@ export default function OnboardingPage() {
   const [error, setError] = useState<string | null>(null);
 
   const [fullName, setFullName] = useState("");
-  const [baseCurrency, setBaseCurrency] = useState("USD");
   const [dob, setDob] = useState("");
   const [retirementAge, setRetirementAge] = useState(65);
   const [equityAllocation, setEquityAllocation] = useState(60);
@@ -41,7 +40,6 @@ export default function OnboardingPage() {
         ]);
         if (cancelled) return;
         setFullName(user.full_name);
-        setBaseCurrency(user.base_currency);
         setDob(user.date_of_birth ?? "");
         setRetirementAge(profile.target_retirement_age);
         setEquityAllocation(Math.round(parseFloat(profile.target_equity_allocation) * 100));
@@ -64,7 +62,7 @@ export default function OnboardingPage() {
       await Promise.all([
         api.users.updateMe({
           full_name: fullName,
-          base_currency: baseCurrency,
+          base_currency: "USD",
           date_of_birth: dob || undefined,
         }),
         api.users.updatePlanningProfile({
@@ -133,15 +131,11 @@ export default function OnboardingPage() {
                 </div>
                 <div>
                   <label className="text-[13px] text-foreground">Base currency</label>
-                  <select
+                  <input
                     className={`${inputClass} mt-1.5`}
-                    value={baseCurrency}
-                    onChange={(e) => setBaseCurrency(e.target.value)}
-                  >
-                    <option value="USD">USD — US Dollar</option>
-                    <option value="EUR">EUR — Euro</option>
-                    <option value="GBP">GBP — British Pound</option>
-                  </select>
+                    value="USD — US Dollar"
+                    disabled
+                  />
                 </div>
               </div>
             </div>

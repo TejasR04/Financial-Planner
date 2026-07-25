@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { useRouter } from "next/navigation";
 import { Check } from "lucide-react";
 import { Panel, PanelHeader } from "@/components/panel";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 import { api } from "@/lib/api-client";
-import { useAccountsData, useDataRefresh, useUserAccount } from "@/lib/data-provider";
+import { useAccountsData, useDataRefresh, useInstitutionsData, useUserAccount } from "@/lib/data-provider";
 
 const sections = [
   { id: "profile", label: "Profile" },
@@ -72,11 +73,12 @@ export function SettingsForms() {
   const [tab, setTab] = useState("profile");
   const userAccount = useUserAccount();
   const accounts = useAccountsData();
+  const institutions = useInstitutionsData();
   const refresh = useDataRefresh();
+  const router = useRouter();
 
   // --- Profile tab ---------------------------------------------------
   const [fullName, setFullName] = useState("");
-  const [baseCurrency, setBaseCurrency] = useState("USD");
   const [dob, setDob] = useState("");
   const [profileSaving, setProfileSaving] = useState(false);
   const [profileSaved, setProfileSaved] = useState(false);
@@ -84,7 +86,6 @@ export function SettingsForms() {
   useEffect(() => {
     if (!userAccount) return;
     setFullName(userAccount.fullName);
-    setBaseCurrency(userAccount.baseCurrency);
     setDob(userAccount.dateOfBirth ?? "");
   }, [userAccount]);
 
@@ -94,7 +95,7 @@ export function SettingsForms() {
     try {
       await api.users.updateMe({
         full_name: fullName,
-        base_currency: baseCurrency,
+        base_currency: "USD",
         date_of_birth: dob || undefined,
       });
       refresh();
@@ -137,17 +138,7 @@ export function SettingsForms() {
     }
   }
 
-  // --- Institutions tab: derived from real linked accounts --------------
-  const institutionGroups = Array.from(
-    accounts.reduce((map, a) => {
-      const key = a.institution ?? "Manually added";
-      const entry = map.get(key) ?? { count: 0, attention: 0 };
-      entry.count += 1;
-      if (a.status === "attention") entry.attention += 1;
-      map.set(key, entry);
-      return map;
-    }, new Map<string, { count: number; attention: number }>()),
-  );
+  const manualCount = accounts.filter((account) => !account.institutionId).length;
 
   return (
     <div className="grid grid-cols-1 gap-6 lg:grid-cols-[180px_1fr]">
@@ -194,15 +185,11 @@ export function SettingsForms() {
                 />
               </Field>
               <Field label="Base currency">
-                <select
+                <input
                   className={inputClass}
-                  value={baseCurrency}
-                  onChange={(e) => setBaseCurrency(e.target.value)}
-                >
-                  <option value="USD">USD — US Dollar</option>
-                  <option value="EUR">EUR — Euro</option>
-                  <option value="GBP">GBP — British Pound</option>
-                </select>
+                  value="USD — US Dollar"
+                  disabled
+                />
               </Field>
               <Field label="Date of birth" hint="Drives retirement horizon">
                 <input
@@ -283,31 +270,31 @@ export function SettingsForms() {
           <Panel>
             <PanelHeader
               title="Connected institutions"
-              description="Derived from your linked accounts"
+              description="Manage each distinct linked U.S. institution"
             />
-            {institutionGroups.length === 0 ? (
+            {institutions.length === 0 ? (
               <p className="px-4 py-6 text-center text-[13px] text-muted-foreground">
-                No institutions linked yet.
+                No institutions linked yet. {manualCount ? `${manualCount} manual account${manualCount === 1 ? " is" : "s are"} managed from Accounts.` : ""}
               </p>
             ) : (
               <ul className="divide-y divide-border">
-                {institutionGroups.map(([name, info]) => {
-                  const ok = info.attention === 0;
+                {institutions.map((institution) => {
+                  const ok = institution.status === "healthy";
                   return (
                     <li
-                      key={name}
+                      key={institution.id}
                       className="flex items-center justify-between gap-3 px-4 py-3"
                     >
                       <div className="flex items-center gap-2.5">
                         <span className="flex size-7 items-center justify-center rounded-md border border-border bg-muted/50 font-mono text-[11px] font-semibold text-muted-foreground">
-                          {name.slice(0, 2).toUpperCase()}
+                          {institution.name.slice(0, 2).toUpperCase()}
                         </span>
                         <div>
                           <p className="text-[13px] font-medium text-foreground">
-                            {name}
+                            {institution.name}
                           </p>
                           <p className="text-[11px] text-muted-foreground">
-                            {info.count} account{info.count > 1 ? "s" : ""}
+                            {institution.accountCount} account{institution.accountCount !== 1 ? "s" : ""}
                           </p>
                         </div>
                       </div>
@@ -324,9 +311,9 @@ export function SettingsForms() {
                               ok ? "bg-positive" : "bg-warning",
                             )}
                           />
-                          {ok ? "Healthy" : "Action required"}
+                          {ok ? "Healthy" : institution.status === "error" ? "Sync failed" : "Action required"}
                         </span>
-                        <Button variant="outline" size="xs">
+                        <Button variant="outline" size="xs" onClick={() => router.push(`/accounts?institution=${institution.id}`)}>
                           Manage
                         </Button>
                       </div>

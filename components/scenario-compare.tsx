@@ -52,7 +52,7 @@ export function ScenarioCompare({
       setActive(scenarios.map((s) => s.id));
       setDuplicateSourceId((prev) => (scenarios.some((s) => s.id === prev) ? prev : scenarios[0].id));
     }
-  }, [scenarios.length]);
+  }, [scenarios]);
 
   const handleDuplicate = async () => {
     if (!duplicateSourceId) return;

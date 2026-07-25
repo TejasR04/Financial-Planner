@@ -7,6 +7,7 @@ import {
   CornerDownLeft,
   LayoutDashboard,
   Wallet,
+  ReceiptText,
   TrendingUp,
   Sparkles,
   Settings,
@@ -60,6 +61,13 @@ export function CommandPalette({
         group: "Navigation",
         icon: Wallet,
         run: go("/accounts"),
+      },
+      {
+        id: "nav-transactions",
+        label: "Go to Transactions",
+        group: "Navigation",
+        icon: ReceiptText,
+        run: go("/transactions"),
       },
       {
         id: "nav-projections",

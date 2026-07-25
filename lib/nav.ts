@@ -1,6 +1,7 @@
 import {
   LayoutDashboard,
   Wallet,
+  ReceiptText,
   TrendingUp,
   Sparkles,
   Settings,
@@ -25,6 +26,7 @@ export const navGroups: NavGroup[] = [
     items: [
       { label: "Overview", href: "/", icon: LayoutDashboard, shortcut: "G O" },
       { label: "Accounts", href: "/accounts", icon: Wallet, shortcut: "G A" },
+      { label: "Transactions", href: "/transactions", icon: ReceiptText, shortcut: "G T" },
       {
         label: "Projections",
         href: "/projections",

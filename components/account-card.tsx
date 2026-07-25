@@ -33,7 +33,7 @@ const statusBadge: Record<
   manual: { label: "Manual", variant: "outline" },
 };
 
-export function AccountCard({ account }: { account: Account }) {
+export function AccountCard({ account, actions }: { account: Account; actions?: React.ReactNode }) {
   const Icon = typeIcon[account.type];
   const negative = account.balance < 0;
   const badge = statusBadge[account.status];
@@ -55,7 +55,10 @@ export function AccountCard({ account }: { account: Account }) {
             </p>
           </div>
         </div>
-        <Badge variant={badge.variant}>{badge.label}</Badge>
+        <div className="flex items-center gap-1.5">
+          <Badge variant={badge.variant}>{badge.label}</Badge>
+          {actions}
+        </div>
       </div>
 
       <div className="mt-3.5 flex items-end justify-between">
@@ -84,7 +87,7 @@ export function AccountCard({ account }: { account: Account }) {
                 {formatPercent(Math.abs(account.change))}
               </span>
             )}
-            <span className="text-muted-foreground">· {account.updated}</span>
+            <span className="text-muted-foreground">· {account.institutionId ? "Synced" : "Updated"} {account.updated}</span>
           </div>
         </div>
         {account.apy != null && (

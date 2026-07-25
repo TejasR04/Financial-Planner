@@ -1,6 +1,8 @@
 "use client";
 
-import { Download, Filter } from "lucide-react";
+import { Download } from "lucide-react";
+import { useRouter } from "next/navigation";
+import { useMemo, useState } from "react";
 import { PageContainer, PageHeader } from "@/components/page-container";
 import { Panel, PanelHeader } from "@/components/panel";
 import { KpiCard } from "@/components/kpi-card";
@@ -12,12 +14,44 @@ import { Timeline } from "@/components/timeline";
 import { AiInsights } from "@/components/ai-insights";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { useAccountsData, useAllocationMeta, useKpis } from "@/lib/data-provider";
+import { useAccountsData, useAllocationMeta, useCashflowSeries, useKpis, useTransactionsData } from "@/lib/data-provider";
 
 export default function OverviewPage() {
+  const router = useRouter();
   const kpis = useKpis();
   const accounts = useAccountsData();
   const allocationMeta = useAllocationMeta();
+  const cashflowSeries = useCashflowSeries();
+  const transactions = useTransactionsData();
+  const [periodMonths, setPeriodMonths] = useState<6 | 12>(12);
+  const visibleCashflow = useMemo(() => cashflowSeries.slice(-periodMonths), [cashflowSeries, periodMonths]);
+
+  const exportTransactions = () => {
+    const cutoff = new Date();
+    cutoff.setMonth(cutoff.getMonth() - (periodMonths - 1), 1);
+    const rows = transactions
+      .filter((transaction) => new Date(`${transaction.postedAt}T00:00:00`) >= cutoff)
+      .map((transaction) => [
+        transaction.postedAt,
+        transaction.merchant,
+        transaction.category,
+        transaction.account,
+        transaction.type,
+        transaction.status,
+        transaction.amount.toString(),
+      ]);
+    const escape = (value: string) => `"${value.replaceAll('"', '""')}"`;
+    const csv = [
+      ["Date", "Merchant", "Category", "Account", "Type", "Status", "Amount"],
+      ...rows,
+    ].map((row) => row.map(escape).join(",")).join("\n");
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `meridian-transactions-last-${periodMonths}-months.csv`;
+    link.click();
+    URL.revokeObjectURL(url);
+  };
 
   return (
     <PageContainer>
@@ -26,13 +60,20 @@ export default function OverviewPage() {
         description={`Consolidated position across ${accounts.length} linked account${accounts.length === 1 ? "" : "s"}`}
         actions={
           <>
-            <Button variant="outline" size="sm">
-              <Filter />
-              Last 12 months
-            </Button>
-            <Button variant="outline" size="sm">
+            <label className="flex h-7 items-center gap-1 rounded-md border border-border bg-background px-2 text-[0.8rem] text-foreground">
+              <span className="sr-only">Cash-flow period</span>
+              <select
+                value={periodMonths}
+                onChange={(event) => setPeriodMonths(Number(event.target.value) as 6 | 12)}
+                className="bg-transparent outline-none"
+              >
+                <option value={6}>Last 6 months</option>
+                <option value={12}>Last 12 months</option>
+              </select>
+            </label>
+            <Button variant="outline" size="sm" onClick={exportTransactions}>
               <Download />
-              Export
+              Export CSV
             </Button>
           </>
         }
@@ -60,6 +101,10 @@ export default function OverviewPage() {
                 <span className="flex items-center gap-1.5 text-muted-foreground">
                   <span className="size-2 rounded-[2px] bg-chart-2" />
                   Assets
+                </span>
+                <span className="flex items-center gap-1.5 text-muted-foreground">
+                  <span className="size-2 rounded-[2px] bg-chart-4" />
+                  Liabilities
                 </span>
               </div>
             }
@@ -92,7 +137,7 @@ export default function OverviewPage() {
             title="Recent activity"
             description="Latest transactions across all accounts"
             actions={
-              <Button variant="ghost" size="xs">
+              <Button variant="ghost" size="xs" onClick={() => router.push("/transactions")}>
                 View all
               </Button>
             }
@@ -108,7 +153,7 @@ export default function OverviewPage() {
         <Panel className="xl:col-span-2">
           <PanelHeader
             title="Cash flow"
-            description="Monthly income vs. tracked expenses"
+            description={`Monthly income vs. tracked expenses · last ${periodMonths} months`}
             actions={
               <div className="flex items-center gap-3 text-[11px]">
                 <span className="flex items-center gap-1.5 text-muted-foreground">
@@ -122,7 +167,7 @@ export default function OverviewPage() {
               </div>
             }
           />
-          <CashflowChart />
+          <CashflowChart data={visibleCashflow} />
         </Panel>
 
         <Panel>
