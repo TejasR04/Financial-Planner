@@ -15,6 +15,7 @@ type Props = {
   label?: string;
   className?: string;
   onLinked?: () => void;
+  institutionId?: string;
 } & VariantProps<typeof buttonVariants>;
 
 /**
@@ -26,7 +27,14 @@ type Props = {
  * (single-use, expires in ~30 min). The actual Plaid `access_token` is
  * created and stored server-side and never sent to the browser.
  */
-export function PlaidLinkButton({ label = "Link account", className, onLinked, variant, size }: Props) {
+export function PlaidLinkButton({
+  label = "Link account",
+  className,
+  onLinked,
+  institutionId,
+  variant,
+  size,
+}: Props) {
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -37,7 +45,19 @@ export function PlaidLinkButton({ label = "Link account", className, onLinked, v
       setStatus("linking");
       setErrorMessage(null);
       try {
-        await api.plaid.exchangePublicToken(publicToken);
+        if (institutionId) {
+          // Update-mode Link keeps the existing Item/access token. Its
+          // public token must not be exchanged as though it were a new Item.
+          const syncResult = await api.plaid.refresh();
+          const failedInstitution = syncResult.data.find(
+            (institution) => institution.institution_id === institutionId && institution.error,
+          );
+          if (failedInstitution?.error) {
+            throw new ApiError(502, failedInstitution.error);
+          }
+        } else {
+          await api.plaid.exchangePublicToken(publicToken);
+        }
         refresh();
         onLinked?.();
         setStatus("idle");
@@ -50,7 +70,7 @@ export function PlaidLinkButton({ label = "Link account", className, onLinked, v
         setLinkToken(null);
       }
     },
-    [refresh, onLinked],
+    [institutionId, refresh, onLinked],
   );
 
   const onExit = useCallback(() => {
@@ -77,7 +97,7 @@ export function PlaidLinkButton({ label = "Link account", className, onLinked, v
     setErrorMessage(null);
     setStatus("fetching_token");
     try {
-      const { link_token } = await api.plaid.createLinkToken();
+      const { link_token } = await api.plaid.createLinkToken(institutionId);
       setLinkToken(link_token);
       setStatus("idle");
     } catch (err) {

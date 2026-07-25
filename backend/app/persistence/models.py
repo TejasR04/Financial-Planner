@@ -114,6 +114,9 @@ class HoldingModel(Base):
 
 class TransactionModel(Base):
     __tablename__ = "transactions"
+    __table_args__ = (
+        UniqueConstraint("external_transaction_id", name="uq_transactions_external_transaction_id"),
+    )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     account_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("accounts.id"), index=True)

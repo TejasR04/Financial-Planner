@@ -107,6 +107,22 @@ export type ApiPlaidExchangeResponse = {
   accounts: ApiAccount[];
 };
 
+export type ApiPlaidRefreshInstitution = {
+  institution_id: string;
+  institution_name: string;
+  status: "healthy" | "error";
+  accounts_synced: number;
+  transactions_created: number;
+  transactions_updated: number;
+  transactions_removed: number;
+  holdings_synced: number;
+  error: string | null;
+};
+
+export type ApiPlaidRefreshResponse = {
+  data: ApiPlaidRefreshInstitution[];
+};
+
 export type ApiAccountList = {
   data: ApiAccount[];
   total_assets: string;
@@ -262,9 +278,14 @@ export const api = {
     // Never returns or logs anything token-related — the backend keeps the
     // Plaid access_token server-side (encrypted at rest) and this client
     // only ever sees a short-lived link_token / one-time public_token.
-    createLinkToken: () => post<ApiPlaidLinkToken>("/plaid/link-token"),
+    createLinkToken: (institutionId?: string) =>
+      post<ApiPlaidLinkToken>(
+        "/plaid/link-token",
+        institutionId ? { institution_id: institutionId } : undefined,
+      ),
     exchangePublicToken: (publicToken: string) =>
       post<ApiPlaidExchangeResponse>("/plaid/exchange-public-token", { public_token: publicToken }),
+    refresh: () => post<ApiPlaidRefreshResponse>("/plaid/refresh"),
   },
   transactions: {
     list: (params?: { limit?: number; offset?: number }) => {

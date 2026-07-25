@@ -11,6 +11,15 @@ class PlaidLinkTokenResponse(BaseModel):
     expiration: datetime
 
 
+class PlaidLinkTokenRequest(BaseModel):
+    """Pass an existing institution ID to enter Plaid Link update mode.
+    The backend resolves its encrypted access token after verifying the
+    institution belongs to the authenticated user.
+    """
+
+    institution_id: UUID | None = None
+
+
 class PlaidExchangePublicTokenRequest(BaseModel):
     """`public_token` is short-lived (expires in ~30 minutes) and single-use
     by design on Plaid's side — it can't be replayed to link an item twice.
@@ -33,3 +42,19 @@ class PlaidInstitutionResponse(BaseModel):
 class PlaidExchangePublicTokenResponse(BaseModel):
     institution: PlaidInstitutionResponse
     accounts: list[AccountResponse]
+
+
+class PlaidRefreshInstitutionResponse(BaseModel):
+    institution_id: UUID
+    institution_name: str
+    status: str
+    accounts_synced: int = 0
+    transactions_created: int = 0
+    transactions_updated: int = 0
+    transactions_removed: int = 0
+    holdings_synced: int = 0
+    error: str | None = None
+
+
+class PlaidRefreshResponse(BaseModel):
+    data: list[PlaidRefreshInstitutionResponse]

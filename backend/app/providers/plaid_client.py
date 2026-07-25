@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -32,6 +32,8 @@ from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchan
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
 from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
 from plaid.model.products import Products
+from plaid.model.transactions_sync_request import TransactionsSyncRequest
+from plaid.model.investments_holdings_get_request import InvestmentsHoldingsGetRequest
 
 from app.core.exceptions import ProviderError
 
@@ -67,6 +69,36 @@ class RawPlaidAccount:
     available_balance: Decimal | None
 
 
+@dataclass(slots=True)
+class RawPlaidTransaction:
+    external_transaction_id: str
+    external_account_id: str
+    posted_at: date
+    merchant: str
+    category: str
+    amount: Decimal
+    pending: bool
+
+
+@dataclass(slots=True)
+class RawPlaidHolding:
+    external_account_id: str
+    symbol: str
+    quantity: Decimal
+    cost_basis: Decimal
+    market_value: Decimal
+    security_type: str | None
+    is_cash_equivalent: bool
+    as_of: date
+
+
+@dataclass(slots=True)
+class TransactionsSyncResult:
+    added_or_modified: list[RawPlaidTransaction]
+    removed_external_transaction_ids: list[str]
+    next_cursor: str
+
+
 def _sanitize_error(exc: ApiException) -> str:
     """Plaid's ApiException body can include the request we sent (which
     contains our client_id). Surface only the error_code/error_type Plaid
@@ -96,14 +128,25 @@ class PlaidClient:
         api_client = plaid.ApiClient(configuration)
         self._client = plaid_api.PlaidApi(api_client)
 
-    async def create_link_token(self, user_id: UUID) -> LinkTokenResult:
-        request = LinkTokenCreateRequest(
-            user=LinkTokenCreateRequestUser(client_user_id=str(user_id)),
-            client_name="Meridian",
-            products=[Products("transactions")],
-            country_codes=[CountryCode("US")],
-            language="en",
-        )
+    async def create_link_token(
+        self,
+        user_id: UUID,
+        update_access_token: str | None = None,
+    ) -> LinkTokenResult:
+        request_args = {
+            "user": LinkTokenCreateRequestUser(client_user_id=str(user_id)),
+            "client_name": "Meridian",
+            "country_codes": [CountryCode("US")],
+            "language": "en",
+        }
+        if update_access_token is None:
+            request_args["products"] = [Products("transactions"), Products("investments")]
+        else:
+            # Existing Items need update mode to grant a newly requested
+            # product under Plaid's Data Transparency Messaging rules.
+            request_args["access_token"] = update_access_token
+            request_args["additional_consented_products"] = [Products("investments")]
+        request = LinkTokenCreateRequest(**request_args)
         try:
             response = await asyncio.to_thread(self._client.link_token_create, request)
         except ApiException as exc:
@@ -162,3 +205,81 @@ class PlaidClient:
                 )
             )
         return accounts
+
+    async def sync_transactions(self, access_token: str, cursor: str | None) -> TransactionsSyncResult:
+        """Read every page of a Plaid transaction patch set before the
+        caller persists the cursor. Persisting a partial cursor would lose
+        changes when Plaid returns multiple pages.
+        """
+        current_cursor = cursor
+        added_or_modified: list[RawPlaidTransaction] = []
+        removed_external_transaction_ids: list[str] = []
+        while True:
+            # The Plaid SDK validates optional fields at construction time.
+            # Omit cursor entirely for an initial sync; passing None raises a
+            # local ApiTypeError before any request reaches Plaid.
+            if current_cursor is None:
+                request = TransactionsSyncRequest(access_token=access_token, count=500)
+            else:
+                request = TransactionsSyncRequest(
+                    access_token=access_token,
+                    cursor=current_cursor,
+                    count=500,
+                )
+            try:
+                response = await asyncio.to_thread(self._client.transactions_sync, request)
+            except ApiException as exc:
+                raise ProviderError(_sanitize_error(exc)) from exc
+
+            added_or_modified.extend(_to_raw_transaction(transaction) for transaction in response.added)
+            added_or_modified.extend(_to_raw_transaction(transaction) for transaction in response.modified)
+            removed_external_transaction_ids.extend(transaction.transaction_id for transaction in response.removed)
+            current_cursor = response.next_cursor
+            if not response.has_more:
+                return TransactionsSyncResult(
+                    added_or_modified=added_or_modified,
+                    removed_external_transaction_ids=removed_external_transaction_ids,
+                    next_cursor=current_cursor,
+                )
+
+    async def get_holdings(self, access_token: str) -> tuple[list[str], list[RawPlaidHolding]]:
+        request = InvestmentsHoldingsGetRequest(access_token=access_token)
+        try:
+            response = await asyncio.to_thread(self._client.investments_holdings_get, request)
+        except ApiException as exc:
+            raise ProviderError(_sanitize_error(exc)) from exc
+
+        securities = {security.security_id: security for security in response.securities}
+        as_of = date.today()
+        holdings: list[RawPlaidHolding] = []
+        for holding in response.holdings:
+            security = securities.get(holding.security_id)
+            symbol = (security.ticker_symbol if security else None) or (security.name if security else None) or "UNKNOWN"
+            holdings.append(
+                RawPlaidHolding(
+                    external_account_id=holding.account_id,
+                    symbol=symbol[:20],
+                    quantity=Decimal(str(holding.quantity)),
+                    cost_basis=Decimal(str(holding.cost_basis or 0)),
+                    market_value=Decimal(str(holding.institution_value)),
+                    security_type=str(security.type) if security and security.type else None,
+                    is_cash_equivalent=bool(security and security.is_cash_equivalent),
+                    as_of=holding.institution_price_as_of or as_of,
+                )
+            )
+        return [account.account_id for account in response.accounts], holdings
+
+
+def _to_raw_transaction(transaction) -> RawPlaidTransaction:
+    category = transaction.personal_finance_category.primary if transaction.personal_finance_category else None
+    return RawPlaidTransaction(
+        external_transaction_id=transaction.transaction_id,
+        external_account_id=transaction.account_id,
+        posted_at=transaction.date,
+        merchant=transaction.merchant_name or transaction.name,
+        category=category or "Uncategorized",
+        # Plaid uses the inverse cash-flow sign from the app's normalized
+        # convention: positive is money out, negative is money in.
+        amount=-Decimal(str(transaction.amount)),
+        pending=transaction.pending,
+    )

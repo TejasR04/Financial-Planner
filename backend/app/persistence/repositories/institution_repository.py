@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
@@ -31,6 +32,32 @@ class InstitutionRepository(BaseRepository[InstitutionModel]):
         query = select(InstitutionModel).where(InstitutionModel.external_item_id == external_item_id)
         result = await self.session.execute(query)
         return result.scalar_one_or_none()
+
+    async def list_plaid_for_user(self, user_id: UUID) -> list[Institution]:
+        query = select(InstitutionModel).where(
+            InstitutionModel.user_id == user_id,
+            InstitutionModel.provider == ProviderType.PLAID.value,
+        )
+        result = await self.session.execute(query.order_by(InstitutionModel.name))
+        return [_to_domain(row) for row in result.scalars().all()]
+
+    async def get_sync_cursor(self, institution_id: UUID) -> str | None:
+        row = await self._get_or_raise("Institution", institution_id)
+        return row.plaid_sync_cursor
+
+    async def mark_sync_success(self, institution_id: UUID, cursor: str | None) -> Institution:
+        row = await self._get_or_raise("Institution", institution_id)
+        row.plaid_sync_cursor = cursor
+        row.status = InstitutionStatus.HEALTHY.value
+        row.last_synced_at = datetime.now(timezone.utc)
+        await self.session.flush()
+        return _to_domain(row)
+
+    async def mark_sync_error(self, institution_id: UUID) -> Institution:
+        row = await self._get_or_raise("Institution", institution_id)
+        row.status = InstitutionStatus.ERROR.value
+        await self.session.flush()
+        return _to_domain(row)
 
     async def create_from_plaid(
         self,
@@ -70,6 +97,24 @@ class InstitutionRepository(BaseRepository[InstitutionModel]):
         row = await self._get_or_raise("Institution", institution_id)
         if row.plaid_access_token_encrypted is None:
             raise ValueError(f"Institution {institution_id} has no stored Plaid access token")
+        return decrypt_secret(row.plaid_access_token_encrypted)
+
+    async def get_decrypted_access_token_for_user(self, institution_id: UUID, user_id: UUID) -> str:
+        """Return an Item token only after confirming it belongs to the
+        authenticated user. This is used solely to mint a Link update-mode
+        token; the plaintext access token never leaves the backend.
+        """
+        query = select(InstitutionModel).where(
+            InstitutionModel.id == institution_id,
+            InstitutionModel.user_id == user_id,
+            InstitutionModel.provider == ProviderType.PLAID.value,
+        )
+        result = await self.session.execute(query)
+        row = result.scalar_one_or_none()
+        if row is None:
+            raise ProviderError("Linked institution was not found")
+        if row.plaid_access_token_encrypted is None:
+            raise ProviderError("Linked institution cannot be reconnected")
         return decrypt_secret(row.plaid_access_token_encrypted)
 
 

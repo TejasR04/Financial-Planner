@@ -107,6 +107,7 @@ class Transaction:
     amount: Decimal
     type: TransactionType
     status: TransactionStatus = TransactionStatus.CLEARED
+    external_transaction_id: str | None = None
 
 
 @dataclass(slots=True)

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
@@ -71,6 +72,11 @@ class AccountRepository(BaseRepository[AccountModel]):
             existing.balance = account.balance
             existing.status = account.status.value
             existing.institution_id = account.institution_id
+            # A successful Plaid read is meaningful even when the balance is
+            # unchanged. The UI uses updated_at as its last-sync timestamp,
+            # so force a write rather than relying on SQLAlchemy dirty
+            # checking to notice a balance change.
+            existing.updated_at = datetime.now(timezone.utc)
             await self.session.flush()
             return _to_domain(existing)
 

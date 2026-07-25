@@ -21,7 +21,10 @@ from app.schemas.plaid import (
     PlaidExchangePublicTokenRequest,
     PlaidExchangePublicTokenResponse,
     PlaidInstitutionResponse,
+    PlaidLinkTokenRequest,
     PlaidLinkTokenResponse,
+    PlaidRefreshInstitutionResponse,
+    PlaidRefreshResponse,
 )
 
 router = APIRouter(prefix="/plaid", tags=["plaid"])
@@ -34,11 +37,15 @@ def _get_provider(db: AsyncSession) -> PlaidProvider:
 
 @router.post("/link-token", response_model=PlaidLinkTokenResponse)
 async def create_link_token(
+    body: PlaidLinkTokenRequest | None = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> PlaidLinkTokenResponse:
     provider = _get_provider(db)
-    result = await provider.create_link_token(current_user.id)
+    result = await provider.create_link_token(
+        current_user.id,
+        institution_id=body.institution_id if body else None,
+    )
     return PlaidLinkTokenResponse(link_token=result.link_token, expiration=result.expiration)
 
 
@@ -60,4 +67,36 @@ async def exchange_public_token(
     return PlaidExchangePublicTokenResponse(
         institution=PlaidInstitutionResponse.model_validate(result.institution, from_attributes=True),
         accounts=[AccountResponse.model_validate(a, from_attributes=True) for a in saved_accounts],
+    )
+
+
+@router.post("/refresh", response_model=PlaidRefreshResponse)
+async def refresh_plaid_data(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> PlaidRefreshResponse:
+    """Synchronize all of the current user's linked Plaid Items.
+
+    A failure in one institution does not discard successful updates from
+    another. The per-institution result lets the frontend surface an
+    actionable reconnect/error state without guessing which Item failed.
+    """
+    provider = _get_provider(db)
+    results = await provider.refresh(current_user.id)
+    await db.commit()
+    return PlaidRefreshResponse(
+        data=[
+            PlaidRefreshInstitutionResponse(
+                institution_id=result.institution_id,
+                institution_name=result.institution_name,
+                status=result.status,
+                accounts_synced=result.accounts_synced,
+                transactions_created=result.transactions_created,
+                transactions_updated=result.transactions_updated,
+                transactions_removed=result.transactions_removed,
+                holdings_synced=result.holdings_synced,
+                error=result.error,
+            )
+            for result in results
+        ]
     )

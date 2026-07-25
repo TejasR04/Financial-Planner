@@ -1,5 +1,6 @@
 "use client";
 
+import { useCallback, useEffect, useRef, useState } from "react";
 import { RefreshCw } from "lucide-react";
 import { PageContainer, PageHeader } from "@/components/page-container";
 import { Panel, PanelHeader } from "@/components/panel";
@@ -7,10 +8,88 @@ import { AccountCard } from "@/components/account-card";
 import { Button } from "@/components/ui/button";
 import { PlaidLinkButton } from "@/components/plaid-link-button";
 import { formatCurrency } from "@/lib/data";
-import { useAccountsData } from "@/lib/data-provider";
+import { ApiError, api } from "@/lib/api-client";
+import { useAccountsData, useDataRefresh } from "@/lib/data-provider";
+
+type SyncFeedback =
+  | {
+      tone: "success" | "error";
+      message: string;
+      reconnectInstitution?: { id: string; name: string };
+    }
+  | null;
+
+// Development Strict Mode and a quick click can overlap page effects. Keep
+// one browser-wide Plaid refresh in flight so both triggers await the same
+// response instead of racing the cursor-based backend sync.
+let activePlaidRefresh: ReturnType<typeof api.plaid.refresh> | null = null;
+
+function requestPlaidRefresh() {
+  if (activePlaidRefresh === null) {
+    activePlaidRefresh = api.plaid.refresh().finally(() => {
+      activePlaidRefresh = null;
+    });
+  }
+  return activePlaidRefresh;
+}
 
 export default function AccountsPage() {
   const accounts = useAccountsData();
+  const refreshData = useDataRefresh();
+  const [syncing, setSyncing] = useState(false);
+  const [syncFeedback, setSyncFeedback] = useState<SyncFeedback>(null);
+  const hasAutoSynced = useRef(false);
+
+  const syncAll = useCallback(async () => {
+    setSyncing(true);
+    setSyncFeedback(null);
+    try {
+      const result = await requestPlaidRefresh();
+      refreshData();
+
+      const failures = result.data.filter((institution) => institution.error);
+      const syncedAccounts = result.data.reduce(
+        (total, institution) => total + institution.accounts_synced,
+        0,
+      );
+      if (failures.length > 0) {
+        setSyncFeedback({
+          tone: "error",
+          message: `${failures.length} institution${failures.length === 1 ? "" : "s"} needs attention. ${failures[0].institution_name}: ${failures[0].error}`,
+          reconnectInstitution: {
+            id: failures[0].institution_id,
+            name: failures[0].institution_name,
+          },
+        });
+      } else if (result.data.length === 0) {
+        setSyncFeedback({
+          tone: "success",
+          message: "No linked institutions to sync.",
+        });
+      } else {
+        setSyncFeedback({
+          tone: "success",
+          message: `Synced ${syncedAccounts} account${syncedAccounts === 1 ? "" : "s"} across ${result.data.length} institution${result.data.length === 1 ? "" : "s"}.`,
+        });
+      }
+    } catch (error) {
+      setSyncFeedback({
+        tone: "error",
+        message:
+          error instanceof ApiError
+            ? error.message
+            : "Couldn't sync your linked institutions. Try again.",
+      });
+    } finally {
+      setSyncing(false);
+    }
+  }, [refreshData]);
+
+  useEffect(() => {
+    if (hasAutoSynced.current) return;
+    hasAutoSynced.current = true;
+    void syncAll();
+  }, [syncAll]);
 
   const assets = accounts
     .filter((a) => a.balance >= 0)
@@ -49,14 +128,37 @@ export default function AccountsPage() {
         }`}
         actions={
           <>
-            <Button variant="outline" size="sm">
-              <RefreshCw />
-              Sync all
+            <Button variant="outline" size="sm" onClick={() => void syncAll()} disabled={syncing}>
+              <RefreshCw className={syncing ? "animate-spin" : undefined} />
+              {syncing ? "Syncing..." : "Sync all"}
             </Button>
             <PlaidLinkButton size="sm" />
           </>
         }
       />
+
+      {syncFeedback && (
+        <div
+          role="status"
+          className={`mt-3 flex flex-wrap items-center gap-2 text-xs ${syncFeedback.tone === "error" ? "text-destructive" : "text-positive"}`}
+        >
+          <span>{syncFeedback.message}</span>
+          {syncFeedback.reconnectInstitution && (
+            <PlaidLinkButton
+              label={`Reconnect ${syncFeedback.reconnectInstitution.name}`}
+              institutionId={syncFeedback.reconnectInstitution.id}
+              onLinked={() =>
+                setSyncFeedback({
+                  tone: "success",
+                  message: `${syncFeedback.reconnectInstitution?.name} is reconnected and synced.`,
+                })
+              }
+              size="xs"
+              variant="outline"
+            />
+          )}
+        </div>
+      )}
 
       {/* Summary strip */}
       <div className="grid grid-cols-1 divide-y divide-border overflow-hidden rounded-lg border border-border bg-card sm:grid-cols-3 sm:divide-x sm:divide-y-0">

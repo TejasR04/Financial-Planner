@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from app.domain.entities import Transaction
 from app.domain.enums import TransactionStatus, TransactionType
@@ -58,6 +58,7 @@ class TransactionRepository(BaseRepository[TransactionModel]):
             amount=transaction.amount,
             type=transaction.type.value,
             status=transaction.status.value,
+            external_transaction_id=transaction.external_transaction_id,
         )
         self.session.add(row)
         await self.session.flush()
@@ -74,12 +75,69 @@ class TransactionRepository(BaseRepository[TransactionModel]):
                 amount=t.amount,
                 type=t.type.value,
                 status=t.status.value,
+                external_transaction_id=t.external_transaction_id,
             )
             for t in transactions
         ]
         self.session.add_all(rows)
         await self.session.flush()
         return [_to_domain(row) for row in rows]
+
+    async def apply_plaid_updates(
+        self,
+        transactions: list[Transaction],
+        removed_external_transaction_ids: list[str],
+    ) -> tuple[int, int, int]:
+        """Apply one complete `/transactions/sync` patch set.
+
+        Plaid can send the same transaction in ``added`` and ``modified``
+        across a sync lifecycle, so external transaction IDs are the stable
+        identity rather than a new local row for each response.
+        """
+        created = updated = 0
+        for transaction in transactions:
+            external_id = transaction.external_transaction_id
+            if external_id is None:
+                raise ValueError("Plaid transactions require an external_transaction_id")
+            result = await self.session.execute(
+                select(TransactionModel).where(TransactionModel.external_transaction_id == external_id)
+            )
+            row = result.scalar_one_or_none()
+            if row is None:
+                row = TransactionModel(
+                    id=transaction.id or uuid4(),
+                    account_id=transaction.account_id,
+                    posted_at=transaction.posted_at,
+                    merchant=transaction.merchant,
+                    category=transaction.category,
+                    amount=transaction.amount,
+                    type=transaction.type.value,
+                    status=transaction.status.value,
+                    external_transaction_id=external_id,
+                )
+                self.session.add(row)
+                created += 1
+            else:
+                row.account_id = transaction.account_id
+                row.posted_at = transaction.posted_at
+                row.merchant = transaction.merchant
+                row.category = transaction.category
+                row.amount = transaction.amount
+                row.type = transaction.type.value
+                row.status = transaction.status.value
+                updated += 1
+
+        removed = 0
+        if removed_external_transaction_ids:
+            result = await self.session.execute(
+                delete(TransactionModel)
+                .where(TransactionModel.external_transaction_id.in_(removed_external_transaction_ids))
+                .returning(TransactionModel.id)
+            )
+            removed = len(result.scalars().all())
+
+        await self.session.flush()
+        return created, updated, removed
 
     async def update_category(self, transaction_id: UUID, category: str) -> Transaction:
         row = await self._get_or_raise("Transaction", transaction_id)
@@ -105,4 +163,5 @@ def _to_domain(row: TransactionModel) -> Transaction:
         amount=row.amount,
         type=TransactionType(row.type),
         status=TransactionStatus(row.status),
+        external_transaction_id=row.external_transaction_id,
     )

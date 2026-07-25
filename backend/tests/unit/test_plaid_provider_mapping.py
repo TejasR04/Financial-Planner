@@ -2,11 +2,25 @@
 calls, no DB. Confirms Plaid's raw account shapes translate correctly
 into this app's AccountType/balance-sign conventions.
 """
+from datetime import date
 from decimal import Decimal
+from types import SimpleNamespace
+from uuid import uuid4
 
-from app.domain.enums import AccountType
-from app.providers.plaid_client import RawPlaidAccount
-from app.providers.plaid_provider import _map_account_type, _map_balance
+from app.domain.enums import AccountType, AssetClass, TransactionStatus, TransactionType
+from app.providers.plaid_client import (
+    RawPlaidAccount,
+    RawPlaidHolding,
+    RawPlaidTransaction,
+    _to_raw_transaction,
+)
+from app.providers.plaid_provider import (
+    _map_account_type,
+    _map_asset_class,
+    _map_balance,
+    _to_holding_entity,
+    _to_transaction_entity,
+)
 
 
 def _raw(plaid_type: str, plaid_subtype: str | None, current_balance: Decimal | None) -> RawPlaidAccount:
@@ -62,3 +76,70 @@ def test_missing_balance_defaults_to_zero():
     raw = _raw("depository", "checking", None)
     account_type = _map_account_type(raw)
     assert _map_balance(raw, account_type) == Decimal("0")
+
+
+def test_plaid_outflow_amount_is_inverted_for_normalized_cash_flow():
+    raw = _to_raw_transaction(
+        SimpleNamespace(
+            transaction_id="transaction-1",
+            account_id="account-1",
+            date=date(2026, 7, 25),
+            merchant_name=None,
+            name="Payroll",
+            personal_finance_category=SimpleNamespace(primary="INCOME_WAGES"),
+            amount=-2500.00,
+            pending=False,
+        )
+    )
+    assert raw.amount == Decimal("2500.0")
+
+
+def test_positive_normalized_amount_is_income():
+    transaction = _to_transaction_entity(
+        RawPlaidTransaction(
+            external_transaction_id="transaction-1",
+            external_account_id="account-1",
+            posted_at=date(2026, 7, 25),
+            merchant="Payroll",
+            category="INCOME_WAGES",
+            amount=Decimal("2500.00"),
+            pending=False,
+        ),
+        uuid4(),
+    )
+    assert transaction.amount == Decimal("2500.00")
+    assert transaction.type == TransactionType.INCOME
+    assert transaction.status == TransactionStatus.CLEARED
+
+
+def test_transfer_category_is_not_misclassified_as_income():
+    transaction = _to_transaction_entity(
+        RawPlaidTransaction(
+            external_transaction_id="transaction-2",
+            external_account_id="account-1",
+            posted_at=date(2026, 7, 25),
+            merchant="Brokerage transfer",
+            category="TRANSFER_IN_ACCOUNT_TRANSFER",
+            amount=Decimal("100.00"),
+            pending=True,
+        ),
+        uuid4(),
+    )
+    assert transaction.type == TransactionType.TRANSFER
+    assert transaction.status == TransactionStatus.PENDING
+
+
+def test_etf_holding_maps_to_equity():
+    raw = RawPlaidHolding(
+        external_account_id="account-1",
+        symbol="VTI",
+        quantity=Decimal("10"),
+        cost_basis=Decimal("2000"),
+        market_value=Decimal("2500"),
+        security_type="etf",
+        is_cash_equivalent=False,
+        as_of=date(2026, 7, 25),
+    )
+    holding = _to_holding_entity(raw, uuid4())
+    assert _map_asset_class(raw) == AssetClass.EQUITY
+    assert holding.asset_class == AssetClass.EQUITY
