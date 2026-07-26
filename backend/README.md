@@ -13,10 +13,10 @@ phased roadmap this repo implements against).
   in `app/services/*` are fully implemented and unit-tested with no DB
   dependency — this is the actual product core.
 - **Phase 2 — Persistence + core CRUD.** ORM models for the full schema;
-  repositories for User, Account, Transaction, Goal, IncomeSource,
+  repositories for User, Account, Transaction, IncomeSource,
   Liability, and Scenario, all fully implemented. Live routes:
   `/auth/*`, `/users/me*`, `/accounts*`, `/transactions*` (including
-  `/transactions/import/csv`), `/goals*`. `ManualProvider` and
+  `/transactions/import/csv`). `ManualProvider` and
   `CSVImportProvider` are wired end to end into these routes.
 - **Phase 3 — Projections API.** `ScenarioService` (the "run a scenario"
   computation, composing NetWorth + Retirement + optional Monte Carlo) is
@@ -83,8 +83,8 @@ pip install -r requirements.txt
 pytest tests/unit -v
 ```
 
-Integration tests (`tests/integration/`, DB-backed) are scaffolded as the
-next step once Phase 2 routes are complete — see `ARCHITECTURE.md`.
+Integration tests (`tests/integration/`, DB-backed) run in the disposable
+Postgres Docker Compose stack described in `docker-compose.test.yml`.
 
 ## Project layout
 

@@ -1,4 +1,7 @@
 import asyncio
+import logging
+import time
+from uuid import uuid4
 from contextlib import suppress
 
 from fastapi import FastAPI, Request
@@ -7,6 +10,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
+from app.core.logging import configure_logging
 from app.core.exceptions import (
     ConflictError,
     DomainError,
@@ -20,6 +24,8 @@ from app.persistence.session import AsyncSessionLocal
 from app.providers.plaid_provider import PlaidProvider
 
 settings = get_settings()
+configure_logging(settings.log_level)
+logger = logging.getLogger("meridian.api")
 
 app = FastAPI(title=settings.app_name, version="0.1.0")
 
@@ -32,6 +38,27 @@ app.add_middleware(
 )
 
 app.include_router(api_router, prefix=settings.api_v1_prefix)
+
+
+@app.middleware("http")
+async def log_request(request: Request, call_next):
+    """Emit one structured record per request; never include bodies or credentials."""
+    request_id = request.headers.get("X-Request-ID", uuid4().hex)
+    started_at = time.perf_counter()
+    log_fields = {"request_id": request_id, "method": request.method, "path": request.url.path}
+    try:
+        response = await call_next(request)
+    except Exception:
+        logger.exception("request_failed", extra=log_fields)
+        raise
+
+    duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
+    response.headers["X-Request-ID"] = request_id
+    logger.info(
+        "request_completed",
+        extra={**log_fields, "status_code": response.status_code, "duration_ms": duration_ms},
+    )
+    return response
 
 
 @app.on_event("startup")
@@ -64,6 +91,7 @@ async def _sync_all_linked_institutions() -> None:
                 await session.commit()
             except Exception:
                 await session.rollback()
+                logger.exception("plaid_auto_sync_user_failed", extra={"user_id": str(user_id)})
 
 
 async def _plaid_auto_sync_loop() -> None:

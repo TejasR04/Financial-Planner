@@ -8,6 +8,7 @@ class Settings(BaseSettings):
 
     app_name: str = "Meridian API"
     environment: str = "development"
+    log_level: str = "INFO"
     api_v1_prefix: str = "/api/v1"
 
     database_url: str = "postgresql+asyncpg://meridian:meridian@localhost:5432/meridian"
@@ -39,7 +40,7 @@ class Settings(BaseSettings):
     openai_api_key: str | None = None
     openai_model: str = "gpt-4o-mini"
 
-    cors_allow_origins: list[str] = ["http://localhost:3000"]
+    cors_allow_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
 
 
 @lru_cache

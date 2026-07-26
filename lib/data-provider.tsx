@@ -19,7 +19,6 @@ import {
   type Insight,
   type Institution,
   type Kpi,
-  type Milestone,
   type NetWorthPoint,
   type Recommendation,
   type Scenario,
@@ -166,7 +165,6 @@ type DataState = {
   accounts: Account[];
   institutions: Institution[];
   transactions: Transaction[];
-  milestones: Milestone[];
   recommendations: Recommendation[];
   scenarios: Scenario[];
   insights: Insight[];
@@ -189,7 +187,6 @@ const emptyState: Omit<DataState, "loading" | "error" | "refresh"> = {
   accounts: [],
   institutions: [],
   transactions: [],
-  milestones: [],
   recommendations: [],
   scenarios: [],
   insights: [],
@@ -238,7 +235,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           accountList,
           institutionRows,
           transactionList,
-          goals,
           scenarioRows,
           recommendationRows,
           health,
@@ -249,7 +245,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           api.accounts.list(),
           optional("institutions", api.accounts.institutions(), []),
           optional("recent transactions", api.transactions.list({ limit: 1000, since: twelveMonthWindow().startDate }), { data: [], total: 0, limit: 1000, offset: 0 }),
-          optional("goals", api.goals.list(), []),
           optional("scenarios", api.scenarios.list(), []),
           optional("recommendations", api.recommendations.list(), []),
           optional("financial health", api.financialHealth.get(), null, false),
@@ -393,23 +388,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             }
           : null;
 
-        // --- milestones (from Goals) -------------------------------------
-        const milestones: Milestone[] = goals.map((g) => {
-          const targetYear = g.target_date
-            ? new Date(`${g.target_date}T00:00:00`).getFullYear()
-            : g.target_age
-              ? currentYear + (g.target_age - currentAge)
-              : currentYear;
-          return {
-            id: g.id,
-            year: String(targetYear),
-            age: g.target_age ?? undefined,
-            title: g.title,
-            amount: formatCurrency(parseFloat(g.target_amount), { compact: true }),
-            status: g.status,
-          };
-        });
-
         // --- recommendations ----------------------------------------------
         const recommendations: Recommendation[] = recommendationRows.map((r) => ({
           id: r.id,
@@ -525,7 +503,6 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             accounts,
             institutions,
             transactions,
-            milestones,
             recommendations,
             scenarios,
             insights,
@@ -579,7 +556,6 @@ export const useCashflowSeries = () => useData().cashflowSeries;
 export const useAccountsData = () => useData().accounts;
 export const useInstitutionsData = () => useData().institutions;
 export const useTransactionsData = () => useData().transactions;
-export const useMilestones = () => useData().milestones;
 export const useRecommendationsData = () => useData().recommendations;
 export const useScenariosData = () => useData().scenarios;
 export const useCurrentAge = () => useData().profile?.currentAge ?? null;

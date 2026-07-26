@@ -10,7 +10,6 @@ import { NetWorthChart } from "@/components/charts/net-worth-chart";
 import { AllocationChart } from "@/components/charts/allocation-chart";
 import { CashflowChart } from "@/components/charts/cashflow-chart";
 import { TransactionsTable } from "@/components/transactions-table";
-import { Timeline } from "@/components/timeline";
 import { AiInsights } from "@/components/ai-insights";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -130,9 +129,8 @@ export default function OverviewPage() {
         <AiInsights className="xl:col-span-1" />
       </div>
 
-      {/* Cashflow + timeline */}
-      <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">
-        <Panel className="xl:col-span-2">
+      <div className="mt-4">
+        <Panel>
           <PanelHeader
             title="Cash flow"
             description={`Monthly income vs. tracked expenses · last ${periodMonths} months`}
@@ -152,13 +150,6 @@ export default function OverviewPage() {
           <CashflowChart data={visibleCashflow} />
         </Panel>
 
-        <Panel>
-          <PanelHeader
-            title="Life plan"
-            description="Milestones on your trajectory"
-          />
-          <Timeline />
-        </Panel>
       </div>
     </PageContainer>
   );

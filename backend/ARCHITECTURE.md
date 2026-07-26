@@ -16,7 +16,7 @@ deterministic simulation engine with an AI layer that explains results.
 
 | Page | Route | What it needs from the backend |
 |---|---|---|
-| Overview | `/` | KPI summary (net worth, liquid assets, monthly cash flow, savings rate) with 12-mo sparkline + delta; net-worth time series (assets/liabilities/net, with a projected flag); allocation breakdown; recent transactions; AI insights feed; cash-flow series (income vs. expenses); life-plan milestones |
+| Overview | `/` | KPI summary (net worth, liquid assets, monthly cash flow, savings rate) with 12-mo sparkline + delta; net-worth time series (assets/liabilities/net, with a projected flag); allocation breakdown; recent transactions; AI insights feed; cash-flow series (income vs. expenses) |
 | Accounts | `/accounts` | Full account list with balances, institution, type, sync status, APY; asset/liability aggregates; link-account and sync actions |
 | Projections | `/projections` | Named scenarios (baseline + variants) with net-worth-at-target-age, retirement age, monthly contribution, Monte-Carlo success rate, and a full net-worth trajectory series; scenario comparison table; editable assumptions (retirement age, savings rate, expected return, inflation, withdrawal rate) that **recompute a projection live**; sensitivity rows (impact of nudging one input) |
 | Insights | `/insights` | Ranked recommendations (title, body, projected $ impact, effort, category, confidence) with apply/dismiss actions; AI insights feed; a composite financial health score with sub-scores (liquidity, diversification, debt ratio, savings discipline) |
@@ -25,8 +25,6 @@ deterministic simulation engine with an AI layer that explains results.
 Other UI signals:
 - **Command palette** — "Link account", "Export report" — implies async
   action endpoints and a report-generation job, not just reads.
-- **Milestones/timeline** — implies a `Goal`-like entity with a target
-  date/age and amount, distinct from a `Scenario`.
 - **"Recommended" badge on best scenario** — implies scenario ranking is a
   backend computation, not a frontend heuristic.
 - Every dollar figure that currently looks "live" (KPI deltas, sparkline,
@@ -115,8 +113,6 @@ Core entities (see `app/domain/entities.py` for the actual dataclasses):
   income model, not just historical transactions).
 - **Liability** — loan/credit detail (principal, rate, term, minimum
   payment) — superset of what `Account` exposes, needed for amortization.
-- **Goal** — the backend entity behind the "Life plan" milestones: target
-  amount, target date/age, priority, linked account(s) optional.
 - **Scenario** — a named, versioned bundle of `PlanningAssumptions`
   (retirement age, savings rate, expected return, inflation, withdrawal
   rate, contribution amount) plus a baseline flag.
@@ -177,10 +173,6 @@ income_sources
 liabilities
   id, account_id (FK, unique), principal, interest_rate, term_months,
   minimum_payment, origination_date
-
-goals
-  id, user_id (FK), title, target_amount, target_date, target_age,
-  priority, status (upcoming|active|done), linked_account_id (nullable)
 
 scenarios
   id, user_id (FK), name, description, is_baseline,
@@ -272,7 +264,7 @@ backend/
         recommendation_tools.py
     schemas/                              # Pydantic request/response DTOs (API boundary only)
       user.py, auth.py, account.py, transaction.py, scenario.py,
-      simulation.py, recommendation.py, goal.py, insight.py
+      simulation.py, recommendation.py, insight.py
     api/
       deps.py                              # get_db, get_current_user, etc.
       v1/
@@ -282,7 +274,6 @@ backend/
           users.py
           accounts.py
           transactions.py
-          goals.py
           scenarios.py
           simulations.py
           recommendations.py
@@ -330,11 +321,6 @@ GET    /transactions                        -> filters: account_id, category, da
 POST   /transactions                          -> manual entry
 PATCH  /transactions/{id}
 POST   /transactions/import/csv                -> CSVImportProvider
-
-GET    /goals
-POST   /goals
-PATCH  /goals/{id}
-DELETE /goals/{id}
 
 GET    /scenarios
 POST   /scenarios
@@ -501,7 +487,7 @@ tax estimate, contribution limits, employer match. `RetirementProjectionService`
 against known values, independent of any DB.
 
 **Phase 2 — Persistence + core CRUD.** SQLAlchemy models, repositories,
-Alembic migration, `/accounts`, `/transactions`, `/goals`, `/scenarios`
+Alembic migration, `/accounts`, `/transactions`, `/scenarios`
 CRUD endpoints. Manual + CSV providers (no external dependency).
 
 **Phase 3 — Projections API.** `/simulations/*`, `/scenarios/{id}/run` +

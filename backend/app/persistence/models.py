@@ -203,22 +203,6 @@ class LiabilityModel(Base):
     account: Mapped["AccountModel"] = relationship(back_populates="liability")
 
 
-class GoalModel(Base):
-    __tablename__ = "goals"
-
-    id: Mapped[uuid.UUID] = _uuid_pk()
-    user_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("users.id"), index=True)
-    title: Mapped[str] = mapped_column(String(255))
-    target_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
-    target_date: Mapped[date | None] = mapped_column(Date, nullable=True)
-    target_age: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    priority: Mapped[int] = mapped_column(Integer, default=0)
-    status: Mapped[str] = mapped_column(String(20), default="upcoming")
-    linked_account_id: Mapped[uuid.UUID | None] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("accounts.id"), nullable=True
-    )
-
-
 class ScenarioModel(Base):
     __tablename__ = "scenarios"
 

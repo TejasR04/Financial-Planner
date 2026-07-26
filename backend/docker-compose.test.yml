@@ -1,0 +1,25 @@
+services:
+  db-test:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: meridian
+      POSTGRES_PASSWORD: meridian
+      POSTGRES_DB: meridian_test
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U meridian -d meridian_test"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  integration-test:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+asyncpg://meridian:meridian@db-test:5432/meridian_test
+      TEST_DATABASE_URL: postgresql+asyncpg://meridian:meridian@db-test:5432/meridian_test
+      JWT_SECRET_KEY: integration-test-secret
+      PLAID_AUTO_SYNC_ENABLED: "false"
+      LOG_LEVEL: WARNING
+    depends_on:
+      db-test:
+        condition: service_healthy
+    command: sh -c "alembic upgrade heads && pytest tests/integration -v"

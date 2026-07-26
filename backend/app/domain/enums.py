@@ -87,12 +87,6 @@ class InsightKind(str, Enum):
     OPPORTUNITY = "opportunity"
 
 
-class GoalStatus(str, Enum):
-    UPCOMING = "upcoming"
-    ACTIVE = "active"
-    DONE = "done"
-
-
 class SimulationMethod(str, Enum):
     DETERMINISTIC = "deterministic"
     MONTE_CARLO = "monte_carlo"

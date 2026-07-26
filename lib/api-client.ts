@@ -203,17 +203,6 @@ export type ApiTransactionList = {
   offset: number;
 };
 
-export type ApiGoal = {
-  id: string;
-  title: string;
-  target_amount: string;
-  target_date: string | null;
-  target_age: number | null;
-  priority: number;
-  status: "done" | "active" | "upcoming";
-  linked_account_id: string | null;
-};
-
 export type ApiRecommendation = {
   id: string;
   title: string;
@@ -462,9 +451,6 @@ export const api = {
     summary: (month: string) => get<ApiBudgetSummary>(`/budgets/summary?month=${month}-01`),
     uncategorized: (month: string) =>
       get<ApiUncategorizedBudgetTransaction[]>(`/budgets/uncategorized?month=${month}-01`),
-  },
-  goals: {
-    list: () => get<ApiGoal[]>("/goals"),
   },
   scenarios: {
     list: () => get<ApiScenario[]>("/scenarios"),

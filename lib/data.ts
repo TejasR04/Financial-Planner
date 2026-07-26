@@ -121,18 +121,6 @@ export type Transaction = {
   status: "cleared" | "pending";
 };
 
-export type Milestone = {
-  id: string;
-  year: string;
-  age?: number;
-  title: string;
-  // Goal has no `detail` field in the backend schema yet — optional rather
-  // than invented.
-  detail?: string;
-  amount: string;
-  status: "done" | "active" | "upcoming";
-};
-
 export type Recommendation = {
   id: string;
   title: string;

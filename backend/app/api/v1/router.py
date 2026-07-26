@@ -6,7 +6,6 @@ from app.api.v1.routes import (
     auth,
     budgets,
     financial_health,
-    goals,
     insights,
     investments,
     plaid,
@@ -25,7 +24,6 @@ api_router.include_router(investments.router)
 api_router.include_router(plaid.router)
 api_router.include_router(transactions.router)
 api_router.include_router(budgets.router)
-api_router.include_router(goals.router)
 api_router.include_router(scenarios.router)
 api_router.include_router(simulations.router)
 api_router.include_router(recommendations.router)

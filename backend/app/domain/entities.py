@@ -15,7 +15,6 @@ from app.domain.enums import (
     AccountStatus,
     AccountType,
     AssetClass,
-    GoalStatus,
     InsightKind,
     InstitutionStatus,
     ProviderType,
@@ -134,19 +133,6 @@ class Liability:
 
 
 @dataclass(slots=True)
-class Goal:
-    id: UUID
-    user_id: UUID
-    title: str
-    target_amount: Decimal
-    target_date: date | None = None
-    target_age: int | None = None
-    priority: int = 0
-    status: GoalStatus = GoalStatus.UPCOMING
-    linked_account_id: UUID | None = None
-
-
-@dataclass(slots=True)
 class Recommendation:
     id: UUID
     user_id: UUID
@@ -180,7 +166,6 @@ class FinancialSnapshot:
     holdings: list[Holding] = field(default_factory=list)
     liabilities: list[Liability] = field(default_factory=list)
     income_sources: list[IncomeSource] = field(default_factory=list)
-    goals: list[Goal] = field(default_factory=list)
     as_of: date = field(default_factory=date.today)
 
     @property
