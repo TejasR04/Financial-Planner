@@ -114,7 +114,7 @@ def test_sensitivity_withdrawal_rate_row_is_measured_in_success_rate_not_balance
     assert withdrawal_row.value <= 0
 
 
-def test_income_target_inflates_todays_dollars_to_retirement_dollars():
+def test_income_target_stays_in_todays_dollars_through_retirement():
     service = ScenarioService()
     assumptions = PlanningAssumptions(
         current_age=40, retirement_age=65, expected_return=Decimal("0.065"),
@@ -126,11 +126,7 @@ def test_income_target_inflates_todays_dollars_to_retirement_dollars():
         annual_contribution=Decimal("6000"), include_monte_carlo=False,
     )
     retirement = result.retirement_projection
-    # $4,000/mo today, 25 years of 2.8% inflation, should compound to
-    # meaningfully more than $4,000/mo in nominal terms at retirement.
-    assert retirement.target_monthly_income_at_retirement is not None
-    assert retirement.target_monthly_income_at_retirement > Decimal("7500")
-    assert retirement.target_monthly_income_at_retirement < Decimal("8500")
+    assert retirement.target_monthly_income_real == Decimal("4000.00")
 
 
 def test_income_target_drives_feasibility_check():

@@ -3,6 +3,8 @@ import {
   Wallet,
   ReceiptText,
   TrendingUp,
+  Landmark,
+  CircleDollarSign,
   Sparkles,
   Settings,
   type LucideIcon,
@@ -12,7 +14,6 @@ export type NavItem = {
   label: string;
   href: string;
   icon: LucideIcon;
-  shortcut?: string;
 };
 
 export type NavGroup = {
@@ -24,22 +25,23 @@ export const navGroups: NavGroup[] = [
   {
     label: "Workspace",
     items: [
-      { label: "Overview", href: "/", icon: LayoutDashboard, shortcut: "G O" },
-      { label: "Accounts", href: "/accounts", icon: Wallet, shortcut: "G A" },
-      { label: "Transactions", href: "/transactions", icon: ReceiptText, shortcut: "G T" },
+      { label: "Overview", href: "/", icon: LayoutDashboard },
+      { label: "Accounts", href: "/accounts", icon: Wallet },
+      { label: "Transactions", href: "/transactions", icon: ReceiptText },
+      { label: "Budget", href: "/budget", icon: CircleDollarSign },
+      { label: "Investments", href: "/investments", icon: Landmark },
       {
         label: "Projections",
         href: "/projections",
         icon: TrendingUp,
-        shortcut: "G P",
       },
-      { label: "Insights", href: "/insights", icon: Sparkles, shortcut: "G I" },
+      { label: "Insights", href: "/insights", icon: Sparkles },
     ],
   },
   {
     label: "Configuration",
     items: [
-      { label: "Settings", href: "/settings", icon: Settings, shortcut: "G S" },
+      { label: "Settings", href: "/settings", icon: Settings },
     ],
   },
 ];

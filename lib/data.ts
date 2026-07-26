@@ -156,19 +156,20 @@ export type Scenario = {
   retirementAge: number;
   monthlyContribution: number;
   expectedReturn: number; // decimal, e.g. 0.065 — needed to prefill the edit dialog
+  inflationRate: number; // decimal, used only to display real-dollar outputs in future dollars
   // Monthly retirement income target in TODAY's dollars, if the user set
   // one — replaces withdrawal-rate-based sizing for this scenario when set.
   desiredMonthlyIncomeToday: number | null;
-  withdrawalRate: number; // decimal, e.g. 0.04 — used to derive incomeSeries from balances
+  withdrawalRate: number; // decimal, e.g. 0.04
+  retirementYear: string;
   successRate: number;
   color: string;
-  // Real per-year trajectory from the latest persisted SimulationRun (in
-  // millions), aligned 1:1 with `years`. Empty until a run exists.
+  // Retirement-account balance from the latest run, from accumulation
+  // through the life-expectancy horizon (in millions), aligned with `years`.
   series: number[];
-  // Retirement-account-only balance converted to sustainable monthly
-  // income at each year ($/mo, not millions) — the "retirement income"
-  // view of the same chart, aligned 1:1 with `years`.
-  incomeSeries: number[];
+  // The corresponding annual withdrawal in nominal dollars (zero before
+  // retirement), aligned with `years`.
+  withdrawals: number[];
   years: string[];
 };
 

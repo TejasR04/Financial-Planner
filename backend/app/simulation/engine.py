@@ -123,9 +123,8 @@ def project_retirement_withdrawal_series(
     """Project a portfolio through retirement after contributions stop.
 
     The withdrawal is taken at the beginning of each year and then the
-    remaining balance grows for that year.  Withdrawals rise with inflation
-    by default so the model preserves the intended purchasing power rather
-    than quietly reducing spending every year.
+    remaining balance grows for that year. In the retirement model these
+    values are real dollars, so withdrawals remain level by default.
     """
     if years < 0:
         raise ValueError("years must be non-negative")

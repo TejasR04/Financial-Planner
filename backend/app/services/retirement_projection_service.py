@@ -12,7 +12,6 @@ from decimal import Decimal
 from app.simulation.assumptions import PlanningAssumptions
 from app.simulation.engine import (
     YearProjection,
-    inflate_to_future_dollars,
     project_balance_series,
     project_retirement_withdrawal_series,
     safe_withdrawal_amount,
@@ -32,11 +31,10 @@ class RetirementProjection:
     years_of_income_at_withdrawal_rate: int | None
     is_feasible: bool
     shortfall_or_surplus: Decimal  # positive = surplus vs. a simple spending target, if provided
-    # Populated only when assumptions.desired_monthly_income_today is set
-    # (or an explicit annual_spending_target is passed in) — the actual
-    # nominal dollar figure the plan needs to produce at retirement.
-    target_annual_income_at_retirement: Decimal | None = None
-    target_monthly_income_at_retirement: Decimal | None = None
+    # Populated only when the user sets an income target. Every number in
+    # this model is in today's purchasing-power dollars.
+    target_annual_income_real: Decimal | None = None
+    target_monthly_income_real: Decimal | None = None
 
 
 class RetirementProjectionService:
@@ -72,30 +70,18 @@ class RetirementProjectionService:
         )
         monthly_withdrawal = (annual_withdrawal / Decimal(12)).quantize(Decimal("0.01"))
 
-        # An explicit annual_spending_target argument (used by the direct
-        # /simulations/retirement endpoint and some AI tool calls) always
-        # wins; otherwise derive the target from the user's today's-dollars
-        # income goal, if they set one on the scenario.
+        # The model is entirely real-dollar based. An explicit annual target
+        # is already a today's-dollars value; otherwise use the scenario's
+        # monthly today-dollar income goal without inflating it.
         effective_spending_target = annual_spending_target
-        target_annual_income_at_retirement: Decimal | None = None
-        target_monthly_income_at_retirement: Decimal | None = None
+        target_annual_income_real: Decimal | None = None
+        target_monthly_income_real: Decimal | None = None
         if effective_spending_target is None and assumptions.desired_monthly_income_today is not None:
-            annual_target_today = assumptions.desired_monthly_income_today * 12
-            effective_spending_target = inflate_to_future_dollars(
-                annual_target_today, assumptions.inflation_rate, years
-            ).quantize(Decimal("0.01"))
+            effective_spending_target = assumptions.desired_monthly_income_today * 12
 
         if assumptions.desired_monthly_income_today is not None:
-            # Report the target figure regardless of which path set
-            # effective_spending_target, so the API/UI can always show
-            # "you asked for $X/mo today, that's $Y/mo at retirement".
-            annual_target_today = assumptions.desired_monthly_income_today * 12
-            target_annual_income_at_retirement = inflate_to_future_dollars(
-                annual_target_today, assumptions.inflation_rate, years
-            ).quantize(Decimal("0.01"))
-            target_monthly_income_at_retirement = (target_annual_income_at_retirement / Decimal(12)).quantize(
-                Decimal("0.01")
-            )
+            target_annual_income_real = (assumptions.desired_monthly_income_today * 12).quantize(Decimal("0.01"))
+            target_monthly_income_real = assumptions.desired_monthly_income_today.quantize(Decimal("0.01"))
 
         years_of_income = None
         if effective_spending_target and effective_spending_target > ZERO:
@@ -118,7 +104,7 @@ class RetirementProjectionService:
             annual_rate=assumptions.expected_return,
             years=assumptions.years_in_retirement,
             starting_age=assumptions.retirement_age,
-            withdrawal_growth_rate=assumptions.inflation_rate,
+            withdrawal_growth_rate=ZERO,
         )
 
         return RetirementProjection(
@@ -131,8 +117,8 @@ class RetirementProjectionService:
             years_of_income_at_withdrawal_rate=years_of_income,
             is_feasible=is_feasible,
             shortfall_or_surplus=shortfall_or_surplus,
-            target_annual_income_at_retirement=target_annual_income_at_retirement,
-            target_monthly_income_at_retirement=target_monthly_income_at_retirement,
+            target_annual_income_real=target_annual_income_real,
+            target_monthly_income_real=target_monthly_income_real,
         )
 
     def earliest_feasible_retirement_age(

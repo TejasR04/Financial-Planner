@@ -5,10 +5,11 @@ import { Info } from "lucide-react";
 import { formatCurrency } from "@/lib/data";
 import { useDataRefresh, useScenariosData } from "@/lib/data-provider";
 import { Panel, PanelHeader } from "@/components/panel";
-import { ScenarioChart, type ScenarioChartView } from "@/components/charts/scenario-chart";
+import { ScenarioChart } from "@/components/charts/scenario-chart";
 import { Button } from "@/components/ui/button";
 import { api, ApiError } from "@/lib/api-client";
 import { cn } from "@/lib/utils";
+import { displayProjectionDollars, type ProjectionDollarDisplay } from "@/lib/projection-dollars";
 
 const metrics = [
   {
@@ -33,13 +34,16 @@ const metrics = [
 
 export function ScenarioCompare({
   onDuplicated,
+  dollarDisplay,
+  currentAge,
 }: {
   onDuplicated?: (newScenarioId: string) => void;
+  dollarDisplay: ProjectionDollarDisplay;
+  currentAge: number | null;
 }) {
   const scenarios = useScenariosData();
   const refresh = useDataRefresh();
   const [active, setActive] = useState<string[]>([]);
-  const [chartView, setChartView] = useState<ScenarioChartView>("netWorth");
   const [duplicateSourceId, setDuplicateSourceId] = useState<string>("");
   const [duplicating, setDuplicating] = useState(false);
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
@@ -78,37 +82,10 @@ export function ScenarioCompare({
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
       <Panel className="xl:col-span-2">
         <PanelHeader
-          title={chartView === "netWorth" ? "Projected net worth by scenario" : "Projected retirement income by scenario"}
-          description={
-            chartView === "netWorth"
-              ? "Total net worth across all accounts · nominal dollars"
-              : "Sustainable monthly withdrawal from retirement accounts only, at each year's balance"
-          }
+          title="Retirement balance by scenario"
+          description={`Retirement accounts only · real-dollar model${dollarDisplay === "future" ? ", displayed in each year's dollars" : ", displayed in today's dollars"}`}
           actions={
             <div className="flex items-center gap-2">
-              <div className="flex items-center gap-0.5 rounded-md border border-border p-0.5">
-                {(
-                  [
-                    { key: "netWorth", label: "Net worth" },
-                    { key: "income", label: "Retirement income" },
-                  ] as const
-                ).map((opt) => (
-                  <button
-                    key={opt.key}
-                    type="button"
-                    onClick={() => setChartView(opt.key)}
-                    className={cn(
-                      "rounded-[5px] px-2 py-1 text-[11px] font-medium transition-colors",
-                      chartView === opt.key
-                        ? "bg-muted text-foreground"
-                        : "text-muted-foreground hover:text-foreground",
-                    )}
-                  >
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
-              <div className="h-4 w-px bg-border" />
               <div className="flex items-center gap-1">
                 {scenarios.map((s) => {
                   const on = active.includes(s.id);
@@ -136,7 +113,7 @@ export function ScenarioCompare({
             </div>
           }
         />
-        <ScenarioChart activeIds={active} view={chartView} />
+        <ScenarioChart activeIds={active} dollarDisplay={dollarDisplay} />
       </Panel>
 
       <Panel>
@@ -188,7 +165,11 @@ export function ScenarioCompare({
                       key={s.id}
                       className="px-3 py-2.5 text-right font-mono font-medium text-foreground tabular-nums"
                     >
-                      {m.fmt(s[m.key] as number)}
+                      {m.key === "monthlyIncomeAtLifeExpectancy"
+                        ? m.fmt(displayProjectionDollars(s[m.key], Math.max(0, s.retirementAge - (currentAge ?? s.retirementAge)), s.inflationRate, dollarDisplay))
+                        : m.key === "monthlyContribution" && dollarDisplay === "future"
+                          ? m.fmt(displayProjectionDollars(s[m.key], Math.max(0, s.retirementAge - (currentAge ?? s.retirementAge)), s.inflationRate, dollarDisplay))
+                          : m.fmt(s[m.key] as number)}
                     </td>
                   ))}
                 </tr>

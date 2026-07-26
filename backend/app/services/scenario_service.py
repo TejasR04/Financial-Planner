@@ -49,15 +49,14 @@ class SensitivityResult:
 def _effective_withdrawal(
     retirement: RetirementProjection, assumptions: PlanningAssumptions, annual_spending_target: Decimal | None
 ) -> Decimal:
-    """The nominal annual amount withdrawn in year 1 of retirement, for
-    Monte Carlo. Priority: an explicit annual_spending_target argument >
-    the user's today's-dollars income goal (already inflated forward by
-    RetirementProjectionService) > the withdrawal_rate-derived figure.
+    """The real annual amount withdrawn in year 1 of retirement, for
+    Monte Carlo. Priority: an explicit annual spending target > the user's
+    today's-dollars income goal > the withdrawal-rate-derived figure.
     """
     if annual_spending_target is not None:
         return annual_spending_target
-    if retirement.target_annual_income_at_retirement is not None:
-        return retirement.target_annual_income_at_retirement
+    if retirement.target_annual_income_real is not None:
+        return retirement.target_annual_income_real
     return retirement.annual_sustainable_withdrawal
 
 

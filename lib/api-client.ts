@@ -37,11 +37,6 @@ async function request<T>(
 
   const res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
 
-  if (res.status === 401) {
-    onUnauthorized?.();
-    throw new ApiError(401, "Session expired. Please sign in again.");
-  }
-
   if (!res.ok) {
     let detail = res.statusText;
     try {
@@ -49,6 +44,13 @@ async function request<T>(
       detail = body?.detail ?? detail;
     } catch {
       // response wasn't JSON; fall back to statusText
+    }
+    // A failed sign-in is not an expired session. Preserve the backend's
+    // intentionally generic credential error instead of logging the user out
+    // and replacing it with a misleading message.
+    if (res.status === 401 && path !== "/auth/login") {
+      onUnauthorized?.();
+      detail = "Session expired. Please sign in again.";
     }
     throw new ApiError(res.status, detail);
   }
@@ -151,6 +153,47 @@ export type ApiTransaction = {
   amount: string;
   type: "income" | "expense" | "transfer" | "contribution";
   status: "cleared" | "pending";
+  budget_category_id: string | null;
+};
+
+export type ApiBudgetCategory = {
+  id: string;
+  name: string;
+  group_name: string;
+  monthly_limit: string;
+  sort_order: number;
+  active: boolean;
+};
+
+export type ApiMerchantBudgetRule = {
+  id: string;
+  budget_category_id: string;
+  budget_category_name: string;
+  merchant_pattern: string;
+};
+
+export type ApiBudgetSummary = {
+  month: string;
+  categories: {
+    budget_category_id: string;
+    name: string;
+    group_name: string;
+    budgeted: string;
+    spent: string;
+    pending: string;
+    remaining: string;
+    forecast: string;
+  }[];
+  uncategorized: { spent: string; pending: string; transaction_count: number };
+};
+
+export type ApiUncategorizedBudgetTransaction = {
+  id: string;
+  posted_at: string;
+  merchant: string;
+  provider_category: string;
+  amount: string;
+  status: "cleared" | "pending";
 };
 
 export type ApiTransactionList = {
@@ -208,8 +251,16 @@ export type ApiScenarioRun = {
   monthly_sustainable_withdrawal: string | null;
   success_rate: string | null;
   trajectory: { year: number; age: number; assets: string; liabilities: string; net: string }[];
-  retirement_trajectory: { year: number; age: number; balance: string }[] | null;
+  retirement_trajectory: { year: number; age: number; balance: string; withdrawal?: string }[] | null;
   created_at: string;
+};
+
+export type ApiScenarioPreview = {
+  net_worth_at_target_age: string;
+  monthly_sustainable_withdrawal: string | null;
+  success_rate: string | null;
+  trajectory: { year: number; age: number; assets: string; liabilities: string; net: string }[];
+  retirement_trajectory: { year: number; age: number; balance: string; withdrawal: string }[];
 };
 
 export type ApiScenarioCompareRow = {
@@ -245,6 +296,15 @@ export type ApiNetWorthSimulation = {
   series: { year_index: number; age: number; assets: string; liabilities: string; net: string }[];
 };
 
+export type ApiRetirementSimulation = {
+  projected_balance_at_retirement: string;
+  annual_sustainable_withdrawal: string;
+  monthly_sustainable_withdrawal: string;
+  is_feasible: boolean;
+  shortfall_or_surplus: string;
+  years_to_retirement: number;
+};
+
 export type ApiAllocationAnalysis = {
   total_market_value: string;
   breakdown: { asset_class: string; market_value: string; weight: string }[];
@@ -253,6 +313,36 @@ export type ApiAllocationAnalysis = {
   drift: string;
   is_within_tolerance: boolean;
   rebalance_suggestions: { asset_class: string; action: string; amount: string }[];
+};
+
+export type ApiInvestmentDashboard = {
+  total_value: string;
+  total_holdings_value: string;
+  total_cost_basis: string;
+  total_gain_loss: string;
+  account_count: number;
+  holding_count: number;
+  accounts: {
+    id: string;
+    name: string;
+    type: "investment" | "retirement";
+    balance: string;
+    institution: string | null;
+    updated_at: string | null;
+  }[];
+  holdings: {
+    account_id: string;
+    account_name: string;
+    symbol: string;
+    quantity: string;
+    cost_basis: string;
+    market_value: string;
+    gain_loss: string;
+    asset_class: string;
+    as_of: string;
+  }[];
+  allocation: { asset_class: string; market_value: string; weight: string }[];
+  history: { date: string; value: string }[];
 };
 
 // ---------------------------------------------------------------------------
@@ -267,6 +357,10 @@ export const api = {
       post<ApiTokenResponse>("/auth/login", { email, password }),
     refresh: (refreshToken: string) =>
       post<ApiTokenResponse>("/auth/refresh", { refresh_token: refreshToken }),
+    requestPasswordReset: (email: string) =>
+      post<void>("/auth/password-reset/request", { email }),
+    confirmPasswordReset: (token: string, password: string) =>
+      post<void>("/auth/password-reset/confirm", { token, password }),
   },
   users: {
     me: () => get<ApiUser>("/users/me"),
@@ -302,6 +396,9 @@ export const api = {
     unlinkInstitution: (institutionId: string) => del(`/accounts/institutions/${institutionId}`),
     allocation: () => get<ApiAllocationAnalysis>("/accounts/allocation"),
   },
+  investments: {
+    dashboard: () => get<ApiInvestmentDashboard>("/investments/dashboard"),
+  },
   plaid: {
     // Never returns or logs anything token-related — the backend keeps the
     // Plaid access_token server-side (encrypted at rest) and this client
@@ -334,6 +431,37 @@ export const api = {
       const suffix = qs.toString() ? `?${qs}` : "";
       return get<ApiTransactionList>(`/transactions${suffix}`);
     },
+    updateBudgetCategory: (transactionId: string, budgetCategoryId: string | null) =>
+      patch<ApiTransaction>(`/transactions/${transactionId}/budget-category`, {
+        budget_category_id: budgetCategoryId,
+      }),
+    create: (body: {
+      account_id: string;
+      posted_at: string;
+      merchant: string;
+      category: string;
+      amount: string;
+      type: ApiTransaction["type"];
+      status?: ApiTransaction["status"];
+    }) => post<ApiTransaction>("/transactions", body),
+    importCsv: (body: { account_id: string; csv_text: string; since?: string }) =>
+      post<{ imported_count: number; data: ApiTransaction[] }>("/transactions/import/csv", body),
+  },
+  budgets: {
+    categories: () => get<ApiBudgetCategory[]>("/budgets/categories"),
+    createCategory: (body: { name: string; group_name: string; monthly_limit: string }) =>
+      post<ApiBudgetCategory>("/budgets/categories", body),
+    updateCategory: (
+      categoryId: string,
+      body: Partial<{ name: string; group_name: string; monthly_limit: string; active: boolean }>,
+    ) => patch<ApiBudgetCategory>(`/budgets/categories/${categoryId}`, body),
+    merchantRules: () => get<ApiMerchantBudgetRule[]>("/budgets/merchant-rules"),
+    createMerchantRule: (body: { budget_category_id: string; merchant_pattern: string }) =>
+      post<ApiMerchantBudgetRule>("/budgets/merchant-rules", body),
+    deleteMerchantRule: (ruleId: string) => del(`/budgets/merchant-rules/${ruleId}`),
+    summary: (month: string) => get<ApiBudgetSummary>(`/budgets/summary?month=${month}-01`),
+    uncategorized: (month: string) =>
+      get<ApiUncategorizedBudgetTransaction[]>(`/budgets/uncategorized?month=${month}-01`),
   },
   goals: {
     list: () => get<ApiGoal[]>("/goals"),
@@ -376,6 +504,16 @@ export const api = {
         rows: { label: string; kind: string; value: string; note: string }[];
       }>(`/scenarios/${scenarioId}/sensitivity`, body),
     runs: (scenarioId: string) => get<{ data: ApiScenarioRun[] }>(`/scenarios/${scenarioId}/runs`),
+    preview: (
+      scenarioId: string,
+      body: {
+        current_age: number;
+        current_retirement_balance: string;
+        annual_spending_target?: string;
+        include_monte_carlo?: boolean;
+        monte_carlo_trials?: number;
+      },
+    ) => post<ApiScenarioPreview>(`/scenarios/${scenarioId}/preview`, body),
     run: (
       scenarioId: string,
       body: {
@@ -390,6 +528,15 @@ export const api = {
       post<{ rows: ApiScenarioCompareRow[] }>("/scenarios/compare", { scenario_ids: scenarioIds }),
   },
   simulations: {
+    retirement: (body: {
+      current_age: number;
+      retirement_age: number;
+      current_retirement_balance: string;
+      annual_contribution: string;
+      expected_return?: string;
+      inflation_rate?: string;
+      withdrawal_rate?: string;
+    }) => post<ApiRetirementSimulation>("/simulations/retirement", body),
     netWorth: (body: {
       current_age: number;
       retirement_age: number;

@@ -41,6 +41,7 @@ export default function AccountsPage() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const selectedInstitutionId = searchParams.get("institution");
+  const linkRequested = searchParams.get("link") === "1";
   const [syncing, setSyncing] = useState(false);
   const [syncFeedback, setSyncFeedback] = useState<SyncFeedback>(null);
   const [manualDialogOpen, setManualDialogOpen] = useState(false);
@@ -140,7 +141,7 @@ export default function AccountsPage() {
       <PageHeader
         title="Accounts"
         description={`${visibleAccounts.length} account${visibleAccounts.length === 1 ? "" : "s"} · ${linkedCount} linked · ${manualCount} manual · USD`}
-        actions={<><Button variant="outline" size="sm" onClick={() => void syncAll()} disabled={syncing}><RefreshCw className={syncing ? "animate-spin" : undefined} />{syncing ? "Syncing…" : "Sync all"}</Button><Button variant="outline" size="sm" onClick={() => { setEditingAccount(null); setManualDialogOpen(true); }}><Plus />Add manual</Button><PlaidLinkButton size="sm" /></>}
+        actions={<><Button variant="outline" size="sm" onClick={() => void syncAll()} disabled={syncing}><RefreshCw className={syncing ? "animate-spin" : undefined} />{syncing ? "Syncing…" : "Sync all"}</Button><Button variant="outline" size="sm" onClick={() => { setEditingAccount(null); setManualDialogOpen(true); }}><Plus />Add manual</Button><PlaidLinkButton size="sm" autoOpen={linkRequested} /></>}
       />
 
       {selectedInstitutionId && <div className="mb-4 flex items-center justify-between rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground"><span>Showing one linked institution.</span><Button variant="ghost" size="xs" onClick={() => router.replace("/accounts")}>Show all accounts</Button></div>}

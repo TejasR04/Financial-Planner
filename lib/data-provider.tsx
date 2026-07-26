@@ -9,7 +9,7 @@ import {
   useState,
 } from "react";
 import { useAuth } from "@/lib/auth-context";
-import { api, type ApiAccount, type ApiScenarioRun, type ApiTransaction } from "@/lib/api-client";
+import { api, type ApiAccount, type ApiScenarioPreview, type ApiTransaction } from "@/lib/api-client";
 import {
   formatCurrency,
   type Account,
@@ -142,6 +142,7 @@ type ProfileSummary = {
   netWorthToday: number;
   targetRetirementAge: number;
   expectedReturn: string; // decimal string, e.g. "0.065" — as the API expects
+  inflationRate: string;
   monthlySurplusEstimate: number;
 };
 
@@ -205,6 +206,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [refreshTick, setRefreshTick] = useState(0);
 
   const refresh = useCallback(() => setRefreshTick((t) => t + 1), []);
+
+  // Server-side Plaid sync keeps the database current. Re-read it while the
+  // app is open so users see those background updates without a full reload.
+  useEffect(() => {
+    if (status !== "authenticated") return;
+    const intervalId = window.setInterval(refresh, 5 * 60 * 1000);
+    return () => window.clearInterval(intervalId);
+  }, [refresh, status]);
 
   useEffect(() => {
     if (status !== "authenticated") return;
@@ -413,48 +422,53 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           confidence: r.confidence,
         }));
 
-        // --- scenarios (fetch/kick off runs so charts have real data) ----
+        // --- scenarios ----------------------------------------------------
+        // Each page load requests a non-persistent preview so the chart and
+        // metrics always reflect current balances and saved assumptions.
         const retirementBalance = accountList.data
           .filter((a) => a.type === "retirement")
           .reduce((s, a) => s + parseFloat(a.balance), 0);
 
         const scenarios: Scenario[] = await Promise.all(
           scenarioRows.map(async (s, i) => {
-            let run: ApiScenarioRun | null = null;
+            let preview: ApiScenarioPreview | null = null;
             try {
-              const runHistory = await api.scenarios.runs(s.id);
-              run = runHistory.data[0] ?? null;
+              preview = await api.scenarios.preview(s.id, {
+                current_age: currentAge,
+                current_retirement_balance: String(retirementBalance),
+                include_monte_carlo: true,
+                monte_carlo_trials: 1000,
+              });
             } catch {
-              run = null;
+              preview = null;
             }
 
-            const series = run?.trajectory.map((p) => parseFloat(p.net) / 1_000_000) ?? [];
-            const years = run?.trajectory.map((p) => String(currentYear + p.year)) ?? [];
+            const series = preview?.retirement_trajectory.map((p) => parseFloat(p.balance) / 1_000_000) ?? [];
+            const withdrawals = preview?.retirement_trajectory.map((p) => parseFloat(p.withdrawal)) ?? [];
+            const years = preview?.retirement_trajectory.map((p) => String(currentYear + p.year)) ?? [];
             const withdrawalRate = parseFloat(s.withdrawal_rate);
-            const incomeSeries =
-              run?.retirement_trajectory?.map(
-                (p) => (parseFloat(p.balance) * withdrawalRate) / 12,
-              ) ?? [];
 
             return {
               id: s.id,
               name: s.name,
               description: s.description ?? "",
-              netWorthAt65: run ? parseFloat(run.net_worth_at_target_age) : 0,
-              monthlyIncomeAtLifeExpectancy: run?.monthly_sustainable_withdrawal
-                ? parseFloat(run.monthly_sustainable_withdrawal)
+              netWorthAt65: preview ? parseFloat(preview.net_worth_at_target_age) : 0,
+              monthlyIncomeAtLifeExpectancy: preview?.monthly_sustainable_withdrawal
+                ? parseFloat(preview.monthly_sustainable_withdrawal)
                 : 0,
               retirementAge: s.retirement_age,
               monthlyContribution: parseFloat(s.monthly_contribution),
               expectedReturn: parseFloat(s.expected_return),
+              inflationRate: parseFloat(s.inflation_rate),
               desiredMonthlyIncomeToday: s.desired_monthly_income_today
                 ? parseFloat(s.desired_monthly_income_today)
                 : null,
               withdrawalRate,
-              successRate: run?.success_rate ? Math.round(parseFloat(run.success_rate) * 1000) / 10 : 0,
+              retirementYear: String(currentYear + s.retirement_age - currentAge),
+              successRate: preview?.success_rate ? Math.round(parseFloat(preview.success_rate) * 1000) / 10 : 0,
               color: CHART_COLORS[i % CHART_COLORS.length],
               series,
-              incomeSeries,
+              withdrawals,
               years,
             };
           }),
@@ -485,6 +499,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           netWorthToday,
           targetRetirementAge: planningProfile.target_retirement_age,
           expectedReturn: planningProfile.expected_return,
+          inflationRate: planningProfile.inflation_rate,
           monthlySurplusEstimate: Math.max(0, Math.round(averageMonthlySurplus)),
         };
 

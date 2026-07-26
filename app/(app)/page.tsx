@@ -15,6 +15,7 @@ import { AiInsights } from "@/components/ai-insights";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAccountsData, useAllocationMeta, useCashflowSeries, useKpis, useTransactionsData } from "@/lib/data-provider";
+import { exportTransactionsCsv } from "@/lib/transaction-export";
 
 export default function OverviewPage() {
   const router = useRouter();
@@ -29,28 +30,9 @@ export default function OverviewPage() {
   const exportTransactions = () => {
     const cutoff = new Date();
     cutoff.setMonth(cutoff.getMonth() - (periodMonths - 1), 1);
-    const rows = transactions
+    const exportRows = transactions
       .filter((transaction) => new Date(`${transaction.postedAt}T00:00:00`) >= cutoff)
-      .map((transaction) => [
-        transaction.postedAt,
-        transaction.merchant,
-        transaction.category,
-        transaction.account,
-        transaction.type,
-        transaction.status,
-        transaction.amount.toString(),
-      ]);
-    const escape = (value: string) => `"${value.replaceAll('"', '""')}"`;
-    const csv = [
-      ["Date", "Merchant", "Category", "Account", "Type", "Status", "Amount"],
-      ...rows,
-    ].map((row) => row.map(escape).join(",")).join("\n");
-    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
-    const link = document.createElement("a");
-    link.href = url;
-    link.download = `meridian-transactions-last-${periodMonths}-months.csv`;
-    link.click();
-    URL.revokeObjectURL(url);
+    exportTransactionsCsv(exportRows, `meridian-transactions-last-${periodMonths}-months.csv`);
   };
 
   return (

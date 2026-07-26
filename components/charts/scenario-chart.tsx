@@ -11,18 +11,16 @@ import {
 } from "recharts";
 import { useScenariosData } from "@/lib/data-provider";
 import { ChartTooltip } from "./chart-tooltip";
-
-export type ScenarioChartView = "netWorth" | "income";
+import { displayProjectionDollars, type ProjectionDollarDisplay } from "@/lib/projection-dollars";
 
 export function ScenarioChart({
   activeIds,
-  view = "netWorth",
+  dollarDisplay,
 }: {
   activeIds: string[];
-  view?: ScenarioChartView;
+  dollarDisplay: ProjectionDollarDisplay;
 }) {
   const scenarios = useScenariosData();
-  const isIncome = view === "income";
 
   // Each scenario has its own real trajectory (different retirement ages
   // produce different-length runs), so build the shared x-axis as the
@@ -33,7 +31,11 @@ export function ScenarioChart({
     scenarios.forEach((s) => {
       const i = s.years.indexOf(year);
       if (i === -1) return;
-      row[s.id] = isIncome ? s.incomeSeries[i] : s.series[i];
+      const yearsFromToday = i + 1;
+      const inflationRate = s.inflationRate;
+      row[s.id] = displayProjectionDollars(s.series[i] * 1_000_000, yearsFromToday, inflationRate, dollarDisplay) / 1_000_000;
+      row[`${s.id}-withdrawal`] = displayProjectionDollars(s.withdrawals[i], yearsFromToday, inflationRate, dollarDisplay);
+      row[`${s.id}-retirement-age`] = year === s.retirementYear ? s.retirementAge : 0;
     });
     return row;
   });
@@ -62,17 +64,30 @@ export function ScenarioChart({
             axisLine={false}
             width={48}
             tick={{ fill: "var(--muted-foreground)", fontSize: 11 }}
-            tickFormatter={(v) => (isIncome ? `$${Math.round(v / 100) / 10}K` : `$${v}M`)}
+            tickFormatter={(v) => `$${v}M`}
           />
           <Tooltip
             cursor={{ stroke: "var(--border)", strokeWidth: 1 }}
             content={
               <ChartTooltip
-                formatter={(v) =>
-                  isIncome
-                    ? `$${(v as number).toLocaleString(undefined, { maximumFractionDigits: 0 })}/mo`
-                    : `$${(v as number).toFixed(2)}M`
-                }
+                formatter={(v) => `$${(v as number).toFixed(2)}M`}
+              detail={(entry) => {
+                  const dataKey = String(entry.dataKey);
+                  const withdrawal = Number(
+                    (entry.payload as Record<string, number | string>)[`${dataKey}-withdrawal`] ?? 0,
+                  );
+                  const retirementAge = Number(
+                    (entry.payload as Record<string, number | string>)[`${dataKey}-retirement-age`] ?? 0,
+                  );
+                  const phase = retirementAge > 0
+                    ? `Retirement begins at age ${retirementAge}`
+                    : withdrawal > 0
+                      ? `Withdrawal: $${withdrawal.toLocaleString("en-US", { maximumFractionDigits: 0 })}/yr ${dollarDisplay === "future" ? "in that year's dollars" : "in today's dollars"}`
+                      : "Contributing to retirement";
+                  return withdrawal > 0 && retirementAge > 0
+                    ? `${phase} · withdrawal: $${withdrawal.toLocaleString("en-US", { maximumFractionDigits: 0 })}/yr`
+                    : phase;
+                }}
               />
             }
           />
@@ -85,7 +100,22 @@ export function ScenarioChart({
               stroke={s.color}
               strokeWidth={activeIds.includes(s.id) ? 2.25 : 1}
               strokeOpacity={activeIds.includes(s.id) ? 1 : 0.25}
-              dot={false}
+              dot={({ cx, cy, payload }) => {
+                if (!activeIds.includes(s.id) || payload.year !== s.retirementYear) {
+                  return <circle key={`${s.id}-${payload.year}`} cx={cx} cy={cy} r={0} fill="transparent" stroke="none" />;
+                }
+                return (
+                  <circle
+                    key={`${s.id}-${payload.year}`}
+                    cx={cx}
+                    cy={cy}
+                    r={5}
+                    fill="var(--card)"
+                    stroke={s.color}
+                    strokeWidth={2.5}
+                  />
+                );
+              }}
               activeDot={{ r: 3, strokeWidth: 0 }}
             />
           ))}

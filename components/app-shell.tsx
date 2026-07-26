@@ -14,7 +14,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+      const mac = /Mac|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      const modifier = mac ? e.metaKey : e.ctrlKey;
+      if (modifier && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k") {
         e.preventDefault();
         setCommandOpen((o) => !o);
       }

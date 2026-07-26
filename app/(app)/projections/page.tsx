@@ -12,21 +12,21 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { api, ApiError } from "@/lib/api-client";
 import { formatCurrency, type Scenario } from "@/lib/data";
-import { useCurrentAge, useCurrentRetirementBalance, useDataRefresh, useScenariosData } from "@/lib/data-provider";
+import { useDataRefresh, useScenariosData } from "@/lib/data-provider";
+import { useCurrentAge } from "@/lib/data-provider";
+import { displayProjectionDollars, type ProjectionDollarDisplay } from "@/lib/projection-dollars";
 
 export default function ProjectionsPage() {
   const scenarios = useScenariosData();
   const refresh = useDataRefresh();
   const currentAge = useCurrentAge();
-  const currentRetirementBalance = useCurrentRetirementBalance();
+  const [dollarDisplay, setDollarDisplay] = useState<ProjectionDollarDisplay>("today");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingScenario, setEditingScenario] = useState<Scenario | null>(null);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [pendingEditId, setPendingEditId] = useState<string | null>(null);
-  const [runningScenarioId, setRunningScenarioId] = useState<string | null>(null);
-  const [runError, setRunError] = useState<string | null>(null);
   const best =
     scenarios.length > 0
       ? scenarios.reduce((a, b) => (b.successRate > a.successRate ? b : a))
@@ -65,25 +65,6 @@ export default function ProjectionsPage() {
       setDeleting(false);
     }
   };
-  const runScenario = async (scenarioId: string) => {
-    if (currentAge == null || currentRetirementBalance == null) return;
-    setRunningScenarioId(scenarioId);
-    setRunError(null);
-    try {
-      await api.scenarios.run(scenarioId, {
-        current_age: currentAge,
-        current_retirement_balance: String(currentRetirementBalance),
-        include_monte_carlo: true,
-        monte_carlo_trials: 1000,
-      });
-      refresh();
-    } catch (err) {
-      setRunError(err instanceof ApiError ? err.message : "Couldn't run this scenario.");
-    } finally {
-      setRunningScenarioId(null);
-    }
-  };
-
   return (
     <PageContainer>
       <NewScenarioDialog
@@ -96,6 +77,10 @@ export default function ProjectionsPage() {
         description="Monte Carlo modeling across savings, allocation, and retirement scenarios"
         actions={
           <>
+            <div className="flex rounded-md border border-border bg-card p-0.5 text-[11px]">
+              <button type="button" onClick={() => setDollarDisplay("today")} className={dollarDisplay === "today" ? "rounded bg-muted px-2 py-1 font-medium text-foreground" : "px-2 py-1 text-muted-foreground"}>Today&apos;s dollars</button>
+              <button type="button" onClick={() => setDollarDisplay("future")} className={dollarDisplay === "future" ? "rounded bg-muted px-2 py-1 font-medium text-foreground" : "px-2 py-1 text-muted-foreground"}>Future dollars</button>
+            </div>
             <Button variant="outline" size="sm">
               <Sparkles />
               Optimize
@@ -126,7 +111,7 @@ export default function ProjectionsPage() {
                 </span>
                 {s.desiredMonthlyIncomeToday != null && (
                   <span className="rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground">
-                    ${s.desiredMonthlyIncomeToday.toLocaleString()}/mo target
+                    {formatCurrency(displayProjectionDollars(s.desiredMonthlyIncomeToday, Math.max(0, s.retirementAge - (currentAge ?? s.retirementAge)), s.inflationRate, dollarDisplay))}/mo target
                   </span>
                 )}
               </div>
@@ -191,7 +176,7 @@ export default function ProjectionsPage() {
                   Retirement balance at {s.retirementAge}
                 </p>
                 <p className="font-mono text-lg font-semibold text-foreground tabular-nums">
-                  {formatCurrency(s.netWorthAt65, { compact: true })}
+                  {formatCurrency(displayProjectionDollars(s.netWorthAt65, Math.max(0, s.retirementAge - (currentAge ?? s.retirementAge)), s.inflationRate, dollarDisplay), { compact: true })}
                 </p>
               </div>
               <div className="text-right">
@@ -217,32 +202,19 @@ export default function ProjectionsPage() {
                 </p>
               </div>
             </div>
-            <Button
-              variant="outline"
-              size="sm"
-              className="mt-3 w-full"
-              onClick={() => runScenario(s.id)}
-              disabled={runningScenarioId !== null || currentAge == null || currentRetirementBalance == null}
-            >
-              <Sparkles />
-              {runningScenarioId === s.id ? "Running simulation…" : "Run analysis"}
-            </Button>
-            {runError && (
-              <p className="mt-1.5 text-[11px] text-destructive">{runError}</p>
-            )}
           </div>
         ))}
       </div>
 
       {/* Comparison */}
       <div className="mt-4">
-        <ScenarioCompare onDuplicated={setPendingEditId} />
+        <ScenarioCompare onDuplicated={setPendingEditId} dollarDisplay={dollarDisplay} currentAge={currentAge} />
       </div>
 
       {/* Assumptions + notes */}
       <div className="mt-4 grid grid-cols-1 gap-4 xl:grid-cols-3">
         <div className="xl:col-span-1">
-          <ProjectionAssumptions />
+          <ProjectionAssumptions dollarDisplay={dollarDisplay} />
         </div>
 
         <SensitivityAnalysis scenarios={scenarios} />

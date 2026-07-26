@@ -4,8 +4,9 @@ import { useEffect, useState } from "react";
 import { Panel, PanelHeader } from "@/components/panel";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/data";
-import { useDataRefresh, useProfileSummary } from "@/lib/data-provider";
+import { useCurrentRetirementBalance, useDataRefresh, useProfileSummary } from "@/lib/data-provider";
 import { api, ApiError } from "@/lib/api-client";
+import { displayProjectionDollars, type ProjectionDollarDisplay } from "@/lib/projection-dollars";
 
 type Assumption = {
   key: "age" | "contribution" | "return";
@@ -23,12 +24,13 @@ const FALLBACK_ASSUMPTIONS: Assumption[] = [
   { key: "return", label: "Expected real return", min: 2, max: 10, step: 0.1, value: 6.5, suffix: "%" },
 ];
 
-export function ProjectionAssumptions() {
+export function ProjectionAssumptions({ dollarDisplay }: { dollarDisplay: ProjectionDollarDisplay }) {
   const profile = useProfileSummary();
   const refresh = useDataRefresh();
   const [assumptions, setAssumptions] = useState<Assumption[]>(FALLBACK_ASSUMPTIONS);
   const [initialized, setInitialized] = useState(false);
-  const [result, setResult] = useState<{ fv: number; years: number } | null>(null);
+  const retirementBalance = useCurrentRetirementBalance();
+  const [result, setResult] = useState<{ balanceAtRetirement: number; monthlyIncome: number; years: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -105,22 +107,27 @@ export function ProjectionAssumptions() {
     }
   };
 
-  // Debounced call to the real simulation endpoint — this replaces the old
-  // hardcoded-salary compound-interest formula (ARCHITECTURE.md §11).
+  // Debounced retirement calculation. This deliberately uses retirement
+  // assets, not total net worth: a home or taxable cash balance alone does
+  // not represent spendable retirement income in this model.
   useEffect(() => {
-    if (!profile) return;
+    if (!profile || retirementBalance == null) return;
     const handle = setTimeout(async () => {
       setLoading(true);
       setError(null);
       try {
-        const sim = await api.simulations.netWorth({
+        const sim = await api.simulations.retirement({
           current_age: profile.currentAge,
           retirement_age: age,
-          years,
+          current_retirement_balance: String(retirementBalance),
           expected_return: String(ret / 100),
-          annual_net_contribution: String(contribution * 12),
+          annual_contribution: String(contribution * 12),
         });
-        setResult({ fv: parseFloat(sim.projected_net_worth_at_horizon), years });
+        setResult({
+          balanceAtRetirement: parseFloat(sim.projected_balance_at_retirement),
+          monthlyIncome: parseFloat(sim.monthly_sustainable_withdrawal),
+          years: sim.years_to_retirement,
+        });
       } catch (err) {
         setError(err instanceof ApiError ? err.message : "Couldn't run the projection.");
       } finally {
@@ -128,13 +135,13 @@ export function ProjectionAssumptions() {
       }
     }, 400);
     return () => clearTimeout(handle);
-  }, [profile, age, contribution, ret, years]);
+  }, [profile, retirementBalance, age, contribution, ret, years]);
 
   return (
     <Panel>
       <PanelHeader
         title="Model assumptions"
-        description="Quick what-if for total net worth — adjust inputs to reshape the projection"
+        description="Quick retirement-balance what-if — contributions stop at retirement, then withdrawals begin"
       />
       <div className="flex flex-col gap-4 p-4">
         {assumptions.map((a) => (
@@ -158,7 +165,7 @@ export function ProjectionAssumptions() {
               step={a.step}
               value={a.value}
               onChange={(e) => update(a.key, Number(e.target.value))}
-              className="mt-2 h-1.5 w-full cursor-pointer appearance-none rounded-full bg-muted accent-primary"
+              className="mt-2 h-2 w-full cursor-pointer appearance-none rounded-full border border-primary/30 bg-primary/15 accent-primary shadow-inner outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 [&::-moz-range-track]:h-2 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-primary/20 [&::-moz-range-thumb]:size-4 [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-background [&::-moz-range-thumb]:bg-primary [&::-webkit-slider-runnable-track]:h-2 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-primary/20 [&::-webkit-slider-thumb]:mt-[-5px] [&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-background [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-sm"
             />
           </div>
         ))}
@@ -166,15 +173,17 @@ export function ProjectionAssumptions() {
 
       <div className="border-t border-border bg-muted/30 px-4 py-3.5">
         <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Projected total net worth at retirement
+          Retirement balance at age {age}
         </p>
         <p className="mt-1 font-mono text-2xl font-semibold tracking-tight text-primary tabular-nums">
-          {result ? formatCurrency(result.fv, { compact: true }) : loading ? "…" : "—"}
+          {result ? formatCurrency(displayProjectionDollars(result.balanceAtRetirement, years, Number(profile?.inflationRate ?? 0), dollarDisplay), { compact: true }) : loading ? "…" : "—"}
         </p>
         <p className="mt-0.5 text-[11px] text-muted-foreground">
           {error
             ? error
-            : `Over ${years} years · ${formatCurrency(contribution * 12)}/yr contributed`}
+            : result
+              ? `${formatCurrency(displayProjectionDollars(result.monthlyIncome, years, Number(profile?.inflationRate ?? 0), dollarDisplay))}/mo sustainable withdrawal · ${formatCurrency(contribution * 12)}/yr contributed`
+              : `Over ${years} years · ${formatCurrency(contribution * 12)}/yr contributed`}
         </p>
       </div>
       <div className="border-t border-border p-3">

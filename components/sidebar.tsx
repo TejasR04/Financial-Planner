@@ -76,11 +76,6 @@ export function Sidebar({
                       {!collapsed && (
                         <span className="flex-1 truncate">{item.label}</span>
                       )}
-                      {!collapsed && item.shortcut && (
-                        <span className="font-mono text-[10px] tracking-tight text-muted-foreground/60">
-                          {item.shortcut}
-                        </span>
-                      )}
                     </Link>
                   </li>
                 );

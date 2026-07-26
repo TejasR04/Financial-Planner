@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { usePlaidLink } from "react-plaid-link";
 import { Loader2, Plus } from "lucide-react";
 
@@ -16,6 +16,7 @@ type Props = {
   className?: string;
   onLinked?: () => void;
   institutionId?: string;
+  autoOpen?: boolean;
 } & VariantProps<typeof buttonVariants>;
 
 /**
@@ -32,6 +33,7 @@ export function PlaidLinkButton({
   className,
   onLinked,
   institutionId,
+  autoOpen = false,
   variant,
   size,
 }: Props) {
@@ -39,6 +41,7 @@ export function PlaidLinkButton({
   const [status, setStatus] = useState<Status>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const refresh = useDataRefresh();
+  const autoOpenHandled = useRef(false);
 
   const onSuccess = useCallback(
     async (publicToken: string) => {
@@ -93,7 +96,7 @@ export function PlaidLinkButton({
     }
   }, [linkToken, ready, open]);
 
-  const handleClick = async () => {
+  const handleClick = useCallback(async () => {
     setErrorMessage(null);
     setStatus("fetching_token");
     try {
@@ -106,7 +109,14 @@ export function PlaidLinkButton({
       );
       setStatus("error");
     }
-  };
+  }, [institutionId]);
+
+  useEffect(() => {
+    if (autoOpen && !autoOpenHandled.current) {
+      autoOpenHandled.current = true;
+      void handleClick();
+    }
+  }, [autoOpen, handleClick]);
 
   const busy = status === "fetching_token" || status === "linking";
 

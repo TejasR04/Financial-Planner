@@ -4,6 +4,7 @@ import { usePathname } from "next/navigation";
 import { Search, Bell, Sun, Moon, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PlaidLinkButton } from "@/components/plaid-link-button";
+import { KeyboardShortcut } from "@/components/keyboard-shortcut";
 import { useTheme } from "@/components/theme-provider";
 
 const titles: Record<string, string> = {
@@ -36,9 +37,7 @@ export function Topbar({ onOpenCommand }: { onOpenCommand: () => void }) {
         >
           <Search className="size-4 shrink-0" />
           <span className="flex-1 text-left">Search or run a command</span>
-          <kbd className="flex items-center gap-0.5 rounded border border-border bg-background px-1.5 py-0.5 font-mono text-[10px]">
-            ⌘K
-          </kbd>
+          <span className="rounded border border-border bg-background px-1.5 py-0.5"><KeyboardShortcut keyName="K" /></span>
         </button>
       </div>
 

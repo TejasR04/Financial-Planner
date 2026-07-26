@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronLeft, ChevronRight, RotateCcw } from "lucide-react";
+import { ChevronLeft, ChevronRight, Plus, RotateCcw } from "lucide-react";
+import { TransactionEntryDialog } from "@/components/transaction-entry-dialog";
 import { PageContainer, PageHeader } from "@/components/page-container";
 import { Panel, PanelHeader } from "@/components/panel";
 import { Button } from "@/components/ui/button";
 import { ApiError, api, type ApiTransactionList } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/data";
-import { useAccountsData } from "@/lib/data-provider";
+import { useAccountsData, useDataRefresh } from "@/lib/data-provider";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 50;
@@ -22,6 +23,7 @@ function formatDate(date: string) {
 
 export default function TransactionsPage() {
   const accounts = useAccountsData();
+  const refreshData = useDataRefresh();
   const [accountId, setAccountId] = useState("");
   const [category, setCategory] = useState("");
   const [since, setSince] = useState("");
@@ -30,6 +32,9 @@ export default function TransactionsPage() {
   const [result, setResult] = useState<ApiTransactionList | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [entryOpen, setEntryOpen] = useState(false);
+  const [reloadTick, setReloadTick] = useState(0);
 
   const accountNameById = useMemo(
     () => new Map(accounts.map((account) => [account.id, account.name])),
@@ -64,7 +69,7 @@ export default function TransactionsPage() {
     return () => {
       cancelled = true;
     };
-  }, [accountId, category, page, since, until]);
+  }, [accountId, category, page, reloadTick, since, until]);
 
   const resetFilters = () => {
     setAccountId("");
@@ -86,6 +91,7 @@ export default function TransactionsPage() {
       <PageHeader
         title="Transactions"
         description="Search and review activity across every connected account"
+        actions={<Button size="sm" onClick={() => setEntryOpen(true)}><Plus /> Add transactions</Button>}
       />
 
       <Panel>
@@ -105,8 +111,9 @@ export default function TransactionsPage() {
           <input
             value={category}
             onChange={(event) => setFilterPage(() => setCategory(event.target.value))}
-            placeholder="Category"
+            placeholder="Category (e.g. rent)"
             className="h-8 rounded-md border border-border bg-background px-2 text-[12px] text-foreground outline-none placeholder:text-muted-foreground focus:border-ring"
+            aria-label="Filter by category"
           />
           <label className="flex items-center gap-2 text-[12px] text-muted-foreground">
             From
@@ -172,6 +179,18 @@ export default function TransactionsPage() {
           </div>
         )}
       </Panel>
+      {notice && <p className="mt-4 rounded-md border border-positive/30 bg-positive/5 px-3 py-2 text-sm text-positive" role="status">{notice}</p>}
+      <TransactionEntryDialog
+        open={entryOpen}
+        accounts={accounts}
+        onClose={() => setEntryOpen(false)}
+        onSaved={(message) => {
+          setEntryOpen(false);
+          setNotice(message);
+          setReloadTick((current) => current + 1);
+          refreshData();
+        }}
+      />
     </PageContainer>
   );
 }
