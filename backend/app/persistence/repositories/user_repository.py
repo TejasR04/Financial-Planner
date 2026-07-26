@@ -47,6 +47,10 @@ class UserRepository(BaseRepository[UserModel]):
         await self.session.flush()
         return _to_domain(row)
 
+    async def list_active_ids(self) -> list[UUID]:
+        result = await self.session.execute(select(UserModel.id).where(UserModel.archived_at.is_(None)))
+        return list(result.scalars().all())
+
     async def update(
         self,
         user_id: UUID,

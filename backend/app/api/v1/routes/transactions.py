@@ -8,6 +8,7 @@ from app.api.deps import get_current_user, get_db
 from app.core.exceptions import NotFoundError, ValidationError
 from app.domain.entities import Transaction, User
 from app.persistence.repositories.transaction_repository import TransactionRepository
+from app.persistence.repositories.account_repository import AccountRepository
 from app.persistence.repositories.budget_repository import BudgetRepository
 from app.providers.csv_import_provider import CSVImportProvider
 from app.schemas.transaction import (
@@ -52,6 +53,7 @@ async def create_transaction(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> TransactionResponse:
+    await AccountRepository(db).get_for_user(current_user.id, body.account_id)
     transaction = Transaction(
         id=uuid4(),
         account_id=body.account_id,
@@ -105,6 +107,7 @@ async def import_csv(
     result through the same TransactionRepository every other write path
     uses — the provider never touches the DB directly.
     """
+    await AccountRepository(db).get_for_user(current_user.id, body.account_id)
     provider = CSVImportProvider(account_id=body.account_id, csv_text=body.csv_text)
     try:
         normalized = await provider.get_transactions(current_user.id, since=body.since or date(1970, 1, 1))

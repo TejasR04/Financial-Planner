@@ -28,6 +28,8 @@ class Settings(BaseSettings):
     plaid_client_id: str | None = None
     plaid_secret: str | None = None
     plaid_env: str = "sandbox"
+    plaid_auto_sync_enabled: bool = True
+    plaid_auto_sync_interval_minutes: int = 360
     # Fernet key (32 url-safe base64-encoded bytes) used to encrypt Plaid
     # access tokens at rest. Generate a real one with:
     #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"

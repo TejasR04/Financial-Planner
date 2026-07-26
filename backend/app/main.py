@@ -1,3 +1,6 @@
+import asyncio
+from contextlib import suppress
+
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -12,6 +15,9 @@ from app.core.exceptions import (
     UnauthorizedError,
     ValidationError,
 )
+from app.persistence.repositories.user_repository import UserRepository
+from app.persistence.session import AsyncSessionLocal
+from app.providers.plaid_provider import PlaidProvider
 
 settings = get_settings()
 
@@ -38,6 +44,42 @@ async def validate_plaid_config() -> None:
         from app.core.crypto import _fernet
 
         _fernet()
+        if settings.plaid_auto_sync_enabled:
+            app.state.plaid_auto_sync_task = asyncio.create_task(_plaid_auto_sync_loop())
+
+
+async def _sync_all_linked_institutions() -> None:
+    """Refresh every user's linked Plaid Items without a browser request.
+
+    This is deliberately best-effort: `PlaidProvider.refresh` isolates one
+    failed institution from the others, and one user's failure must never
+    prevent the next user's data from being refreshed.
+    """
+    async with AsyncSessionLocal() as session:
+        user_ids = await UserRepository(session).list_active_ids()
+        for user_id in user_ids:
+            try:
+                provider = PlaidProvider(session, settings.plaid_client_id, settings.plaid_secret, settings.plaid_env)
+                await provider.refresh(user_id)
+                await session.commit()
+            except Exception:
+                await session.rollback()
+
+
+async def _plaid_auto_sync_loop() -> None:
+    interval_seconds = max(15, settings.plaid_auto_sync_interval_minutes * 60)
+    while True:
+        await asyncio.sleep(interval_seconds)
+        await _sync_all_linked_institutions()
+
+
+@app.on_event("shutdown")
+async def stop_plaid_auto_sync() -> None:
+    task = getattr(app.state, "plaid_auto_sync_task", None)
+    if task is not None:
+        task.cancel()
+        with suppress(asyncio.CancelledError):
+            await task
 
 
 _STATUS_BY_ERROR = {
