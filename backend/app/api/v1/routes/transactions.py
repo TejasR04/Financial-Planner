@@ -8,6 +8,7 @@ from app.api.deps import get_current_user, get_db
 from app.core.exceptions import NotFoundError, ValidationError
 from app.domain.entities import Transaction, User
 from app.persistence.repositories.transaction_repository import TransactionRepository
+from app.persistence.repositories.budget_repository import BudgetRepository
 from app.providers.csv_import_provider import CSVImportProvider
 from app.schemas.transaction import (
     CSVImportRequest,
@@ -17,6 +18,7 @@ from app.schemas.transaction import (
     TransactionResponse,
     TransactionUpdateRequest,
 )
+from app.schemas.budget import TransactionBudgetAssignmentRequest
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
@@ -73,6 +75,22 @@ async def update_transaction_category(
     db: AsyncSession = Depends(get_db),
 ) -> TransactionResponse:
     updated = await TransactionRepository(db).update_category(transaction_id, body.category)
+    await db.commit()
+    return TransactionResponse.model_validate(updated, from_attributes=True)
+
+
+@router.patch("/{transaction_id}/budget-category", response_model=TransactionResponse)
+async def update_transaction_budget_category(
+    transaction_id: UUID,
+    body: TransactionBudgetAssignmentRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> TransactionResponse:
+    if body.budget_category_id is not None:
+        await BudgetRepository(db).get_category_for_user(current_user.id, body.budget_category_id)
+    updated = await TransactionRepository(db).update_budget_category(
+        current_user.id, transaction_id, body.budget_category_id
+    )
     await db.commit()
     return TransactionResponse.model_validate(updated, from_attributes=True)
 

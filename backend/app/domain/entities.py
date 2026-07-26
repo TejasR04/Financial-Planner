@@ -109,6 +109,7 @@ class Transaction:
     type: TransactionType
     status: TransactionStatus = TransactionStatus.CLEARED
     external_transaction_id: str | None = None
+    budget_category_id: UUID | None = None
 
 
 @dataclass(slots=True)

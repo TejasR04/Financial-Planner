@@ -114,6 +114,18 @@ class HoldingModel(Base):
     account: Mapped["AccountModel"] = relationship(back_populates="holdings")
 
 
+class InvestmentValueSnapshotModel(Base):
+    """One end-of-sync value per investment or retirement account per day."""
+
+    __tablename__ = "investment_value_snapshots"
+    __table_args__ = (UniqueConstraint("account_id", "as_of", name="uq_investment_value_snapshots_account_date"),)
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    account_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("accounts.id"), index=True)
+    as_of: Mapped[date] = mapped_column(Date, index=True)
+    value: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+
+
 class TransactionModel(Base):
     __tablename__ = "transactions"
     __table_args__ = (
@@ -129,6 +141,40 @@ class TransactionModel(Base):
     type: Mapped[str] = mapped_column(String(20))
     status: Mapped[str] = mapped_column(String(20), default="cleared")
     external_transaction_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # A user-owned budget assignment. The provider's `category` remains
+    # untouched so the original financial-data classification is retained.
+    budget_category_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("budget_categories.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+
+
+class BudgetCategoryModel(Base):
+    __tablename__ = "budget_categories"
+    __table_args__ = (UniqueConstraint("user_id", "name", name="uq_budget_categories_user_name"),)
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("users.id"), index=True)
+    name: Mapped[str] = mapped_column(String(100))
+    group_name: Mapped[str] = mapped_column(String(100), default="Other")
+    monthly_limit: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    sort_order: Mapped[int] = mapped_column(Integer, default=0)
+    active: Mapped[bool] = mapped_column(Boolean, default=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
+
+
+class MerchantBudgetRuleModel(Base):
+    __tablename__ = "merchant_budget_rules"
+    __table_args__ = (UniqueConstraint("user_id", "merchant_pattern", name="uq_merchant_budget_rules_user_pattern"),)
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("users.id"), index=True)
+    budget_category_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("budget_categories.id", ondelete="CASCADE"), index=True
+    )
+    # Lower-cased normalized substring, e.g. "netflix".
+    merchant_pattern: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
 class IncomeSourceModel(Base):

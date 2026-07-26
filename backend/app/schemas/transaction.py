@@ -18,6 +18,7 @@ class TransactionResponse(BaseModel):
     amount: Decimal
     type: TransactionType
     status: TransactionStatus
+    budget_category_id: UUID | None = None
 
 
 class TransactionListResponse(BaseModel):

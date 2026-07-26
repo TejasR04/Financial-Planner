@@ -26,6 +26,7 @@ from app.domain.enums import AccountStatus, AccountType, AssetClass, Transaction
 from app.persistence.repositories.account_repository import AccountRepository
 from app.persistence.repositories.holding_repository import HoldingRepository
 from app.persistence.repositories.institution_repository import InstitutionRepository
+from app.persistence.repositories.investment_value_snapshot_repository import InvestmentValueSnapshotRepository
 from app.persistence.repositories.transaction_repository import TransactionRepository
 from app.providers.base import FinancialDataProvider
 from app.providers.plaid_client import PlaidClient, RawPlaidAccount, RawPlaidHolding, RawPlaidTransaction
@@ -103,6 +104,7 @@ class PlaidProvider(FinancialDataProvider):
         self._accounts = AccountRepository(session)
         self._transactions = TransactionRepository(session)
         self._holdings = HoldingRepository(session)
+        self._investment_history = InvestmentValueSnapshotRepository(session)
 
     # -- Link flow (Phase A) --------------------------------------------
 
@@ -191,10 +193,11 @@ class PlaidProvider(FinancialDataProvider):
         institution = await self._institutions.lock_for_sync(user_id, institution.id)
         access_token = await self._institutions.get_decrypted_access_token(institution.id)
         raw_accounts = await self._client.get_accounts(access_token)
-        for raw_account in raw_accounts:
-            await self._accounts.upsert_from_plaid(
-                user_id, _to_account_entity(user_id, institution.id, raw_account)
-            )
+        saved_accounts = [
+            await self._accounts.upsert_from_plaid(user_id, _to_account_entity(user_id, institution.id, raw_account))
+            for raw_account in raw_accounts
+        ]
+        await self._investment_history.record_for_accounts(saved_accounts)
         await self._accounts.archive_missing_from_plaid(
             user_id,
             institution.id,

@@ -17,6 +17,7 @@ from app.schemas.scenario import (
     ScenarioRunHistoryResponse,
     ScenarioRunRequest,
     ScenarioRunResponse,
+    ScenarioPreviewResponse,
     ScenarioSensitivityRequest,
     ScenarioSensitivityResponse,
     ScenarioUpdateRequest,
@@ -28,6 +29,54 @@ from app.simulation.assumptions import PlanningAssumptions
 router = APIRouter(prefix="/scenarios", tags=["scenarios"])
 
 scenario_service = ScenarioService()
+
+
+def _retirement_trajectory(result, assumptions: PlanningAssumptions) -> list[dict]:
+    return [
+        {
+            "year": p.year_index,
+            "age": p.age,
+            "balance": str(p.ending_balance),
+            "withdrawal": "0",
+        }
+        for p in result.retirement_projection.accumulation_series
+    ] + [
+        {
+            "year": assumptions.years_to_retirement + p.year_index,
+            "age": p.age,
+            "balance": str(p.ending_balance),
+            "withdrawal": str(-p.contributions),
+        }
+        for p in result.retirement_projection.decumulation_series
+    ]
+
+
+async def _compute_scenario(
+    scenario, body: ScenarioRunRequest, current_user: User, db: AsyncSession
+):
+    accounts = await AccountRepository(db).list_for_user(current_user.id)
+    planning_profile = await UserRepository(db).get_planning_profile(current_user.id)
+    assumptions = PlanningAssumptions(
+        current_age=body.current_age,
+        retirement_age=scenario.retirement_age,
+        savings_rate=scenario.savings_rate,
+        monthly_contribution=scenario.monthly_contribution,
+        expected_return=scenario.expected_return,
+        inflation_rate=scenario.inflation_rate,
+        withdrawal_rate=scenario.withdrawal_rate,
+        desired_monthly_income_today=scenario.desired_monthly_income_today,
+        target_equity_allocation=planning_profile.target_equity_allocation,
+    )
+    result = scenario_service.run(
+        accounts=accounts,
+        assumptions=assumptions,
+        current_retirement_balance=body.current_retirement_balance,
+        annual_contribution=scenario.monthly_contribution * 12,
+        annual_spending_target=body.annual_spending_target,
+        include_monte_carlo=body.include_monte_carlo,
+        monte_carlo_trials=body.monte_carlo_trials,
+    )
+    return result, assumptions
 
 
 @router.get("", response_model=list[ScenarioResponse])
@@ -136,30 +185,7 @@ async def run_scenario(
     """
     scenario_repo = ScenarioRepository(db)
     scenario = await scenario_repo.get(scenario_id)
-    accounts = await AccountRepository(db).list_for_user(current_user.id)
-    planning_profile = await UserRepository(db).get_planning_profile(current_user.id)
-
-    assumptions = PlanningAssumptions(
-        current_age=body.current_age,
-        retirement_age=scenario.retirement_age,
-        savings_rate=scenario.savings_rate,
-        monthly_contribution=scenario.monthly_contribution,
-        expected_return=scenario.expected_return,
-        inflation_rate=scenario.inflation_rate,
-        withdrawal_rate=scenario.withdrawal_rate,
-        desired_monthly_income_today=scenario.desired_monthly_income_today,
-        target_equity_allocation=planning_profile.target_equity_allocation,
-    )
-
-    result = scenario_service.run(
-        accounts=accounts,
-        assumptions=assumptions,
-        current_retirement_balance=body.current_retirement_balance,
-        annual_contribution=scenario.monthly_contribution * 12,
-        annual_spending_target=body.annual_spending_target,
-        include_monte_carlo=body.include_monte_carlo,
-        monte_carlo_trials=body.monte_carlo_trials,
-    )
+    result, assumptions = await _compute_scenario(scenario, body, current_user, db)
 
     trajectory = [
         {
@@ -168,10 +194,7 @@ async def run_scenario(
         }
         for p in result.net_worth_projection.series
     ]
-    retirement_trajectory = [
-        {"year": p.year_index, "age": p.age, "balance": str(p.ending_balance)}
-        for p in result.retirement_projection.accumulation_series
-    ]
+    retirement_trajectory = _retirement_trajectory(result, assumptions)
     assumptions_snapshot = {
         "current_age": assumptions.current_age,
         "retirement_age": assumptions.retirement_age,
@@ -194,6 +217,35 @@ async def run_scenario(
     )
     await db.commit()
     return ScenarioRunResponse.model_validate(run_row, from_attributes=True)
+
+
+@router.post("/{scenario_id}/preview", response_model=ScenarioPreviewResponse)
+async def preview_scenario(
+    scenario_id: UUID,
+    body: ScenarioRunRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> ScenarioPreviewResponse:
+    """Return a fresh scenario calculation without creating a run record."""
+    scenario = await ScenarioRepository(db).get(scenario_id)
+    result, assumptions = await _compute_scenario(scenario, body, current_user, db)
+    trajectory = [
+        {
+            "year": p.year_index,
+            "age": p.age,
+            "assets": str(p.assets),
+            "liabilities": str(p.liabilities),
+            "net": str(p.net),
+        }
+        for p in result.net_worth_projection.series
+    ]
+    return ScenarioPreviewResponse(
+        net_worth_at_target_age=result.retirement_projection.projected_balance_at_retirement,
+        monthly_sustainable_withdrawal=result.retirement_projection.monthly_sustainable_withdrawal,
+        success_rate=(round(result.monte_carlo.success_rate, 4) if result.monte_carlo else None),
+        trajectory=trajectory,
+        retirement_trajectory=_retirement_trajectory(result, assumptions),
+    )
 
 
 @router.get("/{scenario_id}/runs", response_model=ScenarioRunHistoryResponse)

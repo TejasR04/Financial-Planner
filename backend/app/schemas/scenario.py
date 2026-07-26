@@ -85,6 +85,19 @@ class ScenarioRunHistoryResponse(BaseModel):
     data: list[ScenarioRunResponse]
 
 
+class ScenarioPreviewResponse(BaseModel):
+    """An on-demand scenario result. Unlike ScenarioRunResponse, it is not
+    persisted, so the projections page can always reflect current balances
+    and assumptions without a manual "run" action or run-history noise.
+    """
+
+    net_worth_at_target_age: Decimal
+    monthly_sustainable_withdrawal: Decimal | None
+    success_rate: Decimal | None
+    trajectory: list[dict]
+    retirement_trajectory: list[dict]
+
+
 class ScenarioCompareRequest(BaseModel):
     scenario_ids: list[UUID]
 

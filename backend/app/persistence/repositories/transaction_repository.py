@@ -31,8 +31,14 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         )
         if account_id is not None:
             query = query.where(TransactionModel.account_id == account_id)
-        if category is not None:
-            query = query.where(TransactionModel.category == category)
+        if category is not None and category.strip():
+            # Categories arrive from providers as identifiers such as
+            # "rent_and_utilities". Match the typed characters anywhere in
+            # that identifier, regardless of case, while treating underscores
+            # like spaces for a natural search experience.
+            normalized_category = func.replace(func.lower(TransactionModel.category), "_", " ")
+            normalized_query = " ".join(category.lower().replace("_", " ").split())
+            query = query.where(normalized_category.contains(normalized_query, autoescape=True))
         if since is not None:
             query = query.where(TransactionModel.posted_at >= since)
         if until is not None:
@@ -145,6 +151,23 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         await self.session.flush()
         return _to_domain(row)
 
+    async def update_budget_category(
+        self, user_id: UUID, transaction_id: UUID, budget_category_id: UUID | None
+    ) -> Transaction:
+        result = await self.session.execute(
+            select(TransactionModel)
+            .join(AccountModel, AccountModel.id == TransactionModel.account_id)
+            .where(TransactionModel.id == transaction_id, AccountModel.user_id == user_id)
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            from app.core.exceptions import NotFoundError
+
+            raise NotFoundError("Transaction", str(transaction_id))
+        row.budget_category_id = budget_category_id
+        await self.session.flush()
+        return _to_domain(row)
+
     async def list_since_for_income_expense(self, user_id: UUID, since: date) -> list[Transaction]:
         """All income/expense transactions since a date, unfiltered by
         account — used by services that need real transaction history
@@ -164,4 +187,5 @@ def _to_domain(row: TransactionModel) -> Transaction:
         type=TransactionType(row.type),
         status=TransactionStatus(row.status),
         external_transaction_id=row.external_transaction_id,
+        budget_category_id=row.budget_category_id,
     )

@@ -10,6 +10,7 @@ from app.domain.enums import AccountStatus, AccountType
 from app.persistence.repositories.account_repository import AccountRepository
 from app.persistence.repositories.holding_repository import HoldingRepository
 from app.persistence.repositories.institution_repository import InstitutionRepository
+from app.persistence.repositories.investment_value_snapshot_repository import InvestmentValueSnapshotRepository
 from app.persistence.repositories.user_repository import UserRepository
 from app.schemas.account import (
     AccountCreateRequest,
@@ -99,6 +100,7 @@ async def create_account(
         status=AccountStatus.MANUAL,
     )
     created = await AccountRepository(db).create(current_user.id, account)
+    await InvestmentValueSnapshotRepository(db).record_for_accounts([created])
     await db.commit()
     return _to_response(created, {})
 
@@ -180,6 +182,7 @@ async def update_account(
     updated = await AccountRepository(db).update_manual_for_user(
         current_user.id, account_id, **body.model_dump(exclude_unset=True)
     )
+    await InvestmentValueSnapshotRepository(db).record_for_accounts([updated])
     await db.commit()
     return _to_response(updated, {})
 

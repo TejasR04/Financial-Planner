@@ -112,6 +112,51 @@ def project_balance_series(
     return series
 
 
+def project_retirement_withdrawal_series(
+    starting_balance: Decimal,
+    annual_withdrawal: Decimal,
+    annual_rate: Decimal,
+    years: int,
+    starting_age: int,
+    withdrawal_growth_rate: Decimal = ZERO,
+) -> list[YearProjection]:
+    """Project a portfolio through retirement after contributions stop.
+
+    The withdrawal is taken at the beginning of each year and then the
+    remaining balance grows for that year.  Withdrawals rise with inflation
+    by default so the model preserves the intended purchasing power rather
+    than quietly reducing spending every year.
+    """
+    if years < 0:
+        raise ValueError("years must be non-negative")
+    if annual_withdrawal < ZERO:
+        raise ValueError("annual_withdrawal must be non-negative")
+
+    series: list[YearProjection] = []
+    balance = starting_balance
+    withdrawal = annual_withdrawal
+
+    for i in range(years):
+        amount_withdrawn = min(balance, withdrawal)
+        balance_after_withdrawal = balance - amount_withdrawn
+        growth = balance_after_withdrawal * annual_rate
+        ending = max(ZERO, balance_after_withdrawal + growth)
+        series.append(
+            YearProjection(
+                year_index=i + 1,
+                age=starting_age + i + 1,
+                starting_balance=balance,
+                contributions=-amount_withdrawn,
+                growth=growth,
+                ending_balance=ending,
+            )
+        )
+        balance = ending
+        withdrawal = withdrawal * (ONE + withdrawal_growth_rate)
+
+    return series
+
+
 @dataclass(slots=True, frozen=True)
 class AmortizationRow:
     period: int

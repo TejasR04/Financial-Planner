@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 
 from app.domain.entities import PlanningProfile, User
-from app.persistence.models import PlanningProfileModel, UserModel
+from app.persistence.models import BudgetCategoryModel, PlanningProfileModel, UserModel
 from app.persistence.repositories.base import BaseRepository
 
 
@@ -35,6 +35,15 @@ class UserRepository(BaseRepository[UserModel]):
         await self.session.flush()
         # Seed a default planning profile so every user has one immediately.
         self.session.add(PlanningProfileModel(id=uuid4(), user_id=row.id))
+        self.session.add_all(
+            [
+                BudgetCategoryModel(
+                    id=uuid4(), user_id=row.id, name=name, group_name=group_name,
+                    monthly_limit=0, sort_order=sort_order,
+                )
+                for sort_order, (name, group_name) in enumerate(DEFAULT_BUDGET_CATEGORIES)
+            ]
+        )
         await self.session.flush()
         return _to_domain(row)
 
@@ -54,6 +63,11 @@ class UserRepository(BaseRepository[UserModel]):
             row.date_of_birth = date_of_birth
         await self.session.flush()
         return _to_domain(row)
+
+    async def update_password(self, user_id: UUID, hashed_password: str) -> None:
+        row = await self._get_or_raise("User", user_id)
+        row.hashed_password = hashed_password
+        await self.session.flush()
 
     async def update_planning_profile(
         self,
@@ -102,3 +116,15 @@ def _to_domain(row: UserModel) -> User:
         base_currency=row.base_currency,
         date_of_birth=row.date_of_birth,
     )
+
+
+DEFAULT_BUDGET_CATEGORIES = [
+    ("Drinks & Dining", "Wants"),
+    ("Groceries", "Needs"),
+    ("Transportation", "Needs"),
+    ("Housing", "Needs"),
+    ("Entertainment", "Wants"),
+    ("Travel", "Wants"),
+    ("Health", "Needs"),
+    ("Shopping", "Wants"),
+]

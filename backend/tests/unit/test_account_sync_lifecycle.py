@@ -102,6 +102,7 @@ async def test_refresh_archives_removed_accounts_and_tolerates_missing_holdings(
     )
     provider._transactions = SimpleNamespace(apply_plaid_updates=AsyncMock(return_value=(0, 0, 0)))
     provider._holdings = SimpleNamespace(replace_for_accounts=AsyncMock())
+    provider._investment_history = SimpleNamespace(record_for_accounts=AsyncMock())
     provider._client = SimpleNamespace(
         get_accounts=AsyncMock(return_value=[raw_account]),
         sync_transactions=AsyncMock(
@@ -118,6 +119,7 @@ async def test_refresh_archives_removed_accounts_and_tolerates_missing_holdings(
     provider._accounts.archive_missing_from_plaid.assert_awaited_once_with(
         user_id, institution_id, ["plaid-account-1"]
     )
+    provider._investment_history.record_for_accounts.assert_awaited_once()
     provider._institutions.mark_sync_success.assert_awaited_once_with(institution_id, "cursor-1")
 
 

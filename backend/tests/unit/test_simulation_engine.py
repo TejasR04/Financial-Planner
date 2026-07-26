@@ -13,6 +13,7 @@ from app.simulation.engine import (
     future_value_of_annuity,
     inflate,
     project_balance_series,
+    project_retirement_withdrawal_series,
     real_return,
     safe_withdrawal_amount,
     total_interest,
@@ -79,6 +80,32 @@ def test_project_balance_series_length_and_monotonic_growth():
 
 def test_project_balance_series_zero_years_returns_empty():
     assert project_balance_series(Decimal("100"), Decimal("10"), Decimal("0.05"), 0, 30) == []
+
+
+def test_retirement_withdrawal_series_continues_after_retirement():
+    series = project_retirement_withdrawal_series(
+        starting_balance=Decimal("1000000"),
+        annual_withdrawal=Decimal("40000"),
+        annual_rate=Decimal("0.07"),
+        years=3,
+        starting_age=65,
+        withdrawal_growth_rate=Decimal("0.02"),
+    )
+    assert [row.age for row in series] == [66, 67, 68]
+    assert series[0].contributions == Decimal("-40000")
+    assert series[1].contributions == Decimal("-40800.00")
+    assert series[-1].ending_balance > Decimal("1000000")
+
+
+def test_retirement_withdrawal_series_never_goes_negative():
+    series = project_retirement_withdrawal_series(
+        starting_balance=Decimal("10000"),
+        annual_withdrawal=Decimal("20000"),
+        annual_rate=Decimal("0.05"),
+        years=2,
+        starting_age=65,
+    )
+    assert [row.ending_balance for row in series] == [Decimal("0"), Decimal("0")]
 
 
 def test_amortize_loan_pays_off_to_zero():

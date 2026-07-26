@@ -31,6 +31,13 @@ def create_refresh_token(subject: UUID) -> str:
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
+def create_password_reset_token(subject: UUID) -> str:
+    settings = get_settings()
+    expire = datetime.now(timezone.utc) + timedelta(minutes=settings.password_reset_token_expire_minutes)
+    payload = {"sub": str(subject), "exp": expire, "type": "password_reset"}
+    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
 class InvalidTokenError(Exception):
     pass
 

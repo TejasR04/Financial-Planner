@@ -14,6 +14,7 @@ from app.simulation.engine import (
     YearProjection,
     inflate_to_future_dollars,
     project_balance_series,
+    project_retirement_withdrawal_series,
     safe_withdrawal_amount,
 )
 
@@ -24,6 +25,7 @@ ZERO = Decimal("0")
 class RetirementProjection:
     assumptions: PlanningAssumptions
     accumulation_series: list[YearProjection]
+    decumulation_series: list[YearProjection]
     projected_balance_at_retirement: Decimal
     annual_sustainable_withdrawal: Decimal
     monthly_sustainable_withdrawal: Decimal
@@ -105,9 +107,24 @@ class RetirementProjectionService:
             shortfall_or_surplus = annual_withdrawal - effective_spending_target
             is_feasible = shortfall_or_surplus >= ZERO
 
+        retirement_withdrawal = (
+            effective_spending_target
+            if effective_spending_target is not None
+            else annual_withdrawal
+        )
+        decumulation_series = project_retirement_withdrawal_series(
+            starting_balance=balance_at_retirement,
+            annual_withdrawal=retirement_withdrawal,
+            annual_rate=assumptions.expected_return,
+            years=assumptions.years_in_retirement,
+            starting_age=assumptions.retirement_age,
+            withdrawal_growth_rate=assumptions.inflation_rate,
+        )
+
         return RetirementProjection(
             assumptions=assumptions,
             accumulation_series=series,
+            decumulation_series=decumulation_series,
             projected_balance_at_retirement=balance_at_retirement,
             annual_sustainable_withdrawal=annual_withdrawal,
             monthly_sustainable_withdrawal=monthly_withdrawal,
