@@ -10,7 +10,7 @@ import { NetWorthChart } from "@/components/charts/net-worth-chart";
 import { AllocationChart } from "@/components/charts/allocation-chart";
 import { CashflowChart } from "@/components/charts/cashflow-chart";
 import { TransactionsTable } from "@/components/transactions-table";
-import { AiInsights } from "@/components/ai-insights";
+import { RuleBasedInsights } from "@/components/rule-based-insights";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAccountsData, useAllocationMeta, useCashflowSeries, useKpis, useTransactionsData } from "@/lib/data-provider";
@@ -126,7 +126,7 @@ export default function OverviewPage() {
           <TransactionsTable />
         </Panel>
 
-        <AiInsights className="xl:col-span-1" />
+        <RuleBasedInsights className="xl:col-span-1" />
       </div>
 
       <div className="mt-4">

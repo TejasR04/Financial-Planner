@@ -78,6 +78,13 @@ export type ApiAgentChatResponse = {
   structured_results: { tool: string; result: unknown }[];
 };
 
+export type ApiAgentMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  created_at: string;
+};
+
 export type ApiUser = {
   id: string;
   email: string;
@@ -358,8 +365,10 @@ export const api = {
       post<void>("/auth/password-reset/confirm", { token, password }),
   },
   agent: {
-    chat: (message: string, history: { role: "user" | "assistant"; content: string }[] = []) =>
-      post<ApiAgentChatResponse>("/agent/chat", { message, history }),
+    chat: (message: string) =>
+      post<ApiAgentChatResponse>("/agent/chat", { message }),
+    history: () => get<ApiAgentMessage[]>("/agent/history"),
+    clearHistory: () => del<void>("/agent/history"),
   },
   users: {
     me: () => get<ApiUser>("/users/me"),
@@ -542,7 +551,8 @@ export const api = {
     }) => post<ApiNetWorthSimulation>("/simulations/net-worth", body),
   },
   recommendations: {
-    list: () => get<ApiRecommendation[]>("/recommendations"),
+    list: (status?: ApiRecommendation["status"]) =>
+      get<ApiRecommendation[]>(`/recommendations${status ? `?status=${status}` : ""}`),
     generate: () => post<ApiRecommendation[]>("/recommendations/generate"),
     update: (id: string, status: "applied" | "dismissed") =>
       patch<ApiRecommendation>(`/recommendations/${id}`, { status }),

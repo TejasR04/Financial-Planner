@@ -346,7 +346,9 @@ GET    /insights
 GET    /financial-health                                -> latest score
 POST   /financial-health/recalculate
 
-POST   /agent/chat                                        -> {message, conversation_id} -> {reply, tool_calls[], structured_results[]}
+GET    /agent/history                                     -> saved per-user conversation
+DELETE /agent/history                                     -> clear saved conversation
+POST   /agent/chat                                        -> {message} -> {reply, tool_calls[], structured_results[]}
 ```
 
 Every list endpoint response is `{data: [...], meta: {...}}`; every compute
@@ -408,8 +410,9 @@ ToolRegistry
   dispatch(name, raw_args) -> BaseModel
 
 AgentOrchestrator
-  handle_message(user, message, history) -> AgentResponse
-    1. load user context (accounts/profile summary — kept small, not the full ledger)
+  handle_message(message, history, user_context) -> AgentResponse
+    1. receive a privacy-limited context assembled from the authenticated user's
+       profile, account totals, holdings, debts, income, and trailing cash flow
     2. call Gemini with function declarations = registry.to_gemini_declarations()
     3. for each tool_call the LLM emits: registry.dispatch(...) -> structured result
        (never hand-computed by the model)
@@ -417,18 +420,17 @@ AgentOrchestrator
        explanation, with an explicit system instruction: "state only what
        is present in the structured results; do not invent numbers"
     5. return {reply, tool_calls, structured_results} so the frontend can
-       render both the prose and, later, an inline chart/table from the
-       structured payload
+       render both the prose and the deterministic tools used
 ```
 
 Tool catalog (`app/ai/tools/*`), each a thin wrapper around one service call:
 
-- `forecast_tools.py` — `forecast_retirement`, `forecast_net_worth`, `forecast_cash_flow`
+- `forecast_tools.py` — `forecast_retirement`, `find_earliest_retirement_age`, `forecast_cash_flow`
 - `tax_tools.py` — `estimate_taxes`, `calculate_hsa_tax_savings`, `calculate_roth_vs_traditional`
 - `debt_tools.py` — `prioritize_debt_payoff`
 - `investment_tools.py` — `calculate_401k_match`, `analyze_allocation`
-- `scenario_tools.py` — `compare_scenarios`, `run_monte_carlo`, `optimize_monthly_surplus`
-- `recommendation_tools.py` — `generate_financial_health_score`, `get_recommendations`, `estimate_home_affordability`
+- `scenario_tools.py` — `run_monte_carlo`, `optimize_monthly_surplus`
+- `recommendation_tools.py` — `generate_financial_health_score`, `estimate_home_affordability`
 
 Each tool file contains **only**: argument unpacking, a single service call,
 and returning the service's return value. No arithmetic.
@@ -437,6 +439,10 @@ and returning the service's return value. No arithmetic.
 piece of this stack — it wires a request to `AgentOrchestrator`, which is
 otherwise framework-free and could be dropped behind an MCP server later
 with no change to `tool_registry.py` or the tool wrapper functions.
+`app/ai/assistant_context.md` owns durable behavior and tool-routing guidance.
+`agent_messages` persists the most recent conversation per user, and the
+Insights UI presents this Gemini conversation separately from deterministic
+insights and recommendations.
 
 ---
 
@@ -498,9 +504,10 @@ Projections page for real.
 `FinancialHealthService`, `/recommendations`, `/insights`,
 `/financial-health` — unblocks the Insights page.
 
-**Phase 5 — AI layer.** `ToolRegistry`, tool wrappers over the Phase 1–4
-services, `AgentOrchestrator`, `/agent/chat`. Add a chat surface to the
-frontend.
+**Phase 5 — AI layer (implemented).** `ToolRegistry`, deterministic tool
+wrappers, Gemini `AgentOrchestrator`, authenticated financial context,
+database-backed conversation memory, `/agent/chat`, and the Insights chat
+surface.
 
 **Phase 6 — Plaid integration.** `PlaidProvider`, webhook handling, account
 linking flow, scheduled sync job.
@@ -510,6 +517,6 @@ linking flow, scheduled sync job.
 `optimize_monthly_surplus` tool — the engine was designed in Phase 1 so this
 requires no refactor of existing services.
 
-This repository implements **Phase 0 and Phase 1** fully (runnable, tested),
-scaffolds Phases 2–5 with real interfaces and TODOs so the shape is locked
-in, and leaves Phases 6–7 as design-only per the roadmap above.
+The roadmap labels are historical sequencing notes; the repository now
+contains working implementations across these phases, including Plaid sync,
+Monte Carlo projections, budgeting, investments, and the Gemini assistant.

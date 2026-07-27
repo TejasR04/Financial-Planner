@@ -40,7 +40,10 @@ def test_gemini_declarations_are_openapi_subset_and_tools_are_serializable() -> 
 
 def test_gemini_function_call_round_trip() -> None:
     client = FakeClient()
-    result = AgentOrchestrator(client=client, model="test-model").handle_message("How much can my HSA save?")
+    result = AgentOrchestrator(client=client, model="test-model").handle_message(
+        "How much can my HSA save?",
+        user_context='{"currency":"USD","summary":{"net_worth":"1000.00"}}',
+    )
 
     assert result.reply.startswith("Your estimated annual HSA")
     assert result.tool_calls == [
@@ -52,6 +55,9 @@ def test_gemini_function_call_round_trip() -> None:
     assert result.structured_results[0]["tool"] == "calculate_hsa_tax_savings"
     assert len(client.models.requests) == 2
     assert client.models.requests[1]["contents"][-1].role == "user"
+    system_instruction = client.models.requests[0]["config"].system_instruction
+    assert "Tool routing" in system_instruction
+    assert '"net_worth":"1000.00"' in system_instruction
 
 
 def test_missing_gemini_key_is_explicit(monkeypatch: pytest.MonkeyPatch) -> None:

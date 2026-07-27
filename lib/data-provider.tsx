@@ -246,7 +246,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           optional("institutions", api.accounts.institutions(), []),
           optional("recent transactions", api.transactions.list({ limit: 1000, since: twelveMonthWindow().startDate }), { data: [], total: 0, limit: 1000, offset: 0 }),
           optional("scenarios", api.scenarios.list(), []),
-          optional("recommendations", api.recommendations.list(), []),
+          optional("recommendations", api.recommendations.list("new"), []),
           optional("financial health", api.financialHealth.get(), null, false),
           optional("allocation", api.accounts.allocation(), null),
         ]);

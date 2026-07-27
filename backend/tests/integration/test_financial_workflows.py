@@ -96,3 +96,37 @@ async def test_agent_reports_missing_gemini_configuration(client: AsyncClient) -
 
     assert response.status_code == 503
     assert "GEMINI_API_KEY" in response.json()["detail"]
+
+    history = await client.get("/api/v1/agent/history", headers=headers)
+    assert history.status_code == 200
+    assert history.json() == []
+
+    cleared = await client.delete("/api/v1/agent/history", headers=headers)
+    assert cleared.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_rule_based_insight_refresh_replaces_previous_results(client: AsyncClient) -> None:
+    headers = await register_and_authorize(client, "insight-refresh@example.com")
+    account = await client.post(
+        "/api/v1/accounts",
+        headers=headers,
+        json={"name": "Emergency Fund", "type": "depository", "balance": "5000.00"},
+    )
+    assert account.status_code == 201
+
+    health = await client.post("/api/v1/financial-health/recalculate", headers=headers, json={})
+    assert health.status_code == 200, health.text
+
+    first = await client.post("/api/v1/insights/generate", headers=headers)
+    second = await client.post("/api/v1/insights/generate", headers=headers)
+    listed = await client.get("/api/v1/insights", headers=headers)
+
+    assert first.status_code == 200, first.text
+    assert second.status_code == 200, second.text
+    assert listed.status_code == 200
+    assert len(listed.json()) == len(second.json())
+    assert {row["text"] for row in listed.json()} == {row["text"] for row in second.json()}
+    assert {row["id"] for row in listed.json()}.isdisjoint(
+        {row["id"] for row in first.json()}
+    )

@@ -1,7 +1,7 @@
 "use client";
 
 import {
-  Sparkles,
+  ListChecks,
   Lightbulb,
   TriangleAlert,
   Info,
@@ -37,7 +37,13 @@ const config: Record<
   },
 };
 
-export function AiInsights({ className }: { className?: string }) {
+export function RuleBasedInsights({
+  className,
+  showViewAll = true,
+}: {
+  className?: string;
+  showViewAll?: boolean;
+}) {
   const insights = useInsightsData();
   const router = useRouter();
   const [now] = useState(() => Date.now());
@@ -61,10 +67,10 @@ export function AiInsights({ className }: { className?: string }) {
       <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
         <div className="flex items-center gap-2">
           <span className="flex size-5 items-center justify-center rounded-md bg-primary/10">
-            <Sparkles className="size-3.5 text-primary" />
+            <ListChecks className="size-3.5 text-primary" />
           </span>
           <h2 className="text-[13px] font-semibold tracking-tight text-foreground">
-            AI Insights
+            Rule-based insights
           </h2>
         </div>
         <span className="flex items-center gap-1 text-[10px] font-medium text-muted-foreground">
@@ -105,19 +111,21 @@ export function AiInsights({ className }: { className?: string }) {
         })}
         {insights.length === 0 && (
           <li className="px-4 py-8 text-center text-[13px] text-muted-foreground">
-            Run analysis from Insights to generate personalized observations.
+            Refresh the rule-based analysis to evaluate your current financial data.
           </li>
         )}
       </ul>
 
-      <button
-        type="button"
-        onClick={() => router.push("/insights")}
-        className="flex items-center justify-center gap-1.5 border-t border-border px-4 py-2.5 text-[12px] font-medium text-primary transition-colors hover:bg-accent/50"
-      >
-        View full analysis
-        <ArrowRight className="size-3.5" />
-      </button>
+      {showViewAll && (
+        <button
+          type="button"
+          onClick={() => router.push("/insights")}
+          className="flex items-center justify-center gap-1.5 border-t border-border px-4 py-2.5 text-[12px] font-medium text-primary transition-colors hover:bg-accent/50"
+        >
+          View rule-based analysis
+          <ArrowRight className="size-3.5" />
+        </button>
+      )}
     </div>
   );
 }

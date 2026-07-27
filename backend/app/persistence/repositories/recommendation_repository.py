@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.domain.entities import Recommendation
 from app.domain.enums import RecommendationEffort, RecommendationStatus
@@ -23,13 +23,13 @@ class RecommendationRepository(BaseRepository[RecommendationModel]):
         return [_to_domain(row) for row in result.scalars().all()]
 
     async def save_drafts(self, user_id: UUID, drafts: list[RecommendationDraft]) -> list[Recommendation]:
-        """Persists freshly generated drafts as new `new`-status rows. This
-        v1 does not dedupe against existing open recommendations — running
-        `/recommendations/generate` twice will produce two rows for the same
-        underlying opportunity. See ARCHITECTURE.md's Phase 4 follow-up note
-        for the dedup key this should use once product defines "same
-        recommendation" (likely category + rounded impact_value).
-        """
+        """Replace the current actionable set while preserving user decisions."""
+        await self.session.execute(
+            delete(RecommendationModel).where(
+                RecommendationModel.user_id == user_id,
+                RecommendationModel.status == RecommendationStatus.NEW.value,
+            )
+        )
         rows = [
             RecommendationModel(
                 id=uuid4(),

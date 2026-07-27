@@ -38,7 +38,7 @@ class Settings(BaseSettings):
     plaid_token_encryption_key: str = "wKcp4Vw4qN7pQoT1Md1AXjC8v4Gg9WdY7CqB2m1x4Zk="
 
     gemini_api_key: str | None = None
-    gemini_model: str = "gemini-2.5-flash"
+    gemini_model: str = "gemini-3.6-flash"
 
     cors_allow_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
 

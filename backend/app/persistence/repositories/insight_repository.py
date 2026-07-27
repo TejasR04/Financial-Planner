@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 
 from app.domain.entities import Insight
 from app.domain.enums import InsightKind
@@ -24,6 +24,9 @@ class InsightRepository(BaseRepository[InsightModel]):
         return [_to_domain(row) for row in result.scalars().all()]
 
     async def save_drafts(self, user_id: UUID, drafts: list[InsightDraft]) -> list[Insight]:
+        # These rows describe the current snapshot. Refreshing the analysis
+        # replaces that snapshot instead of appending identical observations.
+        await self.session.execute(delete(InsightModel).where(InsightModel.user_id == user_id))
         rows = [
             InsightModel(id=uuid4(), user_id=user_id, kind=d.kind.value, text=d.text, meta=d.meta)
             for d in drafts

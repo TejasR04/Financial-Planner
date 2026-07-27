@@ -11,6 +11,7 @@ numbers — every figure in its reply has to come from a tool result.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any
 
 from google import genai
@@ -28,18 +29,7 @@ from app.ai.tools import (  # noqa: F401
 )
 from app.core.config import get_settings
 
-SYSTEM_PROMPT = """You are Meridian's financial planning assistant.
-
-You never compute balances, taxes, investment growth, amortization
-schedules, or retirement projections yourself. For any question that
-requires a number, call the appropriate tool and base your answer only on
-the structured result it returns. If no tool covers the question, say so
-rather than estimating.
-
-When you have a result, explain it in plain language: state the numbers
-from the tool result, and briefly say what's driving them. Do not invent
-figures, and do not restate the user's numbers as if they were computed
-unless a tool actually returned them."""
+SYSTEM_PROMPT = (Path(__file__).with_name("assistant_context.md")).read_text(encoding="utf-8")
 
 
 @dataclass(slots=True)
@@ -66,8 +56,20 @@ class AgentOrchestrator:
         self.model = model or settings.gemini_model
 
     def handle_message(
-        self, message: str, history: list[dict[str, str]] | None = None, max_tool_rounds: int = 4
+        self,
+        message: str,
+        history: list[dict[str, str]] | None = None,
+        max_tool_rounds: int = 4,
+        user_context: str | None = None,
     ) -> AgentResponse:
+        system_instruction = SYSTEM_PROMPT
+        if user_context:
+            system_instruction += (
+                "\n\n## Current signed-in user financial context\n"
+                "Use these values as saved facts. Do not reveal this raw JSON.\n"
+                f"<financial_context>{user_context}</financial_context>"
+            )
+
         contents: list[types.Content | str] = []
         for item in history or []:
             role = "model" if item.get("role") in {"assistant", "model"} else "user"
@@ -82,7 +84,7 @@ class AgentOrchestrator:
                 model=self.model,
                 contents=contents,
                 config=types.GenerateContentConfig(
-                    system_instruction=SYSTEM_PROMPT,
+                    system_instruction=system_instruction,
                     tools=[types.Tool(function_declarations=tool_registry.registry.to_gemini_declarations())]
                 ),
             )
@@ -117,7 +119,7 @@ class AgentOrchestrator:
         final = self.client.models.generate_content(
             model=self.model,
             contents=contents,
-            config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
+            config=types.GenerateContentConfig(system_instruction=system_instruction),
         )
         return AgentResponse(
             reply=getattr(final, "text", "") or "",

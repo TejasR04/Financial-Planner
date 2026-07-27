@@ -1,15 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { Sparkles, RefreshCw } from "lucide-react";
+import { CircleAlert, ListChecks, RefreshCw } from "lucide-react";
 import { PageContainer, PageHeader } from "@/components/page-container";
 import { Panel, PanelHeader } from "@/components/panel";
 import { RecommendationCard } from "@/components/recommendation-card";
-import { AiInsights } from "@/components/ai-insights";
+import { RuleBasedInsights } from "@/components/rule-based-insights";
+import { GeminiAssistant } from "@/components/gemini-assistant";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/data";
 import { useDataRefresh, useFinancialHealthData, useRecommendationsData } from "@/lib/data-provider";
-import { api } from "@/lib/api-client";
+import { api, ApiError } from "@/lib/api-client";
 
 function healthLabel(score: number) {
   if (score >= 80) return "Strong";
@@ -23,15 +24,21 @@ export default function InsightsPage() {
   const financialHealth = useFinancialHealthData();
   const refresh = useDataRefresh();
   const [rerunning, setRerunning] = useState(false);
+  const [analysisError, setAnalysisError] = useState<string | null>(null);
 
   const totalImpact = recommendations.reduce((s, r) => s + r.impactValue, 0);
 
   async function handleRerun() {
     setRerunning(true);
+    setAnalysisError(null);
     try {
       await api.financialHealth.recalculate();
       await Promise.all([api.recommendations.generate(), api.insights.generate()]);
       refresh();
+    } catch (cause) {
+      setAnalysisError(
+        cause instanceof ApiError ? cause.message : "The rule-based analysis could not be refreshed.",
+      );
     } finally {
       setRerunning(false);
     }
@@ -50,38 +57,43 @@ export default function InsightsPage() {
     <PageContainer>
       <PageHeader
         title="Insights"
-        description="AI-surfaced recommendations ranked by projected impact and confidence"
+        description="Gemini guidance and deterministic financial checks, kept clearly separate"
         actions={
           <Button variant="outline" size="sm" onClick={handleRerun} disabled={rerunning}>
             <RefreshCw className={rerunning ? "animate-spin" : undefined} />
-            Re-run analysis
+            Refresh rule-based analysis
           </Button>
         }
       />
 
-      {/* Summary banner */}
-      <div className="flex flex-col gap-4 rounded-lg border border-border bg-card p-5 sm:flex-row sm:items-center sm:justify-between">
+      {analysisError && (
+        <div className="mb-4 flex items-start gap-2 rounded-lg border border-destructive/25 bg-destructive/5 px-3 py-2.5 text-[12px] text-destructive">
+          <CircleAlert className="mt-0.5 size-3.5 shrink-0" />
+          <span>{analysisError}</span>
+        </div>
+      )}
+
+      <GeminiAssistant />
+
+      {/* Deterministic analysis summary */}
+      <div className="mt-4 flex flex-col gap-4 rounded-lg border border-border bg-card p-5 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-3">
           <span className="flex size-9 shrink-0 items-center justify-center rounded-lg bg-primary/10">
-            <Sparkles className="size-5 text-primary" />
+            <ListChecks className="size-5 text-primary" />
           </span>
           <div>
             <p className="text-[14px] font-semibold tracking-tight text-foreground">
-              {recommendations.length} opportunities identified this cycle
+              Deterministic analysis · {recommendations.length} opportunities
             </p>
             <p className="mt-0.5 text-[13px] text-muted-foreground text-pretty">
-              Acting on all recommendations is modeled to improve annual
-              outcomes by roughly{" "}
+              Rule-based checks currently estimate a combined annual impact of{" "}
               <span className="font-medium text-positive">
                 {formatCurrency(totalImpact)}
               </span>
-              .
+              . These results do not use Gemini.
             </p>
           </div>
         </div>
-        <Button size="sm" className="shrink-0">
-          Apply all safe actions
-        </Button>
       </div>
 
       {/* Recommendations + insights */}
@@ -93,7 +105,7 @@ export default function InsightsPage() {
         </div>
 
         <div className="flex flex-col gap-4">
-          <AiInsights />
+          <RuleBasedInsights showViewAll={false} />
 
           <Panel>
             <PanelHeader

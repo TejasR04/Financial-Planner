@@ -281,6 +281,18 @@ class InsightModel(Base):
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class AgentMessageModel(Base):
+    __tablename__ = "agent_messages"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    role: Mapped[str] = mapped_column(String(16))
+    content: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+
+
 class FinancialHealthScoreModel(Base):
     __tablename__ = "financial_health_scores"
 
