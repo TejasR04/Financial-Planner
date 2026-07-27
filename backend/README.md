@@ -35,12 +35,12 @@ phased roadmap this repo implements against).
   `/insights`, `/financial-health`, `/financial-health/recalculate`,
   `/accounts/allocation`. This is what unblocks the Insights page and the
   Overview page's allocation chart.
-- **Phase 5 — AI layer.** `ToolRegistry` with all 12 tools from the spec
+- **Phase 5 — AI layer.** `ToolRegistry` with all 13 registered tools from the spec
   registered and wired to the real services (13 including
   `find_earliest_retirement_age`, which directly backs the "can I retire at
   58" example in the spec) — `AgentOrchestrator` implements the full
-  tool-calling loop against an OpenAI-compatible client; `POST /agent/chat`
-  is live (requires `OPENAI_API_KEY`).
+  Gemini function-calling loop; `POST /agent/chat` is live when
+  `GEMINI_API_KEY` is configured.
 
 32 API endpoints total (see `/docs` once running, or the route list in
 `ARCHITECTURE.md` §7). Every endpoint's OpenAPI schema has been verified to
@@ -59,7 +59,7 @@ docstrings on those two for the exact follow-up needed.
 ## Running locally
 
 ```bash
-cp .env.example .env        # fill in JWT_SECRET_KEY and OPENAI_API_KEY
+cp .env.example .env        # fill in JWT_SECRET_KEY and GEMINI_API_KEY
 docker compose up --build
 ```
 

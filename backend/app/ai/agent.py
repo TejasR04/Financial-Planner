@@ -1,4 +1,4 @@
-"""AgentOrchestrator — the only place an LLM call happens in this codebase.
+"""AgentOrchestrator — the only place a Gemini call happens in this codebase.
 
 Imports every tool module for its side effect of registering into
 `app.ai.tool_registry.registry`, then runs the standard tool-calling loop:
@@ -13,7 +13,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from openai import OpenAI
+from google import genai
+from google.genai import types
 
 from app.ai import tool_registry
 # Imported for registration side effects only.
@@ -48,62 +49,88 @@ class AgentResponse:
     structured_results: list[dict[str, Any]] = field(default_factory=list)
 
 
+class GeminiConfigurationError(RuntimeError):
+    """Raised when AI is requested before a Gemini key is configured."""
+
+
 class AgentOrchestrator:
-    def __init__(self, client: OpenAI | None = None, model: str | None = None):
+    def __init__(self, client: Any | None = None, model: str | None = None):
         settings = get_settings()
-        self.client = client or OpenAI(api_key=settings.openai_api_key)
-        self.model = model or settings.openai_model
+        if client is None:
+            if not settings.gemini_api_key:
+                raise GeminiConfigurationError(
+                    "Gemini is not configured. Set GEMINI_API_KEY in the API environment."
+                )
+            client = genai.Client(api_key=settings.gemini_api_key)
+        self.client = client
+        self.model = model or settings.gemini_model
 
     def handle_message(
         self, message: str, history: list[dict[str, str]] | None = None, max_tool_rounds: int = 4
     ) -> AgentResponse:
-        messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
-        messages.extend(history or [])
-        messages.append({"role": "user", "content": message})
+        contents: list[types.Content | str] = []
+        for item in history or []:
+            role = "model" if item.get("role") in {"assistant", "model"} else "user"
+            contents.append(types.Content(role=role, parts=[types.Part(text=item.get("content", ""))]))
+        contents.append(types.Content(role="user", parts=[types.Part(text=message)]))
 
         tool_calls_log: list[dict[str, Any]] = []
         structured_results: list[dict[str, Any]] = []
 
         for _ in range(max_tool_rounds):
-            completion = self.client.chat.completions.create(
+            response = self.client.models.generate_content(
                 model=self.model,
-                messages=messages,
-                tools=tool_registry.registry.to_openai_tools(),
+                contents=contents,
+                config=types.GenerateContentConfig(
+                    system_instruction=SYSTEM_PROMPT,
+                    tools=[types.Tool(function_declarations=tool_registry.registry.to_gemini_declarations())]
+                ),
             )
-            choice = completion.choices[0]
-            messages.append(choice.message.model_dump(exclude_none=True))
-
-            if not choice.message.tool_calls:
+            function_calls = _function_calls(response)
+            if not function_calls:
                 return AgentResponse(
-                    reply=choice.message.content or "",
+                    reply=getattr(response, "text", "") or "",
                     tool_calls=tool_calls_log,
                     structured_results=structured_results,
                 )
 
-            for call in choice.message.tool_calls:
-                result = tool_registry.registry.dispatch(call.function.name, call.function.arguments)
+            contents.append(response.candidates[0].content)
+            function_response_parts = []
+            for call in function_calls:
+                result = tool_registry.registry.dispatch(call.name, call.args or {})
                 serialized = tool_registry.registry.serialize_result(result)
-                structured_results.append({"tool": call.function.name, "result": serialized})
-                tool_calls_log.append({"tool": call.function.name, "arguments": call.function.arguments})
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": call.id,
-                        "content": _to_json(serialized),
-                    }
+                structured_results.append({"tool": call.name, "result": serialized})
+                tool_calls_log.append({"tool": call.name, "arguments": call.args or {}})
+                function_response_parts.append(
+                    types.Part(
+                        function_response=types.FunctionResponse(
+                            name=call.name,
+                            response={"result": serialized},
+                            id=getattr(call, "id", None),
+                        )
+                    )
                 )
+            contents.append(types.Content(role="user", parts=function_response_parts))
 
         # Ran out of tool rounds; ask once more for a final answer with no
         # further tool calls permitted, so the user always gets a reply.
-        final = self.client.chat.completions.create(model=self.model, messages=messages)
+        final = self.client.models.generate_content(
+            model=self.model,
+            contents=contents,
+            config=types.GenerateContentConfig(system_instruction=SYSTEM_PROMPT),
+        )
         return AgentResponse(
-            reply=final.choices[0].message.content or "",
+            reply=getattr(final, "text", "") or "",
             tool_calls=tool_calls_log,
             structured_results=structured_results,
         )
 
-
-def _to_json(value: Any) -> str:
-    import json
-
-    return json.dumps(value, default=str)
+def _function_calls(response: Any) -> list[Any]:
+    """Return every function call part, preserving Gemini's response order."""
+    calls: list[Any] = []
+    for candidate in getattr(response, "candidates", []) or []:
+        for part in getattr(getattr(candidate, "content", None), "parts", []) or []:
+            function_call = getattr(part, "function_call", None)
+            if function_call is not None:
+                calls.append(function_call)
+    return calls

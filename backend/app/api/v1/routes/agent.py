@@ -1,7 +1,7 @@
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
+from fastapi import APIRouter, Depends, HTTPException, status
+from pydantic import BaseModel, Field
 
-from app.ai.agent import AgentOrchestrator
+from app.ai.agent import AgentOrchestrator, GeminiConfigurationError
 from app.api.deps import get_current_user
 from app.domain.entities import User
 
@@ -10,7 +10,7 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 
 class ChatRequest(BaseModel):
     message: str
-    history: list[dict[str, str]] = []
+    history: list[dict[str, str]] = Field(default_factory=list)
 
 
 class ChatResponse(BaseModel):
@@ -21,7 +21,10 @@ class ChatResponse(BaseModel):
 
 @router.post("/chat", response_model=ChatResponse)
 async def chat(body: ChatRequest, current_user: User = Depends(get_current_user)) -> ChatResponse:
-    orchestrator = AgentOrchestrator()
+    try:
+        orchestrator = AgentOrchestrator()
+    except GeminiConfigurationError as exc:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
     result = orchestrator.handle_message(body.message, body.history)
     return ChatResponse(
         reply=result.reply, tool_calls=result.tool_calls, structured_results=result.structured_results

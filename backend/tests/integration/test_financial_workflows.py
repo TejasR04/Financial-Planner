@@ -87,3 +87,12 @@ async def test_budget_assignment_is_reflected_in_monthly_summary(client: AsyncCl
     assert grocery_summary["budgeted"] == "300.00"
     assert grocery_summary["spent"] == "87.50"
     assert summary.json()["uncategorized"]["transaction_count"] == 0
+
+
+@pytest.mark.asyncio
+async def test_agent_reports_missing_gemini_configuration(client: AsyncClient) -> None:
+    headers = await register_and_authorize(client, "ai-config@example.com")
+    response = await client.post("/api/v1/agent/chat", headers=headers, json={"message": "Summarize my plan"})
+
+    assert response.status_code == 503
+    assert "GEMINI_API_KEY" in response.json()["detail"]

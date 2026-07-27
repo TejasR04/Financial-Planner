@@ -72,6 +72,12 @@ const del = <T>(path: string) => request<T>(path, { method: "DELETE" });
 
 export type ApiTokenResponse = { access_token: string; refresh_token: string };
 
+export type ApiAgentChatResponse = {
+  reply: string;
+  tool_calls: { tool: string; arguments: Record<string, unknown> }[];
+  structured_results: { tool: string; result: unknown }[];
+};
+
 export type ApiUser = {
   id: string;
   email: string;
@@ -350,6 +356,10 @@ export const api = {
       post<void>("/auth/password-reset/request", { email }),
     confirmPasswordReset: (token: string, password: string) =>
       post<void>("/auth/password-reset/confirm", { token, password }),
+  },
+  agent: {
+    chat: (message: string, history: { role: "user" | "assistant"; content: string }[] = []) =>
+      post<ApiAgentChatResponse>("/agent/chat", { message, history }),
   },
   users: {
     me: () => get<ApiUser>("/users/me"),

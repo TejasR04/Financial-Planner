@@ -37,8 +37,8 @@ class Settings(BaseSettings):
     # and put it in .env — never reuse the placeholder below outside local dev.
     plaid_token_encryption_key: str = "wKcp4Vw4qN7pQoT1Md1AXjC8v4Gg9WdY7CqB2m1x4Zk="
 
-    openai_api_key: str | None = None
-    openai_model: str = "gpt-4o-mini"
+    gemini_api_key: str | None = None
+    gemini_model: str = "gemini-2.5-flash"
 
     cors_allow_origins: list[str] = ["http://localhost:3000", "http://127.0.0.1:3000"]
 

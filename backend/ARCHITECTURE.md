@@ -253,7 +253,7 @@ backend/
       normalizer.py                   # provider payload -> domain Account/Transaction
     ai/
       tool_registry.py                 # ToolRegistry: name -> (schema, handler)
-      tool_schemas.py                   # OpenAI-compatible JSON schemas, generated from Pydantic
+      tool_schemas.py                   # Gemini-compatible JSON schemas, generated from Pydantic
       agent.py                          # orchestration loop (LLM <-> tools)
       tools/
         forecast_tools.py
@@ -404,13 +404,13 @@ Nothing outside `app/providers/` ever imports a Plaid SDK type. Sync jobs and
 ```
 ToolRegistry
   register(name, pydantic_input_schema, pydantic_output_schema, handler)
-  to_openai_tools() -> list[dict]     # JSON schema for tool-calling APIs
+  to_gemini_declarations() -> list[dict] # JSON schema for Gemini function calling
   dispatch(name, raw_args) -> BaseModel
 
 AgentOrchestrator
   handle_message(user, message, history) -> AgentResponse
     1. load user context (accounts/profile summary — kept small, not the full ledger)
-    2. call LLM with tools = registry.to_openai_tools()
+    2. call Gemini with function declarations = registry.to_gemini_declarations()
     3. for each tool_call the LLM emits: registry.dispatch(...) -> structured result
        (never hand-computed by the model)
     4. feed structured results back to the LLM for a final natural-language
