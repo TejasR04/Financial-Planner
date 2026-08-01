@@ -76,7 +76,9 @@ async def update_transaction_category(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> TransactionResponse:
-    updated = await TransactionRepository(db).update_category(transaction_id, body.category)
+    updated = await TransactionRepository(db).update_category_for_user(
+        current_user.id, transaction_id, body.category
+    )
     await db.commit()
     return TransactionResponse.model_validate(updated, from_attributes=True)
 

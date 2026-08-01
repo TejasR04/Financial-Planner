@@ -1,4 +1,6 @@
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
+from secrets import token_urlsafe
 from uuid import UUID
 
 from jose import JWTError, jwt
@@ -24,11 +26,13 @@ def create_access_token(subject: UUID) -> str:
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
-def create_refresh_token(subject: UUID) -> str:
-    settings = get_settings()
-    expire = datetime.now(timezone.utc) + timedelta(days=settings.refresh_token_expire_days)
-    payload = {"sub": str(subject), "exp": expire, "type": "refresh"}
-    return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+def create_refresh_token() -> str:
+    """Create an opaque credential; only its digest is persisted."""
+    return token_urlsafe(48)
+
+
+def hash_refresh_token(token: str) -> str:
+    return sha256(token.encode("utf-8")).hexdigest()
 
 
 def create_password_reset_token(subject: UUID) -> str:

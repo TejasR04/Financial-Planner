@@ -2,7 +2,7 @@ import asyncio
 import logging
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
@@ -15,12 +15,13 @@ from app.core.security import (
     hash_password,
     verify_password,
 )
+from app.core.config import get_settings
+from app.persistence.repositories.refresh_session_repository import RefreshSessionRepository
 from app.persistence.repositories.user_repository import UserRepository
 from app.schemas.auth import (
     LoginRequest,
     PasswordResetConfirmRequest,
     PasswordResetRequest,
-    RefreshRequest,
     RegisterRequest,
     TokenResponse,
 )
@@ -30,22 +31,52 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
 
 
+def _set_refresh_cookie(response: Response, token: str) -> None:
+    settings = get_settings()
+    response.set_cookie(
+        key=settings.refresh_cookie_name,
+        value=token,
+        max_age=settings.refresh_token_expire_days * 24 * 60 * 60,
+        httponly=True,
+        secure=settings.refresh_cookie_secure,
+        samesite=settings.refresh_cookie_samesite,
+        path=f"{settings.api_v1_prefix}/auth",
+    )
+
+
+def _clear_refresh_cookie(response: Response) -> None:
+    settings = get_settings()
+    response.delete_cookie(key=settings.refresh_cookie_name, path=f"{settings.api_v1_prefix}/auth")
+
+
+async def _start_session(user_id: UUID, response: Response, db: AsyncSession) -> TokenResponse:
+    settings = get_settings()
+    refresh_token = create_refresh_token()
+    await RefreshSessionRepository(db).create(
+        user_id, refresh_token, settings.refresh_token_expire_days
+    )
+    _set_refresh_cookie(response, refresh_token)
+    return TokenResponse(access_token=create_access_token(user_id))
+
+
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
-async def register(body: RegisterRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
+async def register(
+    body: RegisterRequest, response: Response, db: AsyncSession = Depends(get_db)
+) -> TokenResponse:
     repo = UserRepository(db)
     if await repo.get_by_email(body.email) is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
 
     user = await repo.create(body.email, body.full_name, hash_password(body.password))
+    tokens = await _start_session(user.id, response, db)
     await db.commit()
-    return TokenResponse(
-        access_token=create_access_token(user.id),
-        refresh_token=create_refresh_token(user.id),
-    )
+    return tokens
 
 
 @router.post("/login", response_model=TokenResponse)
-async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)) -> TokenResponse:
+async def login(
+    body: LoginRequest, response: Response, db: AsyncSession = Depends(get_db)
+) -> TokenResponse:
     repo = UserRepository(db)
     result = await repo.get_hashed_password(body.email)
     if result is None:
@@ -54,28 +85,47 @@ async def login(body: LoginRequest, db: AsyncSession = Depends(get_db)) -> Token
     if not verify_password(body.password, hashed):
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
 
-    return TokenResponse(
-        access_token=create_access_token(user.id),
-        refresh_token=create_refresh_token(user.id),
-    )
+    tokens = await _start_session(user.id, response, db)
+    await db.commit()
+    return tokens
 
 
 @router.post("/refresh", response_model=TokenResponse)
-async def refresh(body: RefreshRequest) -> TokenResponse:
-    try:
-        payload = decode_token(body.refresh_token)
-        if payload.get("type") != "refresh":
-            raise InvalidTokenError("wrong token type")
-    except InvalidTokenError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token") from exc
-
-    from uuid import UUID
-
-    user_id = UUID(payload["sub"])
-    return TokenResponse(
-        access_token=create_access_token(user_id),
-        refresh_token=create_refresh_token(user_id),
+async def refresh(
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> TokenResponse:
+    refresh_token = request.cookies.get(get_settings().refresh_cookie_name)
+    if not refresh_token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+    repo = RefreshSessionRepository(db)
+    consumed = await repo.consume(refresh_token)
+    if consumed is None:
+        await db.commit()
+        _clear_refresh_cookie(response)
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+    replacement_token = create_refresh_token()
+    replacement = await repo.create(
+        consumed.user_id, replacement_token, get_settings().refresh_token_expire_days
     )
+    await repo.set_replacement(consumed, replacement.id)
+    await db.commit()
+    _set_refresh_cookie(response, replacement_token)
+    return TokenResponse(access_token=create_access_token(consumed.user_id))
+
+
+@router.post("/logout", status_code=status.HTTP_204_NO_CONTENT)
+async def logout(
+    request: Request,
+    response: Response,
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    refresh_token = request.cookies.get(get_settings().refresh_cookie_name)
+    if refresh_token:
+        await RefreshSessionRepository(db).revoke(refresh_token)
+        await db.commit()
+    _clear_refresh_cookie(response)
 
 
 @router.post("/password-reset/request", status_code=status.HTTP_202_ACCEPTED)
@@ -112,4 +162,5 @@ async def confirm_password_reset(
         ) from exc
 
     await UserRepository(db).update_password(user_id, hash_password(body.password))
+    await RefreshSessionRepository(db).revoke_all(user_id)
     await db.commit()

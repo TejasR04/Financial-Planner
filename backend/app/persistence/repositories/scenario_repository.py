@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import select
 
+from app.core.exceptions import NotFoundError
 from app.persistence.models import ScenarioModel, SimulationRunModel
 from app.persistence.repositories.base import BaseRepository
 from app.simulation.assumptions import PlanningAssumptions
@@ -18,8 +19,17 @@ class ScenarioRepository(BaseRepository[ScenarioModel]):
         )
         return list(result.scalars().all())
 
-    async def get(self, scenario_id: UUID) -> ScenarioModel:
-        return await self._get_or_raise("Scenario", scenario_id)
+    async def get_for_user(self, user_id: UUID, scenario_id: UUID) -> ScenarioModel:
+        result = await self.session.execute(
+            select(ScenarioModel).where(
+                ScenarioModel.id == scenario_id,
+                ScenarioModel.user_id == user_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            raise NotFoundError("Scenario", str(scenario_id))
+        return row
 
     async def create(self, user_id: UUID, name: str, description: str | None, assumptions: PlanningAssumptions,
                       is_baseline: bool = False) -> ScenarioModel:
@@ -41,26 +51,27 @@ class ScenarioRepository(BaseRepository[ScenarioModel]):
         await self.session.flush()
         return row
 
-    async def update(self, scenario_id: UUID, **fields) -> ScenarioModel:
+    async def update_for_user(self, user_id: UUID, scenario_id: UUID, **fields) -> ScenarioModel:
         """Partial update — only overwrites fields explicitly passed (not
         None). Used by PATCH /scenarios/{id}."""
-        row = await self._get_or_raise("Scenario", scenario_id)
+        row = await self.get_for_user(user_id, scenario_id)
         for key, value in fields.items():
             if value is not None:
                 setattr(row, key, value)
         await self.session.flush()
         return row
 
-    async def delete(self, scenario_id: UUID) -> None:
-        row = await self._get_or_raise("Scenario", scenario_id)
+    async def delete_for_user(self, user_id: UUID, scenario_id: UUID) -> None:
+        row = await self.get_for_user(user_id, scenario_id)
         await self.session.delete(row)
         await self.session.flush()
 
-    async def record_run(
-        self, scenario_id: UUID, engine_version: str, net_worth_at_target_age, trajectory: dict,
+    async def record_run_for_user(
+        self, user_id: UUID, scenario_id: UUID, engine_version: str, net_worth_at_target_age, trajectory: dict,
         assumptions_snapshot: dict, method: str = "deterministic", success_rate=None, seed: int | None = None,
         monthly_sustainable_withdrawal=None, retirement_trajectory: dict | None = None,
     ) -> SimulationRunModel:
+        await self.get_for_user(user_id, scenario_id)
         row = SimulationRunModel(
             id=uuid4(),
             scenario_id=scenario_id,
@@ -78,7 +89,8 @@ class ScenarioRepository(BaseRepository[ScenarioModel]):
         await self.session.flush()
         return row
 
-    async def list_runs(self, scenario_id: UUID) -> list[SimulationRunModel]:
+    async def list_runs_for_user(self, user_id: UUID, scenario_id: UUID) -> list[SimulationRunModel]:
+        await self.get_for_user(user_id, scenario_id)
         result = await self.session.execute(
             select(SimulationRunModel)
             .where(SimulationRunModel.scenario_id == scenario_id)

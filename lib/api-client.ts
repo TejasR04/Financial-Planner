@@ -7,6 +7,7 @@ const API_BASE_URL =
 
 let authToken: string | null = null;
 let onUnauthorized: (() => void) | null = null;
+let refreshPromise: Promise<string> | null = null;
 
 /** Called once by AuthProvider so the client always has the latest token. */
 export function setAuthToken(token: string | null) {
@@ -30,12 +31,41 @@ export class ApiError extends Error {
 async function request<T>(
   path: string,
   options: RequestInit = {},
+  retryAfterRefresh = true,
 ): Promise<T> {
   const headers = new Headers(options.headers);
   headers.set("Content-Type", "application/json");
   if (authToken) headers.set("Authorization", `Bearer ${authToken}`);
 
-  const res = await fetch(`${API_BASE_URL}${path}`, { ...options, headers });
+  const res = await fetch(`${API_BASE_URL}${path}`, {
+    ...options,
+    headers,
+    credentials: "include",
+  });
+
+  const isAuthEntryPoint = path === "/auth/login" || path === "/auth/register";
+  if (res.status === 401 && retryAfterRefresh && !isAuthEntryPoint && path !== "/auth/refresh") {
+    try {
+      if (!refreshPromise) {
+        refreshPromise = request<ApiTokenResponse>(
+          "/auth/refresh",
+          { method: "POST" },
+          false,
+        ).then((tokens) => {
+          setAuthToken(tokens.access_token);
+          return tokens.access_token;
+        }).finally(() => {
+          refreshPromise = null;
+        });
+      }
+      await refreshPromise;
+      return request<T>(path, options, false);
+    } catch {
+      setAuthToken(null);
+      onUnauthorized?.();
+      throw new ApiError(401, "Session expired. Please sign in again.");
+    }
+  }
 
   if (!res.ok) {
     let detail = res.statusText;
@@ -48,7 +78,7 @@ async function request<T>(
     // A failed sign-in is not an expired session. Preserve the backend's
     // intentionally generic credential error instead of logging the user out
     // and replacing it with a misleading message.
-    if (res.status === 401 && path !== "/auth/login") {
+    if (res.status === 401 && !isAuthEntryPoint && path !== "/auth/refresh") {
       onUnauthorized?.();
       detail = "Session expired. Please sign in again.";
     }
@@ -70,7 +100,7 @@ const del = <T>(path: string) => request<T>(path, { method: "DELETE" });
 // Backend response/request shapes (mirrors app/schemas/*.py exactly)
 // ---------------------------------------------------------------------------
 
-export type ApiTokenResponse = { access_token: string; refresh_token: string };
+export type ApiTokenResponse = { access_token: string; token_type: string };
 
 export type ApiAgentChatResponse = {
   reply: string;
@@ -357,8 +387,8 @@ export const api = {
       post<ApiTokenResponse>("/auth/register", { email, password, full_name: fullName }),
     login: (email: string, password: string) =>
       post<ApiTokenResponse>("/auth/login", { email, password }),
-    refresh: (refreshToken: string) =>
-      post<ApiTokenResponse>("/auth/refresh", { refresh_token: refreshToken }),
+    refresh: () => post<ApiTokenResponse>("/auth/refresh"),
+    logout: () => post<void>("/auth/logout"),
     requestPasswordReset: (email: string) =>
       post<void>("/auth/password-reset/request", { email }),
     confirmPasswordReset: (token: string, password: string) =>

@@ -40,6 +40,22 @@ class UserModel(Base):
     accounts: Mapped[list["AccountModel"]] = relationship(back_populates="user")
 
 
+class RefreshSessionModel(Base):
+    __tablename__ = "refresh_sessions"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    token_hash: Mapped[str] = mapped_column(String(64), unique=True, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    replaced_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("refresh_sessions.id"), nullable=True
+    )
+
+
 class PlanningProfileModel(Base):
     __tablename__ = "planning_profiles"
 

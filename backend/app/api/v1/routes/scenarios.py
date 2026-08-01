@@ -114,7 +114,7 @@ async def create_scenario(
 async def get_scenario(
     scenario_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> ScenarioResponse:
-    row = await ScenarioRepository(db).get(scenario_id)
+    row = await ScenarioRepository(db).get_for_user(current_user.id, scenario_id)
     return ScenarioResponse.model_validate(row, from_attributes=True)
 
 
@@ -127,7 +127,7 @@ async def update_scenario(
 ) -> ScenarioResponse:
     repo = ScenarioRepository(db)
     fields = body.model_dump(exclude_unset=True, exclude={"clear_income_target"})
-    row = await repo.update(scenario_id, **fields)
+    row = await repo.update_for_user(current_user.id, scenario_id, **fields)
     if body.clear_income_target:
         row.desired_monthly_income_today = None
         await db.flush()
@@ -139,7 +139,7 @@ async def update_scenario(
 async def delete_scenario(
     scenario_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> None:
-    await ScenarioRepository(db).delete(scenario_id)
+    await ScenarioRepository(db).delete_for_user(current_user.id, scenario_id)
     await db.commit()
 
 
@@ -148,7 +148,7 @@ async def duplicate_scenario(
     scenario_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> ScenarioResponse:
     repo = ScenarioRepository(db)
-    original = await repo.get(scenario_id)
+    original = await repo.get_for_user(current_user.id, scenario_id)
     assumptions = PlanningAssumptions(
         current_age=original.retirement_age - 1 if original.retirement_age > 1 else 1,
         retirement_age=original.retirement_age,
@@ -184,7 +184,7 @@ async def run_scenario(
     thing unique to this route is that it *persists* a run.
     """
     scenario_repo = ScenarioRepository(db)
-    scenario = await scenario_repo.get(scenario_id)
+    scenario = await scenario_repo.get_for_user(current_user.id, scenario_id)
     result, assumptions = await _compute_scenario(scenario, body, current_user, db)
 
     trajectory = [
@@ -203,7 +203,8 @@ async def run_scenario(
         "withdrawal_rate": str(assumptions.withdrawal_rate),
     }
 
-    run_row = await scenario_repo.record_run(
+    run_row = await scenario_repo.record_run_for_user(
+        user_id=current_user.id,
         scenario_id=scenario_id,
         engine_version=result.engine_version,
         net_worth_at_target_age=result.retirement_projection.projected_balance_at_retirement,
@@ -227,7 +228,7 @@ async def preview_scenario(
     db: AsyncSession = Depends(get_db),
 ) -> ScenarioPreviewResponse:
     """Return a fresh scenario calculation without creating a run record."""
-    scenario = await ScenarioRepository(db).get(scenario_id)
+    scenario = await ScenarioRepository(db).get_for_user(current_user.id, scenario_id)
     result, assumptions = await _compute_scenario(scenario, body, current_user, db)
     trajectory = [
         {
@@ -252,7 +253,7 @@ async def preview_scenario(
 async def list_scenario_runs(
     scenario_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> ScenarioRunHistoryResponse:
-    rows = await ScenarioRepository(db).list_runs(scenario_id)
+    rows = await ScenarioRepository(db).list_runs_for_user(current_user.id, scenario_id)
     return ScenarioRunHistoryResponse(
         data=[ScenarioRunResponse.model_validate(r, from_attributes=True) for r in rows]
     )
@@ -269,7 +270,7 @@ async def scenario_sensitivity(
     per row (see `ScenarioService.analyze_sensitivity`) — nothing here is
     a canned/hardcoded number.
     """
-    scenario = await ScenarioRepository(db).get(scenario_id)
+    scenario = await ScenarioRepository(db).get_for_user(current_user.id, scenario_id)
     planning_profile = await UserRepository(db).get_planning_profile(current_user.id)
     assumptions = PlanningAssumptions(
         current_age=body.current_age,
@@ -311,8 +312,8 @@ async def compare_scenarios(
     repo = ScenarioRepository(db)
     rows: list[ScenarioCompareRow] = []
     for scenario_id in body.scenario_ids:
-        scenario = await repo.get(scenario_id)
-        runs = await repo.list_runs(scenario_id)
+        scenario = await repo.get_for_user(current_user.id, scenario_id)
+        runs = await repo.list_runs_for_user(current_user.id, scenario_id)
         latest = runs[0] if runs else None
         rows.append(
             ScenarioCompareRow(

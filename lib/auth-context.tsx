@@ -11,15 +11,12 @@ import {
 import { useRouter } from "next/navigation";
 import { api, ApiError, setAuthToken, setUnauthorizedHandler } from "@/lib/api-client";
 
-const ACCESS_TOKEN_KEY = "meridian.access_token";
-const REFRESH_TOKEN_KEY = "meridian.refresh_token";
-
 type AuthState = {
   status: "loading" | "authenticated" | "unauthenticated";
   error: string | null;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, fullName: string) => Promise<void>;
-  logout: () => void;
+  logout: () => Promise<void>;
 };
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -29,28 +26,34 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [status, setStatus] = useState<AuthState["status"]>("loading");
   const [error, setError] = useState<string | null>(null);
 
-  const logout = useCallback(() => {
-    localStorage.removeItem(ACCESS_TOKEN_KEY);
-    localStorage.removeItem(REFRESH_TOKEN_KEY);
+  const clearSession = useCallback(() => {
     setAuthToken(null);
     setStatus("unauthenticated");
     router.push("/login");
   }, [router]);
 
-  useEffect(() => {
-    setUnauthorizedHandler(logout);
-    return () => setUnauthorizedHandler(null);
-  }, [logout]);
-
-  // Hydrate from localStorage on first mount.
-  useEffect(() => {
-    const token = localStorage.getItem(ACCESS_TOKEN_KEY);
-    if (token) {
-      setAuthToken(token);
-      setStatus("authenticated");
-    } else {
-      setStatus("unauthenticated");
+  const logout = useCallback(async () => {
+    try {
+      await api.auth.logout();
+    } finally {
+      clearSession();
     }
+  }, [clearSession]);
+
+  useEffect(() => {
+    setUnauthorizedHandler(clearSession);
+    return () => setUnauthorizedHandler(null);
+  }, [clearSession]);
+
+  // Restore the session from the HttpOnly refresh cookie. Access tokens only
+  // live in memory, which prevents browser scripts from reading long-lived credentials.
+  useEffect(() => {
+    api.auth.refresh()
+      .then((tokens) => {
+        setAuthToken(tokens.access_token);
+        setStatus("authenticated");
+      })
+      .catch(() => setStatus("unauthenticated"));
   }, []);
 
   const login = useCallback(
@@ -58,8 +61,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setError(null);
       try {
         const tokens = await api.auth.login(email, password);
-        localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access_token);
-        localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refresh_token);
         setAuthToken(tokens.access_token);
         setStatus("authenticated");
         router.push("/");
@@ -76,8 +77,6 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setError(null);
       try {
         const tokens = await api.auth.register(email, password, fullName);
-        localStorage.setItem(ACCESS_TOKEN_KEY, tokens.access_token);
-        localStorage.setItem(REFRESH_TOKEN_KEY, tokens.refresh_token);
         setAuthToken(tokens.access_token);
         setStatus("authenticated");
         router.push("/onboarding");

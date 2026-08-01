@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import delete, select
 
+from app.core.exceptions import NotFoundError
 from app.domain.entities import Recommendation
 from app.domain.enums import RecommendationEffort, RecommendationStatus
 from app.persistence.models import RecommendationModel
@@ -48,8 +49,21 @@ class RecommendationRepository(BaseRepository[RecommendationModel]):
         await self.session.flush()
         return [_to_domain(row) for row in rows]
 
-    async def set_status(self, recommendation_id: UUID, status: RecommendationStatus) -> Recommendation:
-        row = await self._get_or_raise("Recommendation", recommendation_id)
+    async def set_status_for_user(
+        self,
+        user_id: UUID,
+        recommendation_id: UUID,
+        status: RecommendationStatus,
+    ) -> Recommendation:
+        result = await self.session.execute(
+            select(RecommendationModel).where(
+                RecommendationModel.id == recommendation_id,
+                RecommendationModel.user_id == user_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            raise NotFoundError("Recommendation", str(recommendation_id))
         row.status = status.value
         await self.session.flush()
         return _to_domain(row)

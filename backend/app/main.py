@@ -7,6 +7,7 @@ from contextlib import suppress
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy import text
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
@@ -125,6 +126,22 @@ async def domain_error_handler(request: Request, exc: DomainError) -> JSONRespon
     return JSONResponse(status_code=status_code, content={"detail": str(exc)})
 
 
-@app.get("/health")
-async def health() -> dict:
+@app.get("/health/live")
+async def liveness() -> dict:
     return {"status": "ok"}
+
+
+@app.get("/health/ready")
+async def readiness() -> dict:
+    try:
+        async with AsyncSessionLocal() as session:
+            await session.execute(text("SELECT 1"))
+    except Exception:
+        logger.exception("readiness_database_failed")
+        return JSONResponse(status_code=503, content={"status": "unavailable"})
+    return {"status": "ready"}
+
+
+@app.get("/health", include_in_schema=False)
+async def health() -> dict:
+    return await liveness()

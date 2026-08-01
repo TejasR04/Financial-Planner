@@ -54,7 +54,7 @@ class ScenarioUpdateRequest(BaseModel):
     withdrawal_rate: Decimal | None = None
     desired_monthly_income_today: Decimal | None = None
     # Explicit flag to CLEAR desired_monthly_income_today and go back to
-    # rate-based mode — needed because ScenarioRepository.update() skips
+    # rate-based mode — needed because ScenarioRepository.update_for_user() skips
     # any field that's None, so passing desired_monthly_income_today=None
     # alone can't distinguish "don't touch it" from "clear it".
     clear_income_target: bool = False

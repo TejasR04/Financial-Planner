@@ -48,6 +48,8 @@ async def update_recommendation(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> RecommendationResponse:
-    updated = await RecommendationRepository(db).set_status(recommendation_id, body.status)
+    updated = await RecommendationRepository(db).set_status_for_user(
+        current_user.id, recommendation_id, body.status
+    )
     await db.commit()
     return RecommendationResponse.model_validate(updated, from_attributes=True)

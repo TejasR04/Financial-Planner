@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import delete, func, select
 
+from app.core.exceptions import NotFoundError
 from app.domain.entities import Transaction
 from app.domain.enums import TransactionStatus, TransactionType
 from app.persistence.models import AccountModel, TransactionModel
@@ -145,8 +146,23 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         await self.session.flush()
         return created, updated, removed
 
-    async def update_category(self, transaction_id: UUID, category: str) -> Transaction:
-        row = await self._get_or_raise("Transaction", transaction_id)
+    async def update_category_for_user(
+        self,
+        user_id: UUID,
+        transaction_id: UUID,
+        category: str,
+    ) -> Transaction:
+        result = await self.session.execute(
+            select(TransactionModel)
+            .join(AccountModel, AccountModel.id == TransactionModel.account_id)
+            .where(
+                TransactionModel.id == transaction_id,
+                AccountModel.user_id == user_id,
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            raise NotFoundError("Transaction", str(transaction_id))
         row.category = category
         await self.session.flush()
         return _to_domain(row)

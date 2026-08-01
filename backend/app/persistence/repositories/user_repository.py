@@ -18,12 +18,16 @@ class UserRepository(BaseRepository[UserModel]):
         return _to_domain(row)
 
     async def get_by_email(self, email: str) -> User | None:
-        result = await self.session.execute(select(UserModel).where(UserModel.email == email))
+        result = await self.session.execute(
+            select(UserModel).where(UserModel.email == email, UserModel.archived_at.is_(None))
+        )
         row = result.scalar_one_or_none()
         return _to_domain(row) if row else None
 
     async def get_hashed_password(self, email: str) -> tuple[User, str] | None:
-        result = await self.session.execute(select(UserModel).where(UserModel.email == email))
+        result = await self.session.execute(
+            select(UserModel).where(UserModel.email == email, UserModel.archived_at.is_(None))
+        )
         row = result.scalar_one_or_none()
         if row is None:
             return None
@@ -72,6 +76,12 @@ class UserRepository(BaseRepository[UserModel]):
         row = await self._get_or_raise("User", user_id)
         row.hashed_password = hashed_password
         await self.session.flush()
+
+    async def get_active_by_id(self, user_id: UUID) -> User | None:
+        row = await self.session.scalar(
+            select(UserModel).where(UserModel.id == user_id, UserModel.archived_at.is_(None))
+        )
+        return _to_domain(row) if row else None
 
     async def update_planning_profile(
         self,

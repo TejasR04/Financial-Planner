@@ -10,6 +10,8 @@ from collections.abc import AsyncIterator
 
 import pytest
 import pytest_asyncio
+from alembic import command
+from alembic.config import Config
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -28,11 +30,16 @@ if "meridian_test" not in TEST_DATABASE_URL:
     )
 
 
+@pytest.fixture(scope="session", autouse=True)
+def migrate_test_database() -> None:
+    config = Config("alembic.ini")
+    config.set_main_option("sqlalchemy.url", TEST_DATABASE_URL)
+    command.upgrade(config, "head")
+
+
 @pytest_asyncio.fixture
-async def test_engine():
+async def test_engine(migrate_test_database):
     engine = create_async_engine(TEST_DATABASE_URL, future=True)
-    async with engine.begin() as connection:
-        await connection.run_sync(Base.metadata.create_all)
     yield engine
     await engine.dispose()
 

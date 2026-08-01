@@ -5,7 +5,6 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.exceptions import NotFoundError
 from app.core.security import InvalidTokenError, decode_token
 from app.domain.entities import User
 from app.persistence.repositories.user_repository import UserRepository
@@ -30,7 +29,7 @@ async def get_current_user(
     except (InvalidTokenError, KeyError, ValueError) as exc:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials") from exc
 
-    try:
-        return await UserRepository(db).get_by_id(user_id)
-    except NotFoundError as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials") from exc
+    user = await UserRepository(db).get_active_by_id(user_id)
+    if user is None:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+    return user
