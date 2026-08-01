@@ -157,6 +157,11 @@ async def simulate_monte_carlo(
         p10_ending_balance=result.p10_ending_balance,
         p90_ending_balance=result.p90_ending_balance,
         seed=result.seed,
+        success_metric=result.success_metric,
+        model_version=result.model_version,
+        percentile_method=result.percentile_method,
+        estimate_disclosure="Estimate based on randomized returns, not a guarantee or precise probability.",
+        exclusions=["taxes", "investment fees", "advisory fees"],
     )
 
 

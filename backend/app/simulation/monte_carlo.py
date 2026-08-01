@@ -10,10 +10,13 @@ wired end to end; swapping the sampler later requires no change to
 from __future__ import annotations
 
 import random
+import math
 from dataclasses import dataclass
 from decimal import Decimal
 
 ZERO = Decimal("0")
+MODEL_VERSION = "normal-iid-v2"
+PERCENTILE_METHOD = "nearest-rank"
 
 
 @dataclass(slots=True, frozen=True)
@@ -24,6 +27,9 @@ class MonteCarloResult:
     p10_ending_balance: Decimal
     p90_ending_balance: Decimal
     seed: int
+    success_metric: str
+    model_version: str = MODEL_VERSION
+    percentile_method: str = PERCENTILE_METHOD
 
 
 def run_monte_carlo(
@@ -73,8 +79,22 @@ def run_monte_carlo(
     (bootstrapped historical sequences, fatter tails) without touching any
     caller.
     """
-    if trials <= 0:
-        raise ValueError("trials must be positive")
+    if not 100 <= trials <= 100_000:
+        raise ValueError("trials must be between 100 and 100000")
+    if not 0 <= years <= 100 or not 0 <= retirement_years <= 100:
+        raise ValueError("projection horizons must be between 0 and 100 years")
+    if not 0 <= starting_age <= 120 or starting_age + years + retirement_years > 130:
+        raise ValueError("ages and combined horizon are outside supported bounds")
+    if starting_balance < ZERO or annual_contribution < ZERO or target_balance < ZERO:
+        raise ValueError("balances and contributions cannot be negative")
+    if annual_withdrawal < ZERO:
+        raise ValueError("annual_withdrawal cannot be negative")
+    if not Decimal("-0.50") <= expected_return <= Decimal("0.50"):
+        raise ValueError("expected_return must be between -0.50 and 0.50")
+    if not ZERO <= return_volatility <= Decimal("1.00"):
+        raise ValueError("return_volatility must be between 0 and 1")
+    if not Decimal("-0.20") <= annual_withdrawal_growth_rate <= Decimal("0.20"):
+        raise ValueError("annual_withdrawal_growth_rate must be between -0.20 and 0.20")
 
     rng = random.Random(seed)
     endings: list[Decimal] = []
@@ -116,9 +136,11 @@ def run_monte_carlo(
 
     endings_sorted = sorted(endings)
     n = len(endings_sorted)
-    median = endings_sorted[n // 2]
-    p10 = endings_sorted[max(0, int(n * 0.10) - 1)]
-    p90 = endings_sorted[min(n - 1, int(n * 0.90))]
+    def nearest_rank(percentile: Decimal) -> Decimal:
+        return endings_sorted[max(0, math.ceil(float(percentile) * n) - 1)]
+    median = nearest_rank(Decimal("0.50"))
+    p10 = nearest_rank(Decimal("0.10"))
+    p90 = nearest_rank(Decimal("0.90"))
 
     return MonteCarloResult(
         trials=trials,
@@ -127,4 +149,5 @@ def run_monte_carlo(
         p10_ending_balance=p10,
         p90_ending_balance=p90,
         seed=seed,
+        success_metric="retirement_survival" if retirement_years > 0 else "target_attainment",
     )

@@ -20,9 +20,11 @@ def test_zero_volatility_survives_when_return_exceeds_withdrawal_rate():
         target_balance=Decimal("0"),
         retirement_years=30,
         annual_withdrawal=Decimal("40000"),  # 4% of starting balance
-        trials=50,
+        trials=100,
     )
     assert result.success_rate == 1.0
+    assert result.success_metric == "retirement_survival"
+    assert result.percentile_method == "nearest-rank"
 
 
 def test_withdrawal_far_exceeding_balance_always_fails():
@@ -36,7 +38,7 @@ def test_withdrawal_far_exceeding_balance_always_fails():
         target_balance=Decimal("0"),
         retirement_years=30,
         annual_withdrawal=Decimal("50000"),  # 50% of balance per year — unsustainable
-        trials=50,
+        trials=100,
         seed=7,
     )
     assert result.success_rate == 0.0
@@ -54,9 +56,10 @@ def test_no_retirement_years_preserves_old_accumulation_only_semantics():
         years=10,
         starting_age=30,
         target_balance=Decimal("1"),  # trivially low bar
-        trials=10,
+        trials=100,
     )
     assert result.success_rate == 1.0
+    assert result.success_metric == "target_attainment"
 
 
 def test_running_out_mid_retirement_clamps_to_zero_not_negative():
@@ -70,7 +73,7 @@ def test_running_out_mid_retirement_clamps_to_zero_not_negative():
         target_balance=Decimal("0"),
         retirement_years=40,
         annual_withdrawal=Decimal("20000"),
-        trials=20,
+        trials=100,
         seed=3,
     )
     assert result.median_ending_balance >= Decimal("0")

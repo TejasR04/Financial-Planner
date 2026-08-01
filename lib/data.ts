@@ -151,6 +151,7 @@ export type Scenario = {
   withdrawalRate: number; // decimal, e.g. 0.04
   retirementYear: string;
   successRate: number;
+  modelMetadata?: { modelVersion: string; successMetric: string; trials: number; seed: number; percentileMethod: string; exclusions: string[] };
   color: string;
   // Retirement-account balance from the latest run, from accumulation
   // through the life-expectancy horizon (in millions), aligned with `years`.

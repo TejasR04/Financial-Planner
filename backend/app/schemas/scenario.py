@@ -2,7 +2,7 @@ from datetime import datetime
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class ScenarioResponse(BaseModel):
@@ -61,11 +61,11 @@ class ScenarioUpdateRequest(BaseModel):
 
 
 class ScenarioRunRequest(BaseModel):
-    current_age: int
-    current_retirement_balance: Decimal
-    annual_spending_target: Decimal | None = None
+    current_age: int = Field(ge=18, le=100)
+    current_retirement_balance: Decimal = Field(ge=0, le=Decimal("1000000000"))
+    annual_spending_target: Decimal | None = Field(default=None, ge=0, le=Decimal("100000000"))
     include_monte_carlo: bool = True
-    monte_carlo_trials: int = 1000
+    monte_carlo_trials: int = Field(default=1000, ge=100, le=100000)
 
 
 class ScenarioRunResponse(BaseModel):
@@ -79,6 +79,7 @@ class ScenarioRunResponse(BaseModel):
     trajectory: list[dict]
     retirement_trajectory: list[dict] | None = None
     created_at: datetime
+    assumptions_snapshot: dict | None = None
 
 
 class ScenarioRunHistoryResponse(BaseModel):
@@ -96,6 +97,7 @@ class ScenarioPreviewResponse(BaseModel):
     success_rate: Decimal | None
     trajectory: list[dict]
     retirement_trajectory: list[dict]
+    model_metadata: dict | None = None
 
 
 class ScenarioCompareRequest(BaseModel):

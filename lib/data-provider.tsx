@@ -446,6 +446,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
               withdrawalRate,
               retirementYear: String(currentYear + s.retirement_age - currentAge),
               successRate: preview?.success_rate ? Math.round(parseFloat(preview.success_rate) * 1000) / 10 : 0,
+              modelMetadata: preview?.model_metadata ? { modelVersion: preview.model_metadata.model_version, successMetric: preview.model_metadata.success_metric, trials: preview.model_metadata.trials, seed: preview.model_metadata.seed, percentileMethod: preview.model_metadata.percentile_method, exclusions: preview.model_metadata.exclusions } : undefined,
               color: CHART_COLORS[i % CHART_COLORS.length],
               series,
               withdrawals,

@@ -80,16 +80,16 @@ class CashFlowSimulationResponse(BaseModel):
 
 
 class MonteCarloSimulationRequest(BaseModel):
-    current_age: int
-    starting_balance: Decimal
-    annual_contribution: Decimal
-    years: int
-    target_balance: Decimal
-    expected_return: Decimal = Decimal("0.065")
+    current_age: int = Field(ge=18, le=100)
+    starting_balance: Decimal = Field(ge=0, le=Decimal("1000000000"))
+    annual_contribution: Decimal = Field(ge=0, le=Decimal("10000000"))
+    years: int = Field(ge=1, le=100)
+    target_balance: Decimal = Field(ge=0, le=Decimal("10000000000"))
+    expected_return: Decimal = Field(default=Decimal("0.065"), ge=Decimal("-0.50"), le=Decimal("0.50"))
     # See app/simulation/engine.py:implied_return_volatility — matches the
     # calibrated 60/40-portfolio default used elsewhere in the app.
-    return_volatility: Decimal = Decimal("0.106")
-    trials: int = 1000
+    return_volatility: Decimal = Field(default=Decimal("0.106"), ge=0, le=1)
+    trials: int = Field(default=1000, ge=100, le=100000)
     seed: int = 42
 
 
@@ -100,6 +100,11 @@ class MonteCarloSimulationResponse(BaseModel):
     p10_ending_balance: Decimal
     p90_ending_balance: Decimal
     seed: int
+    success_metric: str
+    model_version: str
+    percentile_method: str
+    estimate_disclosure: str
+    exclusions: list[str]
 
 
 class DebtOptimizationRequest(BaseModel):

@@ -25,6 +25,7 @@ from app.schemas.scenario import (
 )
 from app.services.scenario_service import ScenarioService
 from app.simulation.assumptions import PlanningAssumptions
+from app.simulation.engine import implied_return_volatility
 
 router = APIRouter(prefix="/scenarios", tags=["scenarios"])
 
@@ -201,6 +202,19 @@ async def run_scenario(
         "expected_return": str(assumptions.expected_return),
         "inflation_rate": str(assumptions.inflation_rate),
         "withdrawal_rate": str(assumptions.withdrawal_rate),
+        "monte_carlo": ({
+            "model_version": result.monte_carlo.model_version,
+            "success_metric": result.monte_carlo.success_metric,
+            "trials": result.monte_carlo.trials,
+            "seed": result.monte_carlo.seed,
+            "return_volatility": str(implied_return_volatility(assumptions.target_equity_allocation)),
+            "allocation": str(assumptions.target_equity_allocation),
+            "return_basis": "nominal_pre_tax_pre_fee",
+            "withdrawal_timing": "start_of_year",
+            "inflation_treatment": "withdrawals_escalate_annually",
+            "percentile_method": result.monte_carlo.percentile_method,
+            "exclusions": ["taxes", "investment fees", "advisory fees"],
+        } if result.monte_carlo else None),
     }
 
     run_row = await scenario_repo.record_run_for_user(
@@ -246,6 +260,15 @@ async def preview_scenario(
         success_rate=(round(result.monte_carlo.success_rate, 4) if result.monte_carlo else None),
         trajectory=trajectory,
         retirement_trajectory=_retirement_trajectory(result, assumptions),
+        model_metadata=({
+            "model_version": result.monte_carlo.model_version,
+            "success_metric": result.monte_carlo.success_metric,
+            "trials": result.monte_carlo.trials,
+            "seed": result.monte_carlo.seed,
+            "percentile_method": result.monte_carlo.percentile_method,
+            "estimate_disclosure": "Estimate based on randomized returns, not a guarantee or precise probability.",
+            "exclusions": ["taxes", "investment fees", "advisory fees"],
+        } if result.monte_carlo else None),
     )
 
 

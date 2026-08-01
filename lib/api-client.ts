@@ -301,6 +301,7 @@ export type ApiScenarioPreview = {
   success_rate: string | null;
   trajectory: { year: number; age: number; assets: string; liabilities: string; net: string }[];
   retirement_trajectory: { year: number; age: number; balance: string; withdrawal: string }[];
+  model_metadata: { model_version: string; success_metric: string; trials: number; seed: number; percentile_method: string; estimate_disclosure: string; exclusions: string[] } | null;
 };
 
 export type ApiScenarioCompareRow = {

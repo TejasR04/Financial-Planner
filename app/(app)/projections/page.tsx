@@ -184,16 +184,17 @@ export default function ProjectionsPage() {
                   Success
                   <Info
                     className="size-3 shrink-0 text-muted-foreground/70"
-                    aria-label="Of 1,000 simulated trials with randomized annual returns, the percentage where retirement savings lasted through age 95 without running out. Contributions stop at retirement age; the plan's sustainable withdrawal (a % of that scenario's own balance) is taken out each year of retirement. Because withdrawal scales with balance, a bigger balance alone doesn't raise this number much."
+                    aria-label={`Estimated retirement-survival rate from ${s.modelMetadata?.trials ?? 1000} randomized-return trials. This is not a guarantee. Taxes and investment/advisory fees are excluded.`}
                   >
                     <title>
-                      Of 1,000 simulated trials with randomized annual returns, the percentage
+                      Estimated from {s.modelMetadata?.trials ?? 1000} randomized annual-return trials: the percentage
                       where retirement savings lasted through age 95 without running out.
                       Contributions stop at retirement age; the plan&apos;s sustainable withdrawal
                       (a % of that scenario&apos;s own balance) is taken out each year of
                       retirement. Because withdrawal scales with balance, a bigger balance alone
                       doesn&apos;t raise this number much — it mainly reflects withdrawal rate,
-                      expected return, and volatility.
+                      expected return, and volatility. This is an estimate, not a guarantee or
+                      precise probability. Taxes and investment/advisory fees are excluded.
                     </title>
                   </Info>
                 </p>
