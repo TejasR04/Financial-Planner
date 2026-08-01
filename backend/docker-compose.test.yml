@@ -12,7 +12,9 @@ services:
       retries: 10
 
   integration-test:
-    build: .
+    build:
+      context: .
+      target: test
     environment:
       DATABASE_URL: postgresql+asyncpg://meridian:meridian@db-test:5432/meridian_test
       TEST_DATABASE_URL: postgresql+asyncpg://meridian:meridian@db-test:5432/meridian_test
@@ -25,7 +27,9 @@ services:
     command: pytest tests/integration -v
 
   api-test:
-    build: .
+    build:
+      context: .
+      target: runtime
     environment:
       DATABASE_URL: postgresql+asyncpg://meridian:meridian@db-test:5432/meridian_test
       JWT_SECRET_KEY: e2e-test-secret-that-is-long-enough

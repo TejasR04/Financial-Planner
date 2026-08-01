@@ -17,6 +17,7 @@ from app.core.security import (
 )
 from app.core.config import get_settings
 from app.persistence.repositories.refresh_session_repository import RefreshSessionRepository
+from app.persistence.repositories.password_reset_token_repository import PasswordResetTokenRepository
 from app.persistence.repositories.user_repository import UserRepository
 from app.schemas.auth import (
     LoginRequest,
@@ -138,9 +139,15 @@ async def request_password_reset(
         return
     user, _ = result
     try:
+        settings = get_settings()
         token = create_password_reset_token(user.id)
+        await PasswordResetTokenRepository(db).create(
+            user.id, token, settings.password_reset_token_expire_minutes
+        )
+        await db.commit()
         await asyncio.to_thread(send_password_reset_email, user.email, token)
     except Exception:
+        await db.rollback()
         # The client still gets the generic accepted response. Detailed
         # delivery errors are operational information, not authentication UI.
         logger.exception("Unable to send password reset email")
@@ -155,12 +162,19 @@ async def confirm_password_reset(
         if payload.get("type") != "password_reset":
             raise InvalidTokenError("wrong token type")
         user_id = UUID(payload["sub"])
-    except (InvalidTokenError, KeyError, ValueError) as exc:
+        UUID(payload["jti"])
+    except (InvalidTokenError, KeyError, TypeError, ValueError) as exc:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="This password-reset link is invalid or has expired.",
         ) from exc
 
+    consumed = await PasswordResetTokenRepository(db).consume(body.token, user_id)
+    if consumed is None:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="This password-reset link is invalid or has expired.",
+        )
     await UserRepository(db).update_password(user_id, hash_password(body.password))
     await RefreshSessionRepository(db).revoke_all(user_id)
     await db.commit()

@@ -179,7 +179,19 @@ type DataState = {
   refresh: () => void;
 };
 
-const DataContext = createContext<DataState | null>(null);
+type DashboardData = Pick<DataState, "kpis" | "netWorthSeries" | "allocation" | "allocationMeta" | "cashflowSeries">;
+type AccountsData = Pick<DataState, "accounts" | "institutions">;
+type InsightsData = Pick<DataState, "recommendations" | "insights" | "financialHealth">;
+type ProfileData = Pick<DataState, "profile" | "userAccount">;
+type DataMeta = Pick<DataState, "error" | "refresh">;
+
+const DashboardContext = createContext<DashboardData | null>(null);
+const AccountsContext = createContext<AccountsData | null>(null);
+const TransactionsContext = createContext<Transaction[] | null>(null);
+const ScenariosContext = createContext<Scenario[] | null>(null);
+const InsightsContext = createContext<InsightsData | null>(null);
+const ProfileContext = createContext<ProfileData | null>(null);
+const DataMetaContext = createContext<DataMeta | null>(null);
 
 const emptyState: Omit<DataState, "loading" | "error" | "refresh"> = {
   kpis: [],
@@ -586,10 +598,27 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     };
   }, [pathname, state.profile, state.scenarios, status]);
 
-  const value = useMemo<DataState>(
-    () => ({ ...state, loading, error, refresh }),
-    [state, loading, error, refresh],
-  );
+  const dashboardValue = useMemo<DashboardData>(() => ({
+    kpis: state.kpis,
+    netWorthSeries: state.netWorthSeries,
+    allocation: state.allocation,
+    allocationMeta: state.allocationMeta,
+    cashflowSeries: state.cashflowSeries,
+  }), [state.kpis, state.netWorthSeries, state.allocation, state.allocationMeta, state.cashflowSeries]);
+  const accountsValue = useMemo<AccountsData>(() => ({
+    accounts: state.accounts,
+    institutions: state.institutions,
+  }), [state.accounts, state.institutions]);
+  const insightsValue = useMemo<InsightsData>(() => ({
+    recommendations: state.recommendations,
+    insights: state.insights,
+    financialHealth: state.financialHealth,
+  }), [state.recommendations, state.insights, state.financialHealth]);
+  const profileValue = useMemo<ProfileData>(() => ({
+    profile: state.profile,
+    userAccount: state.userAccount,
+  }), [state.profile, state.userAccount]);
+  const metaValue = useMemo<DataMeta>(() => ({ error, refresh }), [error, refresh]);
 
   if (status === "authenticated" && loading && state === emptyState) {
     return (
@@ -599,30 +628,46 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     );
   }
 
-  return <DataContext.Provider value={value}>{children}</DataContext.Provider>;
+  return (
+    <DataMetaContext.Provider value={metaValue}>
+      <ProfileContext.Provider value={profileValue}>
+        <AccountsContext.Provider value={accountsValue}>
+          <TransactionsContext.Provider value={state.transactions}>
+            <DashboardContext.Provider value={dashboardValue}>
+              <InsightsContext.Provider value={insightsValue}>
+                <ScenariosContext.Provider value={state.scenarios}>
+                  {children}
+                </ScenariosContext.Provider>
+              </InsightsContext.Provider>
+            </DashboardContext.Provider>
+          </TransactionsContext.Provider>
+        </AccountsContext.Provider>
+      </ProfileContext.Provider>
+    </DataMetaContext.Provider>
+  );
 }
 
-function useData(): DataState {
-  const ctx = useContext(DataContext);
+function useRequiredContext<T>(context: React.Context<T | null>): T {
+  const ctx = useContext(context);
   if (!ctx) throw new Error("Data hooks must be used within a DataProvider");
   return ctx;
 }
 
-export const useKpis = () => useData().kpis;
-export const useNetWorthSeries = () => useData().netWorthSeries;
-export const useAllocation = () => useData().allocation;
-export const useAllocationMeta = () => useData().allocationMeta;
-export const useCashflowSeries = () => useData().cashflowSeries;
-export const useAccountsData = () => useData().accounts;
-export const useInstitutionsData = () => useData().institutions;
-export const useTransactionsData = () => useData().transactions;
-export const useRecommendationsData = () => useData().recommendations;
-export const useScenariosData = () => useData().scenarios;
-export const useCurrentAge = () => useData().profile?.currentAge ?? null;
-export const useCurrentRetirementBalance = () => useData().profile?.currentRetirementBalance ?? null;
-export const useInsightsData = () => useData().insights;
-export const useFinancialHealthData = () => useData().financialHealth;
-export const useProfileSummary = () => useData().profile;
-export const useUserAccount = () => useData().userAccount;
-export const useDataRefresh = () => useData().refresh;
-export const useDataError = () => useData().error;
+export const useKpis = () => useRequiredContext(DashboardContext).kpis;
+export const useNetWorthSeries = () => useRequiredContext(DashboardContext).netWorthSeries;
+export const useAllocation = () => useRequiredContext(DashboardContext).allocation;
+export const useAllocationMeta = () => useRequiredContext(DashboardContext).allocationMeta;
+export const useCashflowSeries = () => useRequiredContext(DashboardContext).cashflowSeries;
+export const useAccountsData = () => useRequiredContext(AccountsContext).accounts;
+export const useInstitutionsData = () => useRequiredContext(AccountsContext).institutions;
+export const useTransactionsData = () => useRequiredContext(TransactionsContext);
+export const useRecommendationsData = () => useRequiredContext(InsightsContext).recommendations;
+export const useScenariosData = () => useRequiredContext(ScenariosContext);
+export const useCurrentAge = () => useRequiredContext(ProfileContext).profile?.currentAge ?? null;
+export const useCurrentRetirementBalance = () => useRequiredContext(ProfileContext).profile?.currentRetirementBalance ?? null;
+export const useInsightsData = () => useRequiredContext(InsightsContext).insights;
+export const useFinancialHealthData = () => useRequiredContext(InsightsContext).financialHealth;
+export const useProfileSummary = () => useRequiredContext(ProfileContext).profile;
+export const useUserAccount = () => useRequiredContext(ProfileContext).userAccount;
+export const useDataRefresh = () => useRequiredContext(DataMetaContext).refresh;
+export const useDataError = () => useRequiredContext(DataMetaContext).error;

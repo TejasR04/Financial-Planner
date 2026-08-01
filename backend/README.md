@@ -79,12 +79,29 @@ The service and simulation-engine tests have no DB dependency and run
 directly:
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements-dev.txt
 pytest tests/unit -v
 ```
 
 Integration tests (`tests/integration/`, DB-backed) run in the disposable
 Postgres Docker Compose stack described in `docker-compose.test.yml`.
+
+Runtime and development dependencies are declared once in `pyproject.toml`.
+`requirements.txt` is the pinned production lock; `requirements-dev.txt` is
+the pinned development/test lock. Regenerate both after dependency changes:
+
+```bash
+python -m piptools compile --strip-extras --resolver=backtracking --output-file=requirements.txt pyproject.toml
+python -m piptools compile --strip-extras --resolver=backtracking --extra=dev --output-file=requirements-dev.txt pyproject.toml
+```
+
+The backend quality gates used by CI can be run locally with:
+
+```bash
+python -m ruff check app tests
+python -m mypy
+python -m pytest -q --cov=app --cov-branch --cov-report=term-missing:skip-covered --cov-fail-under=60
+```
 
 ## Project layout
 

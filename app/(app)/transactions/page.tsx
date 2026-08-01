@@ -45,31 +45,36 @@ export default function TransactionsPage() {
 
   useEffect(() => {
     let cancelled = false;
+    const controller = new AbortController();
     setLoading(true);
     setError(null);
-    api.transactions
-      .list({
-        limit: PAGE_SIZE,
-        offset: page * PAGE_SIZE,
-        accountId: accountId || undefined,
-        category: category.trim() || undefined,
-        since: since || undefined,
-        until: until || undefined,
-      })
-      .then((next) => {
-        if (!cancelled) setResult(next);
-      })
-      .catch((err) => {
-        if (!cancelled) {
-          setError(err instanceof ApiError ? err.message : "Couldn't load transactions.");
-          setResult(null);
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
+    const handle = window.setTimeout(() => {
+      api.transactions
+        .list({
+          limit: PAGE_SIZE,
+          offset: page * PAGE_SIZE,
+          accountId: accountId || undefined,
+          category: category.trim() || undefined,
+          since: since || undefined,
+          until: until || undefined,
+        }, controller.signal)
+        .then((next) => {
+          if (!cancelled) setResult(next);
+        })
+        .catch((err) => {
+          if (!cancelled && !controller.signal.aborted) {
+            setError(err instanceof ApiError ? err.message : "Couldn't load transactions.");
+            setResult(null);
+          }
+        })
+        .finally(() => {
+          if (!cancelled) setLoading(false);
+        });
+    }, category ? 300 : 0);
     return () => {
       cancelled = true;
+      window.clearTimeout(handle);
+      controller.abort();
     };
   }, [accountId, category, page, reloadTick, since, until]);
 

@@ -32,11 +32,21 @@ export default function OverviewPage() {
   const visibleCashflow = useMemo(() => cashflowSeries.slice(-periodMonths), [cashflowSeries, periodMonths]);
   useEffect(() => {
     if (cashflowMode !== "outlook") return;
+    let cancelled = false;
     api.simulations.cashFlow(periodMonths).then((result) => {
+      if (cancelled) return;
       const formatter = new Intl.DateTimeFormat("en-US", { month: "short" });
       setOutlook(result.series.map((point) => { const d = new Date(); d.setMonth(d.getMonth() + point.month_index - 1); return { month: formatter.format(d), income: Number(point.income), expenses: Number(point.expenses) }; }));
       setOutlookNote(`${result.income_source} · ${result.expense_source}`);
-    }).catch((error) => { setOutlook([]); setOutlookNote(error instanceof Error ? error.message : "Outlook unavailable."); });
+    }).catch((error) => {
+      if (!cancelled) {
+        setOutlook([]);
+        setOutlookNote(error instanceof Error ? error.message : "Outlook unavailable.");
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
   }, [cashflowMode, periodMonths]);
 
   const exportTransactions = () => {

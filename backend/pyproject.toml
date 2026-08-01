@@ -2,7 +2,85 @@
 name = "meridian-backend"
 version = "0.1.0"
 requires-python = ">=3.12"
+dependencies = [
+    "alembic>=1.13",
+    "asyncpg>=0.29",
+    "bcrypt==4.0.1",
+    "cryptography>=43.0",
+    "fastapi>=0.115",
+    "google-genai>=1.18.0",
+    "httpx>=0.27",
+    "passlib[bcrypt]>=1.7",
+    "plaid-python>=33.0.0",
+    "pydantic[email]>=2.9",
+    "pydantic-settings>=2.5",
+    "python-jose[cryptography]>=3.3",
+    "python-multipart>=0.0.9",
+    "sqlalchemy>=2.0",
+    "uvicorn[standard]>=0.32",
+]
+
+[project.optional-dependencies]
+dev = [
+    "mypy>=1.14",
+    "pip-tools==7.5.0",
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    "pytest-cov>=6.0",
+    "ruff>=0.9",
+]
 
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+addopts = ["--strict-markers"]
+
+[tool.coverage.run]
+branch = true
+
+[tool.coverage.report]
+exclude_also = [
+    "if TYPE_CHECKING:",
+    "if __name__ == .__main__.:",
+]
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+exclude = ["alembic/versions"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/__init__.py" = ["F401"]
+"app/api/v1/routes/financial_inputs.py" = ["F401", "F403", "F405"]
+"app/persistence/repositories/base.py" = ["F401"]
+"app/services/debt_optimization_service.py" = ["E741"]
+"app/services/financial_health_service.py" = ["F401"]
+"app/services/net_worth_projection_service.py" = ["F401"]
+
+[tool.mypy]
+python_version = "3.12"
+files = ["app"]
+check_untyped_defs = true
+ignore_missing_imports = true
+no_implicit_optional = true
+show_error_codes = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+
+[[tool.mypy.overrides]]
+# Existing typed-debt baseline. New modules remain checked; remove entries as
+# these integration boundaries are tightened.
+module = [
+    "app.ai.agent",
+    "app.ai.tool_registry",
+    "app.api.v1.routes.agent",
+    "app.api.v1.routes.auth",
+    "app.api.v1.routes.scenarios",
+    "app.main",
+    "app.persistence.repositories.budget_repository",
+    "app.simulation.engine",
+]
+ignore_errors = true

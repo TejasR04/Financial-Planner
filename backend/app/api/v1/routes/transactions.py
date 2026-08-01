@@ -1,11 +1,10 @@
 from datetime import date
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
-from app.core.exceptions import NotFoundError, ValidationError
 from app.domain.entities import Transaction, User
 from app.persistence.repositories.transaction_repository import TransactionRepository
 from app.persistence.repositories.account_repository import AccountRepository
@@ -30,8 +29,8 @@ async def list_transactions(
     category: str | None = None,
     since: date | None = None,
     until: date | None = None,
-    limit: int = 50,
-    offset: int = 0,
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> TransactionListResponse:

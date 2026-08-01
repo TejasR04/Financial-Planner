@@ -112,6 +112,7 @@ export function ProjectionAssumptions({ dollarDisplay }: { dollarDisplay: Projec
   // not represent spendable retirement income in this model.
   useEffect(() => {
     if (!profile || retirementBalance == null) return;
+    let cancelled = false;
     const handle = setTimeout(async () => {
       setLoading(true);
       setError(null);
@@ -123,18 +124,23 @@ export function ProjectionAssumptions({ dollarDisplay }: { dollarDisplay: Projec
           expected_return: String(ret / 100),
           annual_contribution: String(contribution * 12),
         });
-        setResult({
-          balanceAtRetirement: parseFloat(sim.projected_balance_at_retirement),
-          monthlyIncome: parseFloat(sim.monthly_sustainable_withdrawal),
-          years: sim.years_to_retirement,
-        });
+        if (!cancelled) {
+          setResult({
+            balanceAtRetirement: parseFloat(sim.projected_balance_at_retirement),
+            monthlyIncome: parseFloat(sim.monthly_sustainable_withdrawal),
+            years: sim.years_to_retirement,
+          });
+        }
       } catch (err) {
-        setError(err instanceof ApiError ? err.message : "Couldn't run the projection.");
+        if (!cancelled) setError(err instanceof ApiError ? err.message : "Couldn't run the projection.");
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }, 400);
-    return () => clearTimeout(handle);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
   }, [profile, retirementBalance, age, contribution, ret, years]);
 
   return (

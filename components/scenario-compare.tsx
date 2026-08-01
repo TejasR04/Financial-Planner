@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Info } from "lucide-react";
 import { formatCurrency } from "@/lib/data";
 import { useDataRefresh, useScenariosData } from "@/lib/data-provider";
@@ -47,13 +47,22 @@ export function ScenarioCompare({
   const [duplicateSourceId, setDuplicateSourceId] = useState<string>("");
   const [duplicating, setDuplicating] = useState(false);
   const [duplicateError, setDuplicateError] = useState<string | null>(null);
+  const previousScenarioIds = useRef<Set<string>>(new Set());
 
   // Scenarios load asynchronously; default every scenario to "active" the
   // first time the real list arrives, and default the duplicate-source
   // picker to the first scenario.
   useEffect(() => {
+    const nextIds = new Set(scenarios.map((scenario) => scenario.id));
+    const addedIds = scenarios
+      .map((scenario) => scenario.id)
+      .filter((id) => !previousScenarioIds.current.has(id));
+    setActive((current) => [
+      ...current.filter((id) => nextIds.has(id)),
+      ...addedIds,
+    ]);
+    previousScenarioIds.current = nextIds;
     if (scenarios.length > 0) {
-      setActive(scenarios.map((s) => s.id));
       setDuplicateSourceId((prev) => (scenarios.some((s) => s.id === prev) ? prev : scenarios[0].id));
     }
   }, [scenarios]);

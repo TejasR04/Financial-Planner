@@ -65,6 +65,22 @@ async def test_complete_history_query_has_no_hidden_limit():
 
 
 @pytest.mark.asyncio
+async def test_paginated_transaction_order_has_stable_id_tiebreaker():
+    count_result = SimpleNamespace(scalar_one=lambda: 0)
+    rows_result = _empty_result()
+    session = SimpleNamespace(
+        execute=AsyncMock(side_effect=[count_result, rows_result])
+    )
+
+    rows, total = await TransactionRepository(session).list_for_user(uuid4())
+
+    assert rows == []
+    assert total == 0
+    sql = _sql(session.execute.await_args_list[1].args[0])
+    assert "transactions.posted_at DESC, transactions.id DESC" in sql
+
+
+@pytest.mark.asyncio
 async def test_transaction_totals_are_aggregated_in_sql():
     result = SimpleNamespace(all=lambda: [("income", Decimal("25.00"))])
     session = SimpleNamespace(execute=AsyncMock(return_value=result))

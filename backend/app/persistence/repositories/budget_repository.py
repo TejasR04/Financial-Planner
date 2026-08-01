@@ -3,7 +3,8 @@ from __future__ import annotations
 from datetime import date
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.persistence.models import BudgetCategoryModel, MerchantBudgetRuleModel, TransactionModel
@@ -26,15 +27,19 @@ class BudgetRepository(BaseRepository[BudgetCategoryModel]):
         return list(result.scalars().all())
 
     async def create_category(self, user_id: UUID, name: str, group_name: str, monthly_limit) -> BudgetCategoryModel:
+        normalized_name = name.strip()
         existing = await self.list_categories(user_id)
-        if any(category.name.casefold() == name.strip().casefold() for category in existing):
+        if await self._category_name_exists(user_id, normalized_name):
             raise ConflictError("A budget category with that name already exists")
         row = BudgetCategoryModel(
-            id=uuid4(), user_id=user_id, name=name.strip(), group_name=group_name.strip(),
+            id=uuid4(), user_id=user_id, name=normalized_name, group_name=group_name.strip(),
             monthly_limit=monthly_limit, sort_order=len(existing),
         )
         self.session.add(row)
-        await self.session.flush()
+        try:
+            await self.session.flush()
+        except IntegrityError as exc:
+            raise ConflictError("A budget category with that name already exists") from exc
         return row
 
     async def get_category_for_user(self, user_id: UUID, category_id: UUID) -> BudgetCategoryModel:
@@ -48,11 +53,35 @@ class BudgetRepository(BaseRepository[BudgetCategoryModel]):
 
     async def update_category(self, user_id: UUID, category_id: UUID, **fields) -> BudgetCategoryModel:
         row = await self.get_category_for_user(user_id, category_id)
+        requested_name = fields.get("name")
+        if requested_name is not None:
+            requested_name = requested_name.strip()
+            if await self._category_name_exists(user_id, requested_name, excluding_id=category_id):
+                raise ConflictError("A budget category with that name already exists")
+            fields["name"] = requested_name
         for key, value in fields.items():
             if value is not None:
                 setattr(row, key, value.strip() if key in {"name", "group_name"} else value)
-        await self.session.flush()
+        try:
+            await self.session.flush()
+        except IntegrityError as exc:
+            raise ConflictError("A budget category with that name already exists") from exc
         return row
+
+    async def _category_name_exists(
+        self,
+        user_id: UUID,
+        name: str,
+        *,
+        excluding_id: UUID | None = None,
+    ) -> bool:
+        query = select(BudgetCategoryModel.id).where(
+            BudgetCategoryModel.user_id == user_id,
+            func.lower(BudgetCategoryModel.name) == name.lower(),
+        )
+        if excluding_id is not None:
+            query = query.where(BudgetCategoryModel.id != excluding_id)
+        return await self.session.scalar(query) is not None
 
     async def list_rules(self, user_id: UUID) -> list[tuple[MerchantBudgetRuleModel, BudgetCategoryModel]]:
         result = await self.session.execute(

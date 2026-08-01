@@ -16,6 +16,8 @@ export default function OnboardingPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadAttempt, setLoadAttempt] = useState(0);
 
   const [fullName, setFullName] = useState("");
   const [dob, setDob] = useState("");
@@ -32,6 +34,8 @@ export default function OnboardingPage() {
     if (status !== "authenticated") return;
 
     let cancelled = false;
+    setLoading(true);
+    setLoadError(null);
     (async () => {
       try {
         const [user, profile] = await Promise.all([
@@ -45,6 +49,10 @@ export default function OnboardingPage() {
         setEquityAllocation(Math.round(parseFloat(profile.target_equity_allocation) * 100));
         setWithdrawalRate(Math.round(parseFloat(profile.default_withdrawal_rate) * 1000) / 10);
         setIncludeSS(profile.include_social_security);
+      } catch (err) {
+        if (!cancelled) {
+          setLoadError(err instanceof ApiError ? err.message : "Couldn't load your profile details.");
+        }
       } finally {
         if (!cancelled) setLoading(false);
       }
@@ -52,7 +60,7 @@ export default function OnboardingPage() {
     return () => {
       cancelled = true;
     };
-  }, [status, router]);
+  }, [status, router, loadAttempt]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -83,6 +91,17 @@ export default function OnboardingPage() {
     return (
       <div className="flex h-screen items-center justify-center bg-background">
         <p className="text-[13px] text-muted-foreground">Loading…</p>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="flex h-screen flex-col items-center justify-center gap-3 bg-background px-4 text-center">
+        <p role="alert" className="max-w-md text-sm text-destructive">{loadError}</p>
+        <Button variant="outline" size="sm" onClick={() => setLoadAttempt((attempt) => attempt + 1)}>
+          Retry
+        </Button>
       </div>
     );
   }

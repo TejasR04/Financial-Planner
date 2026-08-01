@@ -51,7 +51,9 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         )
         total = count_result.scalar_one()
 
-        query = query.order_by(TransactionModel.posted_at.desc()).limit(limit).offset(offset)
+        query = query.order_by(
+            TransactionModel.posted_at.desc(), TransactionModel.id.desc()
+        ).limit(limit).offset(offset)
         result = await self.session.execute(query)
         rows = result.scalars().all()
         return [_to_domain(row) for row in rows], total

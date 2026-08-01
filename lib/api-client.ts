@@ -89,7 +89,7 @@ async function request<T>(
   return (await res.json()) as T;
 }
 
-const get = <T>(path: string) => request<T>(path);
+const get = <T>(path: string, options?: RequestInit) => request<T>(path, options);
 const post = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined });
 const patch = <T>(path: string, body?: unknown) =>
@@ -481,7 +481,7 @@ export const api = {
       category?: string;
       since?: string;
       until?: string;
-    }) => {
+    }, signal?: AbortSignal) => {
       const qs = new URLSearchParams();
       if (params?.limit) qs.set("limit", String(params.limit));
       if (params?.offset) qs.set("offset", String(params.offset));
@@ -490,7 +490,7 @@ export const api = {
       if (params?.since) qs.set("since", params.since);
       if (params?.until) qs.set("until", params.until);
       const suffix = qs.toString() ? `?${qs}` : "";
-      return get<ApiTransactionList>(`/transactions${suffix}`);
+      return get<ApiTransactionList>(`/transactions${suffix}`, { signal });
     },
     listAll: async (params?: {
       accountId?: string;
@@ -534,7 +534,7 @@ export const api = {
       post<{ imported_count: number; data: ApiTransaction[] }>("/transactions/import/csv", body),
   },
   budgets: {
-    categories: () => get<ApiBudgetCategory[]>("/budgets/categories"),
+    categories: (signal?: AbortSignal) => get<ApiBudgetCategory[]>("/budgets/categories", { signal }),
     createCategory: (body: { name: string; group_name: string; monthly_limit: string }) =>
       post<ApiBudgetCategory>("/budgets/categories", body),
     updateCategory: (
@@ -545,9 +545,10 @@ export const api = {
     createMerchantRule: (body: { budget_category_id: string; merchant_pattern: string }) =>
       post<ApiMerchantBudgetRule>("/budgets/merchant-rules", body),
     deleteMerchantRule: (ruleId: string) => del(`/budgets/merchant-rules/${ruleId}`),
-    summary: (month: string) => get<ApiBudgetSummary>(`/budgets/summary?month=${month}-01`),
-    uncategorized: (month: string) =>
-      get<ApiUncategorizedBudgetTransaction[]>(`/budgets/uncategorized?month=${month}-01`),
+    summary: (month: string, signal?: AbortSignal) =>
+      get<ApiBudgetSummary>(`/budgets/summary?month=${month}-01`, { signal }),
+    uncategorized: (month: string, signal?: AbortSignal) =>
+      get<ApiUncategorizedBudgetTransaction[]>(`/budgets/uncategorized?month=${month}-01`, { signal }),
   },
   scenarios: {
     list: () => get<ApiScenario[]>("/scenarios"),

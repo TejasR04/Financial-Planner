@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Loader2, X } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { DialogShell } from "@/components/ui/dialog-shell";
 import { api, ApiError } from "@/lib/api-client";
 import type { Scenario } from "@/lib/data";
 import { useCurrentAge, useCurrentRetirementBalance, useDataRefresh } from "@/lib/data-provider";
@@ -149,8 +150,7 @@ export function NewScenarioDialog({ open, onClose, scenario = null }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4">
-      <div className="w-full max-w-md rounded-lg border border-border bg-card shadow-xl">
+    <DialogShell onClose={onClose} closeDisabled={submitting} ariaLabel="Scenario editor" panelClassName="max-w-md rounded-lg bg-card">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <h2 className="text-[13px] font-semibold text-foreground">
             {isEditing ? "Edit scenario" : "New scenario"}
@@ -286,7 +286,6 @@ export function NewScenarioDialog({ open, onClose, scenario = null }: Props) {
             </Button>
           </div>
         </form>
-      </div>
-    </div>
+    </DialogShell>
   );
 }

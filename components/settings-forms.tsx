@@ -6,7 +6,7 @@ import { Check } from "lucide-react";
 import { Panel, PanelHeader } from "@/components/panel";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { api, ApiIncomeSource } from "@/lib/api-client";
+import { api, ApiError, ApiIncomeSource } from "@/lib/api-client";
 import { useAccountsData, useDataRefresh, useInstitutionsData, useUserAccount } from "@/lib/data-provider";
 
 const sections = [
@@ -76,6 +76,7 @@ export function SettingsForms() {
   const institutions = useInstitutionsData();
   const refresh = useDataRefresh();
   const router = useRouter();
+  const [mutationError, setMutationError] = useState<string | null>(null);
 
   // --- Profile tab ---------------------------------------------------
   const [fullName, setFullName] = useState("");
@@ -92,6 +93,7 @@ export function SettingsForms() {
   async function saveProfile() {
     setProfileSaving(true);
     setProfileSaved(false);
+    setMutationError(null);
     try {
       await api.users.updateMe({
         full_name: fullName,
@@ -100,6 +102,8 @@ export function SettingsForms() {
       });
       refresh();
       setProfileSaved(true);
+    } catch (error) {
+      setMutationError(error instanceof ApiError ? error.message : "Couldn't save your profile.");
     } finally {
       setProfileSaving(false);
     }
@@ -133,6 +137,7 @@ export function SettingsForms() {
   async function savePlanning() {
     setPlanningSaving(true);
     setPlanningSaved(false);
+    setMutationError(null);
     try {
       await api.users.updatePlanningProfile({
         target_retirement_age: retirementAge,
@@ -144,8 +149,36 @@ export function SettingsForms() {
       });
       refresh();
       setPlanningSaved(true);
+    } catch (error) {
+      setMutationError(error instanceof ApiError ? error.message : "Couldn't save planning settings.");
     } finally {
       setPlanningSaving(false);
+    }
+  }
+
+  async function removeIncomeSource(source: ApiIncomeSource) {
+    setMutationError(null);
+    try {
+      await api.incomeSources.delete(source.id);
+      setIncomeSources((rows) => rows.filter((row) => row.id !== source.id));
+    } catch (error) {
+      setMutationError(error instanceof ApiError ? error.message : "Couldn't remove that income source.");
+    }
+  }
+
+  async function addIncomeSource() {
+    setMutationError(null);
+    try {
+      const source = await api.incomeSources.create({
+        name: incomeName,
+        annual_amount: incomeAmount,
+        growth_rate: "0.03",
+      });
+      setIncomeSources((rows) => [...rows, source]);
+      setIncomeName("");
+      setIncomeAmount("");
+    } catch (error) {
+      setMutationError(error instanceof ApiError ? error.message : "Couldn't add that income source.");
     }
   }
 
@@ -173,6 +206,11 @@ export function SettingsForms() {
       </nav>
 
       <div className="min-w-0">
+        {mutationError && (
+          <p role="alert" className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive">
+            {mutationError}
+          </p>
+        )}
         {tab === "profile" && (
           <Panel>
             <PanelHeader
@@ -272,11 +310,11 @@ export function SettingsForms() {
               </Field>
               <Field label="Income sources" hint="Planning inputs only; never added to historical transaction income">
                 <div className="space-y-2">
-                  {incomeSources.map((source) => <div key={source.id} className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-[12px]"><span>{source.name} · ${Number(source.annual_amount).toLocaleString()}/yr</span><Button variant="outline" size="xs" onClick={async () => { await api.incomeSources.delete(source.id); setIncomeSources((rows) => rows.filter((row) => row.id !== source.id)); }}>Remove</Button></div>)}
+                  {incomeSources.map((source) => <div key={source.id} className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-[12px]"><span>{source.name} · ${Number(source.annual_amount).toLocaleString()}/yr</span><Button variant="outline" size="xs" onClick={() => void removeIncomeSource(source)}>Remove</Button></div>)}
                   <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
                     <input className={inputClass} value={incomeName} onChange={(e) => setIncomeName(e.target.value)} placeholder="Salary, pension…" />
                     <input className={inputClass} type="number" min="0" value={incomeAmount} onChange={(e) => setIncomeAmount(e.target.value)} placeholder="Annual amount" />
-                    <Button variant="outline" size="sm" disabled={!incomeName || !incomeAmount} onClick={async () => { const source = await api.incomeSources.create({ name: incomeName, annual_amount: incomeAmount, growth_rate: "0.03" }); setIncomeSources((rows) => [...rows, source]); setIncomeName(""); setIncomeAmount(""); }}>Add</Button>
+                    <Button variant="outline" size="sm" disabled={!incomeName || !incomeAmount} onClick={() => void addIncomeSource()}>Add</Button>
                   </div>
                 </div>
               </Field>
@@ -395,6 +433,18 @@ export function SettingsForms() {
 // yet) — kept isolated so it doesn't silently claim to be server-persisted.
 function NotificationToggleField({ label, hint }: { label: string; hint: string }) {
   const [on, setOn] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const storageKey = `meridian-notification-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
+
+  useEffect(() => {
+    setOn(localStorage.getItem(storageKey) === "true");
+    setLoaded(true);
+  }, [storageKey]);
+
+  useEffect(() => {
+    if (loaded) localStorage.setItem(storageKey, String(on));
+  }, [loaded, on, storageKey]);
+
   return (
     <Field label={label} hint={hint}>
       <div className="flex sm:justify-start">

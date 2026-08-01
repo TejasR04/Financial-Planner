@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta, timezone
 from hashlib import sha256
 from secrets import token_urlsafe
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from jose import JWTError, jwt
 from passlib.context import CryptContext
@@ -38,8 +38,17 @@ def hash_refresh_token(token: str) -> str:
 def create_password_reset_token(subject: UUID) -> str:
     settings = get_settings()
     expire = datetime.now(timezone.utc) + timedelta(minutes=settings.password_reset_token_expire_minutes)
-    payload = {"sub": str(subject), "exp": expire, "type": "password_reset"}
+    payload = {
+        "sub": str(subject),
+        "exp": expire,
+        "type": "password_reset",
+        "jti": str(uuid4()),
+    }
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
+
+
+def hash_password_reset_token(token: str) -> str:
+    return sha256(token.encode("utf-8")).hexdigest()
 
 
 class InvalidTokenError(Exception):

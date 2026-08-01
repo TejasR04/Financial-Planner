@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronLeft, ChevronRight, Plus, Tag } from "lucide-react";
 import {
   Cell,
@@ -12,6 +12,7 @@ import {
 import { PageContainer, PageHeader } from "@/components/page-container";
 import { Panel, PanelHeader } from "@/components/panel";
 import { Button } from "@/components/ui/button";
+import { DialogShell } from "@/components/ui/dialog-shell";
 import {
   api,
   ApiError,
@@ -20,8 +21,8 @@ import {
   type ApiUncategorizedBudgetTransaction,
 } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/data";
+import { localMonthKey } from "@/lib/local-date";
 
-const currentMonth = new Date().toISOString().slice(0, 7);
 const CHART_COLORS = ["var(--chart-1)", "var(--chart-2)", "var(--chart-3)", "var(--chart-4)", "var(--chart-5)"];
 
 function shiftMonth(value: string, amount: number) {
@@ -42,7 +43,7 @@ type PendingAssignment = {
 };
 
 export default function BudgetPage() {
-  const [month, setMonth] = useState(currentMonth);
+  const [month, setMonth] = useState(() => localMonthKey());
   const [summary, setSummary] = useState<ApiBudgetSummary | null>(null);
   const [categories, setCategories] = useState<ApiBudgetCategory[]>([]);
   const [uncategorized, setUncategorized] = useState<ApiUncategorizedBudgetTransaction[]>([]);
@@ -53,6 +54,12 @@ export default function BudgetPage() {
   const [limit, setLimit] = useState("");
   const [pendingAssignment, setPendingAssignment] = useState<PendingAssignment | null>(null);
   const [assigning, setAssigning] = useState(false);
+  const requestGeneration = useRef(0);
+  const monthRef = useRef(month);
+
+  useEffect(() => {
+    monthRef.current = month;
+  }, [month]);
 
   const activeCategories = useMemo(() => categories.filter((category) => category.active), [categories]);
   const chartData = useMemo(
@@ -68,26 +75,33 @@ export default function BudgetPage() {
   const totalBudgeted = chartData.reduce((sum, item) => sum + item.budgeted, 0);
   const totalSpent = chartData.reduce((sum, item) => sum + item.spent, 0);
 
-  const reload = useCallback(async () => {
+  const reload = useCallback(async (signal?: AbortSignal, requestedMonth = monthRef.current) => {
+    const generation = ++requestGeneration.current;
     setLoading(true);
     setError(null);
     try {
       const [nextSummary, nextCategories, nextUncategorized] = await Promise.all([
-        api.budgets.summary(month),
-        api.budgets.categories(),
-        api.budgets.uncategorized(month),
+        api.budgets.summary(requestedMonth, signal),
+        api.budgets.categories(signal),
+        api.budgets.uncategorized(requestedMonth, signal),
       ]);
+      if (requestGeneration.current !== generation) return;
       setSummary(nextSummary);
       setCategories(nextCategories);
       setUncategorized(nextUncategorized);
     } catch (err) {
+      if (signal?.aborted || requestGeneration.current !== generation) return;
       setError(err instanceof ApiError ? err.message : "Couldn't load your budget.");
     } finally {
-      setLoading(false);
+      if (requestGeneration.current === generation) setLoading(false);
     }
-  }, [month]);
+  }, []);
 
-  useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => {
+    const controller = new AbortController();
+    void reload(controller.signal, month);
+    return () => controller.abort();
+  }, [month, reload]);
 
   const createCategory = async (event: React.FormEvent) => {
     event.preventDefault();
@@ -225,12 +239,10 @@ export default function BudgetPage() {
         {uncategorized.length ? <div className="overflow-x-auto"><table className="w-full border-collapse text-[13px]"><thead><tr className="border-b border-border text-left text-[11px] uppercase tracking-wider text-muted-foreground"><th className="px-4 py-2">Merchant</th><th className="px-4 py-2">Provider category</th><th className="px-4 py-2">Assign to</th><th className="px-4 py-2 text-right">Amount</th></tr></thead><tbody>{uncategorized.map((transaction) => <tr key={transaction.id} className="border-b border-border/60 last:border-0"><td className="px-4 py-3"><p className="font-medium text-foreground">{transaction.merchant}</p><p className="text-[11px] text-muted-foreground">{transaction.posted_at}{transaction.status === "pending" ? " · pending" : ""}</p></td><td className="px-4 py-3 text-muted-foreground">{transaction.provider_category}</td><td className="px-4 py-3"><select value={pendingAssignment?.transaction.id === transaction.id ? pendingAssignment.categoryId : ""} onChange={(event) => requestAssignment(transaction, event.target.value)} className="h-8 min-w-36 rounded-md border border-border bg-background px-2 text-[12px] text-foreground outline-none focus:border-ring"><option value="" disabled>Choose category</option>{activeCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></td><td className="px-4 py-3 text-right font-mono tabular-nums">{formatCurrency(Math.abs(Number(transaction.amount)))}</td></tr>)}</tbody></table></div> : <div className="flex items-center gap-2 p-5 text-sm text-positive"><Tag className="size-4" />Everything in this month is categorized.</div>}
       </Panel>
 
-      {pendingAssignment && <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/20 p-4 backdrop-blur-sm" onMouseDown={() => !assigning && setPendingAssignment(null)}>
-        <div role="dialog" aria-modal="true" aria-labelledby="merchant-rule-title" className="w-full max-w-md rounded-xl border border-border bg-popover shadow-2xl" onMouseDown={(event) => event.stopPropagation()}>
+      {pendingAssignment && <DialogShell onClose={() => setPendingAssignment(null)} closeDisabled={assigning} ariaLabelledBy="merchant-rule-title" panelClassName="max-w-md">
           <div className="border-b border-border px-4 py-3"><h2 id="merchant-rule-title" className="text-sm font-semibold text-foreground">Create a merchant rule?</h2><p className="mt-1 text-xs text-muted-foreground">Also categorize past and future unassigned expenses from {pendingAssignment.transaction.merchant} as {pendingAssignment.categoryName}.</p></div>
           <div className="flex justify-end gap-2 p-3"><Button type="button" variant="outline" size="sm" onClick={() => completeAssignment(false)} disabled={assigning}>Only this transaction</Button><Button type="button" size="sm" onClick={() => completeAssignment(true)} disabled={assigning}>{assigning ? "Saving…" : "Create rule"}</Button></div>
-        </div>
-      </div>}
+      </DialogShell>}
     </PageContainer>
   );
 }

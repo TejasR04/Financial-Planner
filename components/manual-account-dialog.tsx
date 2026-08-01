@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { DialogShell } from "@/components/ui/dialog-shell";
 import { ApiError, api } from "@/lib/api-client";
 import type { Account } from "@/lib/data";
 import { useDataRefresh } from "@/lib/data-provider";
@@ -86,11 +87,11 @@ export function ManualAccountDialog({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-foreground/20 p-4 backdrop-blur-sm" onMouseDown={onClose}>
-      <form className="w-full max-w-md rounded-xl border border-border bg-popover shadow-2xl" onSubmit={submit} onMouseDown={(event) => event.stopPropagation()}>
+    <DialogShell onClose={onClose} closeDisabled={saving} ariaLabelledBy="manual-account-title" panelClassName="max-w-md">
+      <form onSubmit={submit}>
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <div>
-            <h2 className="text-sm font-semibold text-foreground">{account ? "Edit manual account" : "Add manual account"}</h2>
+            <h2 id="manual-account-title" className="text-sm font-semibold text-foreground">{account ? "Edit manual account" : "Add manual account"}</h2>
             <p className="mt-0.5 text-xs text-muted-foreground">Amounts are recorded in USD.</p>
           </div>
           <Button type="button" variant="ghost" size="icon-sm" aria-label="Close" onClick={onClose}><X /></Button>
@@ -104,6 +105,6 @@ export function ManualAccountDialog({
         </div>
         <div className="flex justify-end gap-2 border-t border-border p-3"><Button type="button" variant="outline" size="sm" onClick={onClose} disabled={saving}>Cancel</Button><Button size="sm" type="submit" disabled={saving}>{saving ? "Saving…" : account ? "Save changes" : "Add account"}</Button></div>
       </form>
-    </div>
+    </DialogShell>
   );
 }

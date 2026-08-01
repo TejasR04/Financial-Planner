@@ -1,6 +1,8 @@
 import pytest
 from httpx import AsyncClient
 
+from app.api.v1.routes import auth as auth_routes
+
 
 REGISTER_BODY = {
     "email": "session-test@example.com",
@@ -50,3 +52,51 @@ async def test_refresh_token_reuse_revokes_the_rotated_session(client: AsyncClie
     client.cookies.set("meridian_refresh", rotated_refresh, path="/api/v1/auth")
     revoked_replacement = await client.post("/api/v1/auth/refresh")
     assert revoked_replacement.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_password_reset_token_is_single_use(
+    client: AsyncClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    email = "password-reset@example.com"
+    registered = await client.post(
+        "/api/v1/auth/register",
+        json={**REGISTER_BODY, "email": email},
+    )
+    assert registered.status_code == 201
+
+    delivered: list[str] = []
+    monkeypatch.setattr(
+        auth_routes,
+        "send_password_reset_email",
+        lambda recipient, token: delivered.append(token),
+    )
+    requested = await client.post(
+        "/api/v1/auth/password-reset/request",
+        json={"email": email},
+    )
+    assert requested.status_code == 202
+    assert len(delivered) == 1
+
+    reset = await client.post(
+        "/api/v1/auth/password-reset/confirm",
+        json={"token": delivered[0], "password": "new-correct-horse-password"},
+    )
+    assert reset.status_code == 204
+
+    replay = await client.post(
+        "/api/v1/auth/password-reset/confirm",
+        json={"token": delivered[0], "password": "attacker-chosen-password"},
+    )
+    assert replay.status_code == 400
+
+    old_login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": REGISTER_BODY["password"]},
+    )
+    assert old_login.status_code == 401
+    new_login = await client.post(
+        "/api/v1/auth/login",
+        json={"email": email, "password": "new-correct-horse-password"},
+    )
+    assert new_login.status_code == 200
