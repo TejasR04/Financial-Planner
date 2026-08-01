@@ -80,11 +80,8 @@ def project_balance_series(
 ) -> list[YearProjection]:
     """Year-by-year balance projection with annual compounding and an
     optional annually-growing contribution (e.g. salary growth carried into
-    savings). Contributions are applied at year-end, then growth is applied
-    to the balance including that year's contribution — i.e. growth compounds
-    on top of contributions made during the year at a simplifying
-    mid/end-of-year convention appropriate for multi-decade planning
-    horizons (not day-level accuracy).
+    savings). Growth is applied to the opening balance and the contribution
+    is applied at year-end: the standard ordinary-annuity convention.
     """
     if years < 0:
         raise ValueError("years must be non-negative")

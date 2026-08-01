@@ -58,6 +58,29 @@ def test_retirement_projection_feasibility_flag():
     assert result.shortfall_or_surplus < Decimal("0")
 
 
+def test_retirement_feasibility_requires_funding_the_full_horizon():
+    service = RetirementProjectionService()
+    assumptions = PlanningAssumptions(
+        current_age=64,
+        retirement_age=65,
+        life_expectancy_age=95,
+        expected_return=Decimal("0.03"),
+        inflation_rate=Decimal("0.03"),
+        withdrawal_rate=Decimal("0.04"),
+    )
+    result = service.project(
+        current_retirement_balance=Decimal("100000"),
+        annual_contribution=Decimal("0"),
+        assumptions=assumptions,
+        annual_spending_target=Decimal("3500"),
+    )
+
+    # The first-year 4% rule covers $3,500, but $100,000 cannot pay it for
+    # all 30 years with a zero real return.
+    assert result.shortfall_or_surplus > Decimal("0")
+    assert result.is_feasible is False
+
+
 def test_earliest_feasible_retirement_age_finds_a_reasonable_age():
     service = RetirementProjectionService()
     base = PlanningAssumptions(current_age=30, retirement_age=65, expected_return=Decimal("0.07"))

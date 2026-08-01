@@ -16,7 +16,7 @@ from app.simulation.assumptions import PlanningAssumptions
 from app.simulation.engine import implied_return_volatility
 from app.simulation.monte_carlo import MonteCarloResult, run_monte_carlo
 
-ENGINE_VERSION = "1.0.0"
+ENGINE_VERSION = "1.1.0"
 
 
 @dataclass(slots=True, frozen=True)
@@ -58,6 +58,22 @@ def _effective_withdrawal(
     if retirement.target_annual_income_real is not None:
         return retirement.target_annual_income_real
     return retirement.annual_sustainable_withdrawal
+
+
+def _real_volatility(nominal_volatility: Decimal, inflation_rate: Decimal) -> Decimal:
+    """Scale nominal-return volatility into constant-inflation real terms."""
+    return nominal_volatility / (Decimal("1") + inflation_rate)
+
+
+def _nominal_return_for_real_increase(
+    assumptions: PlanningAssumptions, increase: Decimal
+) -> Decimal:
+    """Return the nominal assumption that raises real return by ``increase``."""
+    return (
+        (Decimal("1") + assumptions.real_return + increase)
+        * (Decimal("1") + assumptions.inflation_rate)
+        - Decimal("1")
+    )
 
 
 class ScenarioService:
@@ -109,17 +125,17 @@ class ScenarioService:
             monte_carlo = run_monte_carlo(
                 starting_balance=current_retirement_balance,
                 annual_contribution=annual_contribution,
-                expected_return=assumptions.expected_return,
-                return_volatility=effective_volatility,
+                expected_return=assumptions.real_return,
+                return_volatility=_real_volatility(
+                    effective_volatility, assumptions.inflation_rate
+                ),
                 years=years,
                 starting_age=assumptions.current_age,
                 target_balance=target,
                 retirement_years=assumptions.years_in_retirement,
                 annual_withdrawal=withdrawal,
-                # Withdrawals grow with inflation each year of retirement so
-                # purchasing power stays constant — the standard convention
-                # behind both the "4% rule" and an explicit income target.
-                annual_withdrawal_growth_rate=assumptions.inflation_rate,
+                # A flat real withdrawal already preserves purchasing power.
+                annual_withdrawal_growth_rate=Decimal("0"),
                 trials=monte_carlo_trials,
                 seed=monte_carlo_seed,
             )
@@ -156,14 +172,17 @@ class ScenarioService:
         baseline_mc = run_monte_carlo(
             starting_balance=current_retirement_balance,
             annual_contribution=annual_contribution,
-            expected_return=assumptions.expected_return,
-            return_volatility=implied_return_volatility(assumptions.target_equity_allocation),
+            expected_return=assumptions.real_return,
+            return_volatility=_real_volatility(
+                implied_return_volatility(assumptions.target_equity_allocation),
+                assumptions.inflation_rate,
+            ),
             years=assumptions.years_to_retirement,
             starting_age=assumptions.current_age,
             target_balance=baseline_balance,
             retirement_years=assumptions.years_in_retirement,
             annual_withdrawal=_effective_withdrawal(baseline_retirement, assumptions, None),
-            annual_withdrawal_growth_rate=assumptions.inflation_rate,
+            annual_withdrawal_growth_rate=Decimal("0"),
             trials=monte_carlo_trials,
             seed=monte_carlo_seed,
         )
@@ -190,7 +209,12 @@ class ScenarioService:
         rows.append(
             balance_pct_row(
                 "+1% real return",
-                replace(assumptions, expected_return=assumptions.expected_return + Decimal("0.01")),
+                replace(
+                    assumptions,
+                    expected_return=_nominal_return_for_real_increase(
+                        assumptions, Decimal("0.01")
+                    ),
+                ),
                 "Balance at retirement",
             )
         )
@@ -231,14 +255,17 @@ class ScenarioService:
             varied_mc = run_monte_carlo(
                 starting_balance=current_retirement_balance,
                 annual_contribution=annual_contribution,
-                expected_return=varied_income.expected_return,
-                return_volatility=implied_return_volatility(assumptions.target_equity_allocation),
+                expected_return=varied_income.real_return,
+                return_volatility=_real_volatility(
+                    implied_return_volatility(assumptions.target_equity_allocation),
+                    varied_income.inflation_rate,
+                ),
                 years=varied_income.years_to_retirement,
                 starting_age=varied_income.current_age,
                 target_balance=varied_retirement.projected_balance_at_retirement,
                 retirement_years=varied_income.years_in_retirement,
                 annual_withdrawal=_effective_withdrawal(varied_retirement, varied_income, None),
-                annual_withdrawal_growth_rate=varied_income.inflation_rate,
+                annual_withdrawal_growth_rate=Decimal("0"),
                 trials=monte_carlo_trials,
                 seed=monte_carlo_seed,
             )
@@ -267,14 +294,17 @@ class ScenarioService:
             varied_mc = run_monte_carlo(
                 starting_balance=current_retirement_balance,
                 annual_contribution=annual_contribution,
-                expected_return=varied_withdrawal.expected_return,
-                return_volatility=implied_return_volatility(assumptions.target_equity_allocation),
+                expected_return=varied_withdrawal.real_return,
+                return_volatility=_real_volatility(
+                    implied_return_volatility(assumptions.target_equity_allocation),
+                    varied_withdrawal.inflation_rate,
+                ),
                 years=varied_withdrawal.years_to_retirement,
                 starting_age=varied_withdrawal.current_age,
                 target_balance=varied_retirement.projected_balance_at_retirement,
                 retirement_years=varied_withdrawal.years_in_retirement,
                 annual_withdrawal=varied_retirement.annual_sustainable_withdrawal,
-                annual_withdrawal_growth_rate=varied_withdrawal.inflation_rate,
+                annual_withdrawal_growth_rate=Decimal("0"),
                 trials=monte_carlo_trials,
                 seed=monte_carlo_seed,
             )

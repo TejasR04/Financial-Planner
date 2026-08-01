@@ -38,8 +38,12 @@ class RetirementProjection:
 
 
 class RetirementProjectionService:
-    """Projects retirement account balances forward and evaluates whether a
-    target retirement age is feasible under a fixed withdrawal-rate rule.
+    """Projects retirement finances entirely in today's purchasing power.
+
+    ``PlanningAssumptions.expected_return`` is nominal, so this service uses
+    its Fisher-adjusted real return. Balances, contributions, income targets,
+    withdrawals, and every amount returned by this service therefore share
+    one dollar basis.
     """
 
     def project(
@@ -56,7 +60,7 @@ class RetirementProjectionService:
         series = project_balance_series(
             starting_balance=current_retirement_balance,
             annual_contribution=annual_contribution,
-            annual_rate=assumptions.expected_return,
+            annual_rate=assumptions.real_return,
             years=years,
             starting_age=current_age,
             contribution_growth_rate=contribution_growth_rate,
@@ -88,10 +92,8 @@ class RetirementProjectionService:
             years_of_income = int(balance_at_retirement // effective_spending_target)
 
         shortfall_or_surplus = ZERO
-        is_feasible = True
         if effective_spending_target is not None:
             shortfall_or_surplus = annual_withdrawal - effective_spending_target
-            is_feasible = shortfall_or_surplus >= ZERO
 
         retirement_withdrawal = (
             effective_spending_target
@@ -101,10 +103,19 @@ class RetirementProjectionService:
         decumulation_series = project_retirement_withdrawal_series(
             starting_balance=balance_at_retirement,
             annual_withdrawal=retirement_withdrawal,
-            annual_rate=assumptions.expected_return,
+            annual_rate=assumptions.real_return,
             years=assumptions.years_in_retirement,
             starting_age=assumptions.retirement_age,
             withdrawal_growth_rate=ZERO,
+        )
+
+        # Feasibility means the requested real withdrawal is paid in full in
+        # every retirement year, not merely that the first-year 4% amount
+        # covers the target. Exact exhaustion after the final requested
+        # withdrawal still counts as funded through the chosen horizon.
+        is_feasible = all(
+            -row.contributions == retirement_withdrawal
+            for row in decumulation_series
         )
 
         return RetirementProjection(

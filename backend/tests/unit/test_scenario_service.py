@@ -27,7 +27,7 @@ def test_scenario_run_produces_net_worth_and_retirement_projection():
     assert result.net_worth_projection.projected_net_worth_at_horizon > result.net_worth_projection.net_worth_today
     assert result.retirement_projection.projected_balance_at_retirement > Decimal("150000")
     assert result.monte_carlo is None
-    assert result.engine_version == "1.0.0"
+    assert result.engine_version == "1.1.0"
 
 
 def test_scenario_run_includes_monte_carlo_when_requested():
@@ -127,6 +127,39 @@ def test_income_target_stays_in_todays_dollars_through_retirement():
     )
     retirement = result.retirement_projection
     assert retirement.target_monthly_income_real == Decimal("4000.00")
+    assert all(
+        row.contributions == Decimal("-48000")
+        for row in retirement.decumulation_series
+        if row.starting_balance >= Decimal("48000")
+    )
+
+
+def test_inflation_reduces_real_retirement_balance_when_nominal_return_is_unchanged():
+    service = ScenarioService()
+    common = dict(
+        current_age=40,
+        retirement_age=65,
+        expected_return=Decimal("0.065"),
+        monthly_contribution=Decimal("500"),
+    )
+    low_inflation = PlanningAssumptions(inflation_rate=Decimal("0.01"), **common)
+    high_inflation = PlanningAssumptions(inflation_rate=Decimal("0.04"), **common)
+
+    low = service.run(
+        accounts=[], assumptions=low_inflation,
+        current_retirement_balance=Decimal("100000"),
+        annual_contribution=Decimal("6000"), include_monte_carlo=False,
+    )
+    high = service.run(
+        accounts=[], assumptions=high_inflation,
+        current_retirement_balance=Decimal("100000"),
+        annual_contribution=Decimal("6000"), include_monte_carlo=False,
+    )
+
+    assert (
+        high.retirement_projection.projected_balance_at_retirement
+        < low.retirement_projection.projected_balance_at_retirement
+    )
 
 
 def test_income_target_drives_feasibility_check():
