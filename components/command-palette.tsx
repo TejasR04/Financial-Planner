@@ -20,8 +20,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useTheme } from "@/components/theme-provider";
-import { useTransactionsData } from "@/lib/data-provider";
-import { exportTransactionsCsv } from "@/lib/transaction-export";
+import { useAccountsData } from "@/lib/data-provider";
+import { exportAllTransactionsCsv } from "@/lib/transaction-export";
 import { cn } from "@/lib/utils";
 
 type Command = {
@@ -42,7 +42,7 @@ export function CommandPalette({
 }) {
   const router = useRouter();
   const { theme, toggle } = useTheme();
-  const transactions = useTransactionsData();
+  const accounts = useAccountsData();
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -121,7 +121,7 @@ export function CommandPalette({
         label: "Export transactions (CSV)",
         group: "Actions",
         icon: Download,
-        run: () => { exportTransactionsCsv(transactions, "meridian-transactions.csv"); onOpenChange(false); },
+        run: () => { void exportAllTransactionsCsv(accounts); onOpenChange(false); },
       },
       {
         id: "act-theme",
@@ -136,7 +136,7 @@ export function CommandPalette({
         },
       },
     ];
-  }, [router, onOpenChange, theme, toggle, transactions]);
+  }, [router, onOpenChange, theme, toggle, accounts]);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();

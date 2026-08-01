@@ -17,7 +17,10 @@ class LiabilityRepository(BaseRepository[LiabilityModel]):
         result = await self.session.execute(
             select(LiabilityModel)
             .join(AccountModel, AccountModel.id == LiabilityModel.account_id)
-            .where(AccountModel.user_id == user_id)
+            .where(
+                AccountModel.user_id == user_id,
+                AccountModel.archived_at.is_(None),
+            )
         )
         return [_to_domain(row) for row in result.scalars().all()]
 

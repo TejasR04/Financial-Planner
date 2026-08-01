@@ -492,6 +492,31 @@ export const api = {
       const suffix = qs.toString() ? `?${qs}` : "";
       return get<ApiTransactionList>(`/transactions${suffix}`);
     },
+    listAll: async (params?: {
+      accountId?: string;
+      category?: string;
+      since?: string;
+      until?: string;
+    }) => {
+      const pageSize = 1000;
+      const data: ApiTransaction[] = [];
+      let offset = 0;
+      let total = Number.POSITIVE_INFINITY;
+
+      while (offset < total) {
+        const page = await api.transactions.list({
+          ...params,
+          limit: pageSize,
+          offset,
+        });
+        data.push(...page.data);
+        total = page.total;
+        if (page.data.length === 0) break;
+        offset += page.data.length;
+      }
+
+      return data;
+    },
     updateBudgetCategory: (transactionId: string, budgetCategoryId: string | null) =>
       patch<ApiTransaction>(`/transactions/${transactionId}/budget-category`, {
         budget_category_id: budgetCategoryId,

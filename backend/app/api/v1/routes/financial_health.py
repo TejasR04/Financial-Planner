@@ -68,13 +68,9 @@ async def recalculate_financial_health(
         from datetime import date, timedelta
 
         since = date.today() - timedelta(days=30 * TRAILING_MONTHS_FOR_DEFAULTS)
-        transactions = await TransactionRepository(db).list_since_for_income_expense(current_user.id, since)
-        total_expenses = sum(
-            (-t.amount for t in transactions if t.type == TransactionType.EXPENSE), Decimal("0")
-        )
-        total_income = sum(
-            (t.amount for t in transactions if t.type == TransactionType.INCOME), Decimal("0")
-        )
+        totals = await TransactionRepository(db).totals_by_type_since(current_user.id, since)
+        total_expenses = -totals.get(TransactionType.EXPENSE, Decimal("0"))
+        total_income = totals.get(TransactionType.INCOME, Decimal("0"))
         if monthly_expenses is None:
             monthly_expenses = (total_expenses / TRAILING_MONTHS_FOR_DEFAULTS) if total_expenses > 0 else Decimal("0")
         if actual_savings_rate is None:

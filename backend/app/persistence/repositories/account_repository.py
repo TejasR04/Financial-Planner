@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 
 from app.core.exceptions import ValidationError
 from app.domain.entities import Account
@@ -145,14 +145,19 @@ class AccountRepository(BaseRepository[AccountModel]):
         await self.session.flush()
 
     async def archive_and_detach_institution(self, user_id: UUID, institution_id: UUID) -> None:
+        # Detach archived rows too. Plaid can archive an account before the
+        # user unlinks its institution, and leaving that FK in place prevents
+        # the institution row from being deleted.
         await self.session.execute(
             update(AccountModel)
             .where(
                 AccountModel.user_id == user_id,
                 AccountModel.institution_id == institution_id,
-                AccountModel.archived_at.is_(None),
             )
-            .values(archived_at=datetime.now(timezone.utc), institution_id=None)
+            .values(
+                archived_at=func.coalesce(AccountModel.archived_at, datetime.now(timezone.utc)),
+                institution_id=None,
+            )
         )
         await self.session.flush()
 

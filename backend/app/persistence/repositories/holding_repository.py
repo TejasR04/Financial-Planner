@@ -22,7 +22,10 @@ class HoldingRepository(BaseRepository[HoldingModel]):
         result = await self.session.execute(
             select(HoldingModel)
             .join(AccountModel, AccountModel.id == HoldingModel.account_id)
-            .where(AccountModel.user_id == user_id)
+            .where(
+                AccountModel.user_id == user_id,
+                AccountModel.archived_at.is_(None),
+            )
         )
         return [_to_domain(row) for row in result.scalars().all()]
 

@@ -61,19 +61,45 @@ class InstitutionRepository(BaseRepository[InstitutionModel]):
             raise NotFoundError("Institution", str(institution_id))
         return _to_domain(row)
 
-    async def lock_for_sync(self, user_id: UUID, institution_id: UUID) -> Institution:
+    async def lock_for_sync(
+        self,
+        user_id: UUID,
+        institution_id: UUID,
+        expected_cursor: str | None,
+    ) -> Institution | None:
+        """Lock immediately before applying a patch if its cursor is current.
+
+        Remote provider reads happen before this call. A cursor mismatch means
+        another sync already committed a newer patch and this stale response
+        must be discarded.
+        """
+        cursor_matches = (
+            InstitutionModel.plaid_sync_cursor.is_(None)
+            if expected_cursor is None
+            else InstitutionModel.plaid_sync_cursor == expected_cursor
+        )
         result = await self.session.execute(
             select(InstitutionModel)
             .where(
                 InstitutionModel.id == institution_id,
                 InstitutionModel.user_id == user_id,
                 InstitutionModel.provider == ProviderType.PLAID.value,
+                cursor_matches,
             )
             .with_for_update()
         )
         row = result.scalar_one_or_none()
         if row is None:
-            raise NotFoundError("Institution", str(institution_id))
+            existing = await self.session.scalar(
+                select(InstitutionModel.id).where(
+                    InstitutionModel.id == institution_id,
+                    InstitutionModel.user_id == user_id,
+                    InstitutionModel.provider == ProviderType.PLAID.value,
+                )
+            )
+            if existing is None:
+                raise NotFoundError("Institution", str(institution_id))
+            return None
         return _to_domain(row)
 
     async def delete_for_user(self, user_id: UUID, institution_id: UUID) -> None:

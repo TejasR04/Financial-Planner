@@ -21,14 +21,17 @@ export function ScenarioChart({
   dollarDisplay: ProjectionDollarDisplay;
 }) {
   const scenarios = useScenariosData();
+  const projectedScenarios = scenarios.filter(
+    (scenario) => scenario.projectionStatus === "available" && scenario.years.length > 0,
+  );
 
   // Each scenario has its own real trajectory (different retirement ages
   // produce different-length runs), so build the shared x-axis as the
   // union of every scenario's calendar years rather than a fixed list.
-  const years = Array.from(new Set(scenarios.flatMap((s) => s.years))).sort();
+  const years = Array.from(new Set(projectedScenarios.flatMap((s) => s.years))).sort();
   const data = years.map((year) => {
     const row: Record<string, number | string> = { year };
-    scenarios.forEach((s) => {
+    projectedScenarios.forEach((s) => {
       const i = s.years.indexOf(year);
       if (i === -1) return;
       const yearsFromToday = i + 1;
@@ -39,6 +42,15 @@ export function ScenarioChart({
     });
     return row;
   });
+
+  if (years.length === 0) {
+    const loading = scenarios.some((scenario) => scenario.projectionStatus === "loading");
+    return (
+      <div className="flex h-[300px] items-center justify-center px-4 text-center text-[13px] text-muted-foreground">
+        {loading ? "Loading scenario projections…" : "Scenario projections are unavailable. Try refreshing the projections page."}
+      </div>
+    );
+  }
 
   return (
     <div className="h-[300px] w-full px-2 pb-2 pt-4">
@@ -91,7 +103,7 @@ export function ScenarioChart({
               />
             }
           />
-          {scenarios.map((s) => (
+          {projectedScenarios.map((s) => (
             <Line
               key={s.id}
               type="monotone"

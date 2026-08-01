@@ -21,12 +21,16 @@ from app.core.exceptions import (
     ValidationError,
 )
 from app.persistence.repositories.user_repository import UserRepository
-from app.persistence.session import AsyncSessionLocal
+from app.persistence.session import AsyncSessionLocal, engine
 from app.providers.plaid_provider import PlaidProvider
 
 settings = get_settings()
 configure_logging(settings.log_level)
 logger = logging.getLogger("meridian.api")
+
+# Stable signed-bigint key shared by every API worker/replica. PostgreSQL
+# session advisory locks release automatically if the owning connection dies.
+_PLAID_AUTO_SYNC_LOCK_ID = 0x4D4552494449414E
 
 app = FastAPI(title=settings.app_name, version="0.1.0")
 
@@ -97,9 +101,54 @@ async def _sync_all_linked_institutions() -> None:
 
 async def _plaid_auto_sync_loop() -> None:
     interval_seconds = max(15, settings.plaid_auto_sync_interval_minutes * 60)
+    retry_seconds = min(60, interval_seconds)
     while True:
-        await asyncio.sleep(interval_seconds)
-        await _sync_all_linked_institutions()
+        try:
+            async with engine.connect() as raw_connection:
+                # Session-level advisory locks belong to the physical
+                # connection. Keep that connection checked out, but use
+                # autocommit so the long polling interval is not spent idle
+                # inside a database transaction.
+                lease_connection = await raw_connection.execution_options(
+                    isolation_level="AUTOCOMMIT"
+                )
+                acquired = await _try_acquire_plaid_auto_sync_lease(lease_connection)
+                if not acquired:
+                    await asyncio.sleep(retry_seconds)
+                    continue
+                try:
+                    # Hold the session-scoped lock for this worker's lifetime.
+                    # Other workers poll and take over automatically if this
+                    # connection or process disappears.
+                    while True:
+                        await asyncio.sleep(interval_seconds)
+                        # Detect a lost lease connection immediately before work.
+                        await lease_connection.execute(text("SELECT 1"))
+                        await _sync_all_linked_institutions()
+                finally:
+                    try:
+                        await _release_plaid_auto_sync_lease(lease_connection)
+                    except Exception:
+                        logger.exception("plaid_auto_sync_lease_release_failed")
+        except Exception:
+            logger.exception("plaid_auto_sync_lease_failed")
+            await asyncio.sleep(retry_seconds)
+
+
+async def _try_acquire_plaid_auto_sync_lease(session) -> bool:
+    return bool(
+        await session.scalar(
+            text("SELECT pg_try_advisory_lock(:lock_id)"),
+            {"lock_id": _PLAID_AUTO_SYNC_LOCK_ID},
+        )
+    )
+
+
+async def _release_plaid_auto_sync_lease(session) -> None:
+    await session.execute(
+        text("SELECT pg_advisory_unlock(:lock_id)"),
+        {"lock_id": _PLAID_AUTO_SYNC_LOCK_ID},
+    )
 
 
 @app.on_event("shutdown")

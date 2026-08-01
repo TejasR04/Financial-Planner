@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import date
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 from sqlalchemy import delete, func, select
@@ -101,15 +102,29 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         across a sync lifecycle, so external transaction IDs are the stable
         identity rather than a new local row for each response.
         """
-        created = updated = 0
+        transactions_by_external_id: dict[str, Transaction] = {}
         for transaction in transactions:
             external_id = transaction.external_transaction_id
             if external_id is None:
                 raise ValueError("Plaid transactions require an external_transaction_id")
+            transactions_by_external_id[external_id] = transaction
+
+        existing_by_external_id: dict[str, TransactionModel] = {}
+        if transactions_by_external_id:
             result = await self.session.execute(
-                select(TransactionModel).where(TransactionModel.external_transaction_id == external_id)
+                select(TransactionModel).where(
+                    TransactionModel.external_transaction_id.in_(transactions_by_external_id)
+                )
             )
-            row = result.scalar_one_or_none()
+            existing_by_external_id = {
+                row.external_transaction_id: row
+                for row in result.scalars().all()
+                if row.external_transaction_id is not None
+            }
+
+        created = updated = 0
+        for external_id, transaction in transactions_by_external_id.items():
+            row = existing_by_external_id.get(external_id)
             if row is None:
                 row = TransactionModel(
                     id=transaction.id or uuid4(),
@@ -194,8 +209,36 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         """All income/expense transactions since a date, unfiltered by
         account — used by services that need real transaction history
         rather than a projection (e.g. computing an actual savings rate)."""
-        transactions, _ = await self.list_for_user(user_id, since=since, limit=10_000, offset=0)
-        return transactions
+        result = await self.session.execute(
+            select(TransactionModel)
+            .join(AccountModel, AccountModel.id == TransactionModel.account_id)
+            .where(
+                AccountModel.user_id == user_id,
+                TransactionModel.posted_at >= since,
+            )
+            .order_by(TransactionModel.posted_at.desc(), TransactionModel.id.desc())
+        )
+        return [_to_domain(row) for row in result.scalars().all()]
+
+    async def totals_by_type_since(
+        self,
+        user_id: UUID,
+        since: date,
+        *,
+        absolute: bool = False,
+    ) -> dict[TransactionType, Decimal]:
+        """Compute complete transaction totals in SQL without materializing history."""
+        amount = func.abs(TransactionModel.amount) if absolute else TransactionModel.amount
+        result = await self.session.execute(
+            select(TransactionModel.type, func.sum(amount))
+            .join(AccountModel, AccountModel.id == TransactionModel.account_id)
+            .where(
+                AccountModel.user_id == user_id,
+                TransactionModel.posted_at >= since,
+            )
+            .group_by(TransactionModel.type)
+        )
+        return {TransactionType(type_): Decimal(total) for type_, total in result.all()}
 
 
 def _to_domain(row: TransactionModel) -> Transaction:

@@ -23,22 +23,13 @@ async def build_user_financial_context(
     today = date.today()
     start_month_index = today.year * 12 + today.month - 1 - 11
     start = date(start_month_index // 12, start_month_index % 12 + 1, 1)
-    transactions = await TransactionRepository(session).list_since_for_income_expense(
-        snapshot.user.id, start
+    totals = await TransactionRepository(session).totals_by_type_since(
+        snapshot.user.id, start, absolute=True
     )
 
-    income = sum(
-        (abs(item.amount) for item in transactions if item.type == TransactionType.INCOME),
-        Decimal("0"),
-    )
-    expenses = sum(
-        (abs(item.amount) for item in transactions if item.type == TransactionType.EXPENSE),
-        Decimal("0"),
-    )
-    contributions = sum(
-        (abs(item.amount) for item in transactions if item.type == TransactionType.CONTRIBUTION),
-        Decimal("0"),
-    )
+    income = totals.get(TransactionType.INCOME, Decimal("0"))
+    expenses = totals.get(TransactionType.EXPENSE, Decimal("0"))
+    contributions = totals.get(TransactionType.CONTRIBUTION, Decimal("0"))
     months = Decimal("12")
     monthly_income = income / months
     monthly_expenses = expenses / months

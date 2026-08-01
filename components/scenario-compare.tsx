@@ -160,18 +160,27 @@ export function ScenarioCompare({
                       )}
                     </span>
                   </td>
-                  {scenarios.map((s) => (
-                    <td
-                      key={s.id}
-                      className="px-3 py-2.5 text-right font-mono font-medium text-foreground tabular-nums"
-                    >
-                      {m.key === "monthlyIncomeAtLifeExpectancy"
-                        ? m.fmt(displayProjectionDollars(s[m.key], Math.max(0, s.retirementAge - (currentAge ?? s.retirementAge)), s.inflationRate, dollarDisplay))
-                        : m.key === "monthlyContribution" && dollarDisplay === "future"
-                          ? m.fmt(displayProjectionDollars(s[m.key], Math.max(0, s.retirementAge - (currentAge ?? s.retirementAge)), s.inflationRate, dollarDisplay))
-                          : m.fmt(s[m.key] as number)}
-                    </td>
-                  ))}
+                  {scenarios.map((s) => {
+                    const value = s[m.key];
+                    let formatted: string;
+                    if (value === null) {
+                      formatted = s.projectionStatus === "loading" ? "Loading…" : "Unavailable";
+                    } else if (m.key === "monthlyIncomeAtLifeExpectancy") {
+                      formatted = m.fmt(displayProjectionDollars(value, Math.max(0, s.retirementAge - (currentAge ?? s.retirementAge)), s.inflationRate, dollarDisplay));
+                    } else if (m.key === "monthlyContribution" && dollarDisplay === "future") {
+                      formatted = m.fmt(displayProjectionDollars(value, Math.max(0, s.retirementAge - (currentAge ?? s.retirementAge)), s.inflationRate, dollarDisplay));
+                    } else {
+                      formatted = m.fmt(value);
+                    }
+                    return (
+                      <td
+                        key={s.id}
+                        className="px-3 py-2.5 text-right font-mono font-medium text-foreground tabular-nums"
+                      >
+                        {formatted}
+                      </td>
+                    );
+                  })}
                 </tr>
               ))}
             </tbody>

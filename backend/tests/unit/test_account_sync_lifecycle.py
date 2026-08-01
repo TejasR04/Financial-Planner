@@ -17,6 +17,14 @@ from app.schemas.account import AccountCreateRequest
 from app.schemas.user import UserUpdateRequest
 
 
+class _AsyncContext:
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+
 def _account(*, type_: AccountType = AccountType.DEPOSITORY, balance: str = "100") -> Account:
     return Account(
         id=uuid4(),
@@ -90,6 +98,7 @@ async def test_refresh_archives_removed_accounts_and_tolerates_missing_holdings(
         available_balance=Decimal("100"),
     )
     provider = object.__new__(PlaidProvider)
+    provider.session = SimpleNamespace(begin_nested=lambda: _AsyncContext())
     provider._institutions = SimpleNamespace(
         lock_for_sync=AsyncMock(return_value=institution),
         get_decrypted_access_token=AsyncMock(return_value="access-token"),
@@ -120,6 +129,7 @@ async def test_refresh_archives_removed_accounts_and_tolerates_missing_holdings(
         user_id, institution_id, ["plaid-account-1"]
     )
     provider._investment_history.record_for_accounts.assert_awaited_once()
+    provider._institutions.lock_for_sync.assert_awaited_once_with(user_id, institution_id, None)
     provider._institutions.mark_sync_success.assert_awaited_once_with(institution_id, "cursor-1")
 
 

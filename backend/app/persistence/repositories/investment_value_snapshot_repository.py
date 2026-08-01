@@ -22,16 +22,27 @@ class InvestmentValueSnapshotRepository(BaseRepository[InvestmentValueSnapshotMo
         one clear closing value rather than a noisy series of refreshes.
         """
         snapshot_date = as_of or date.today()
-        for account in accounts:
-            if account.type not in {AccountType.INVESTMENT, AccountType.RETIREMENT}:
-                continue
-            result = await self.session.execute(
-                select(InvestmentValueSnapshotModel).where(
-                    InvestmentValueSnapshotModel.account_id == account.id,
-                    InvestmentValueSnapshotModel.as_of == snapshot_date,
-                )
+        eligible_accounts = [
+            account
+            for account in accounts
+            if account.type in {AccountType.INVESTMENT, AccountType.RETIREMENT}
+        ]
+        if not eligible_accounts:
+            return
+
+        result = await self.session.execute(
+            select(InvestmentValueSnapshotModel).where(
+                InvestmentValueSnapshotModel.account_id.in_(
+                    [account.id for account in eligible_accounts]
+                ),
+                InvestmentValueSnapshotModel.as_of == snapshot_date,
             )
-            row = result.scalar_one_or_none()
+        )
+        existing_by_account_id = {
+            row.account_id: row for row in result.scalars().all()
+        }
+        for account in eligible_accounts:
+            row = existing_by_account_id.get(account.id)
             if row is None:
                 self.session.add(
                     InvestmentValueSnapshotModel(

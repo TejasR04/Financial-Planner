@@ -108,8 +108,10 @@ async def simulate_cash_flow(
         from fastapi import HTTPException
         raise HTTPException(422, "Add an active planning income source before generating an outlook.")
     trailing_months = 3
-    transactions = await TransactionRepository(db).list_since_for_income_expense(current_user.id, date.today() - timedelta(days=30 * trailing_months))
-    expenses = sum((-row.amount for row in transactions if row.type == TransactionType.EXPENSE), Decimal("0"))
+    totals = await TransactionRepository(db).totals_by_type_since(
+        current_user.id, date.today() - timedelta(days=30 * trailing_months)
+    )
+    expenses = -totals.get(TransactionType.EXPENSE, Decimal("0"))
     if expenses <= 0:
         from fastapi import HTTPException
         raise HTTPException(422, "At least one recent expense is required to generate an outlook.")

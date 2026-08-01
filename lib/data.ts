@@ -136,11 +136,11 @@ export type Scenario = {
   id: string;
   name: string;
   description: string;
-  netWorthAt65: number;
+  netWorthAt65: number | null;
   // Monthly sustainable withdrawal from retirement accounts, assuming the
   // plan's life-expectancy assumption (95 by default) — i.e. "monthly
   // retirement income", not to be confused with total net worth above.
-  monthlyIncomeAtLifeExpectancy: number;
+  monthlyIncomeAtLifeExpectancy: number | null;
   retirementAge: number;
   monthlyContribution: number;
   expectedReturn: number; // decimal, e.g. 0.065 — needed to prefill the edit dialog
@@ -150,7 +150,8 @@ export type Scenario = {
   desiredMonthlyIncomeToday: number | null;
   withdrawalRate: number; // decimal, e.g. 0.04
   retirementYear: string;
-  successRate: number;
+  successRate: number | null;
+  projectionStatus: "loading" | "available" | "unavailable";
   modelMetadata?: { modelVersion: string; successMetric: string; trials: number; seed: number; percentileMethod: string; exclusions: string[] };
   color: string;
   // Retirement-account balance from the latest run, from accumulation

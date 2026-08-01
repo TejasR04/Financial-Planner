@@ -155,11 +155,7 @@ class PlaidProvider(FinancialDataProvider):
         results: list[PlaidRefreshResult] = []
         for institution in institutions:
             try:
-                # Keep an Item atomic: a failed holdings call must not move
-                # its transaction cursor forward or leave a half-refreshed
-                # account snapshot behind.
-                async with self.session.begin_nested():
-                    result = await self._refresh_institution(user_id, institution)
+                result = await self._refresh_institution(user_id, institution)
                 results.append(result)
             except ProviderError as exc:
                 await self._institutions.mark_sync_error(institution.id)
@@ -180,61 +176,83 @@ class PlaidProvider(FinancialDataProvider):
         if institution.provider.value != "plaid":
             raise ProviderError("Only Plaid institutions can be synced")
         try:
-            async with self.session.begin_nested():
-                return await self._refresh_institution(user_id, institution)
+            return await self._refresh_institution(user_id, institution)
         except ProviderError:
             await self._institutions.mark_sync_error(institution_id)
             raise
 
     async def _refresh_institution(self, user_id: UUID, institution: Institution) -> PlaidRefreshResult:
-        # Lock the Item row before reading or advancing its transaction
-        # cursor. This prevents concurrent browser sessions from applying
-        # overlapping patches out of order.
-        institution = await self._institutions.lock_for_sync(user_id, institution.id)
         access_token = await self._institutions.get_decrypted_access_token(institution.id)
-        raw_accounts = await self._client.get_accounts(access_token)
-        saved_accounts = [
-            await self._accounts.upsert_from_plaid(user_id, _to_account_entity(user_id, institution.id, raw_account))
-            for raw_account in raw_accounts
-        ]
-        await self._investment_history.record_for_accounts(saved_accounts)
-        await self._accounts.archive_missing_from_plaid(
-            user_id,
-            institution.id,
-            [account.external_account_id for account in raw_accounts],
-        )
-
         cursor = await self._institutions.get_sync_cursor(institution.id)
-        transaction_patch = await self._client.sync_transactions(access_token, cursor)
-        account_map = await self._account_id_map(user_id, institution.id)
-        transactions = [
-            _to_transaction_entity(raw, account_map[raw.external_account_id])
-            for raw in transaction_patch.added_or_modified
-            if raw.external_account_id in account_map
-        ]
-        created, updated, removed = await self._transactions.apply_plaid_updates(
-            transactions, transaction_patch.removed_external_transaction_ids
-        )
 
-        # Investment holdings are optional for a Transactions-linked Item.
-        # A bank without Investments support must still sync balances and
-        # transactions successfully.
+        # Complete every remote read before opening the short local write
+        # savepoint or taking a row lock.
+        raw_accounts = await self._client.get_accounts(access_token)
+        transaction_patch = await self._client.sync_transactions(access_token, cursor)
         try:
             holding_account_external_ids, raw_holdings = await self._client.get_holdings(access_token)
-            holding_account_ids = [
-                account_map[external_id]
-                for external_id in holding_account_external_ids
-                if external_id in account_map
+        except ProviderError:
+            holding_account_external_ids, raw_holdings = None, None
+
+        async with self.session.begin_nested():
+            locked = await self._institutions.lock_for_sync(
+                user_id, institution.id, cursor
+            )
+            if locked is None:
+                # A concurrent request advanced the cursor while these remote
+                # reads were in flight. Its committed snapshot is newer; do
+                # not apply this stale patch.
+                return PlaidRefreshResult(
+                    institution_id=institution.id,
+                    institution_name=institution.name,
+                    status="healthy",
+                )
+
+            saved_accounts = [
+                await self._accounts.upsert_from_plaid(
+                    user_id,
+                    _to_account_entity(user_id, institution.id, raw_account),
+                )
+                for raw_account in raw_accounts
             ]
-            holdings = [
-                _to_holding_entity(raw, account_map[raw.external_account_id])
-                for raw in raw_holdings
+            await self._investment_history.record_for_accounts(saved_accounts)
+            await self._accounts.archive_missing_from_plaid(
+                user_id,
+                institution.id,
+                [account.external_account_id for account in raw_accounts],
+            )
+
+            account_map = await self._account_id_map(user_id, institution.id)
+            transactions = [
+                _to_transaction_entity(raw, account_map[raw.external_account_id])
+                for raw in transaction_patch.added_or_modified
                 if raw.external_account_id in account_map
             ]
-            saved_holdings = await self._holdings.replace_for_accounts(holding_account_ids, holdings)
-        except ProviderError:
+            created, updated, removed = await self._transactions.apply_plaid_updates(
+                transactions, transaction_patch.removed_external_transaction_ids
+            )
+
+            # Investment holdings are optional for a Transactions-linked Item.
+            # A bank without Investments support must still sync balances and
+            # transactions successfully.
             saved_holdings = []
-        await self._institutions.mark_sync_success(institution.id, transaction_patch.next_cursor)
+            if holding_account_external_ids is not None and raw_holdings is not None:
+                holding_account_ids = [
+                    account_map[external_id]
+                    for external_id in holding_account_external_ids
+                    if external_id in account_map
+                ]
+                holdings = [
+                    _to_holding_entity(raw, account_map[raw.external_account_id])
+                    for raw in raw_holdings
+                    if raw.external_account_id in account_map
+                ]
+                saved_holdings = await self._holdings.replace_for_accounts(
+                    holding_account_ids, holdings
+                )
+            await self._institutions.mark_sync_success(
+                institution.id, transaction_patch.next_cursor
+            )
         return PlaidRefreshResult(
             institution_id=institution.id,
             institution_name=institution.name,

@@ -23,3 +23,20 @@ services:
       db-test:
         condition: service_healthy
     command: pytest tests/integration -v
+
+  api-test:
+    build: .
+    environment:
+      DATABASE_URL: postgresql+asyncpg://meridian:meridian@db-test:5432/meridian_test
+      JWT_SECRET_KEY: e2e-test-secret-that-is-long-enough
+      PLAID_AUTO_SYNC_ENABLED: "false"
+      LOG_LEVEL: WARNING
+    depends_on:
+      db-test:
+        condition: service_healthy
+    command:
+      - /bin/sh
+      - -c
+      - python -m alembic upgrade head && python -m uvicorn app.main:app --host 0.0.0.0 --port 8000
+    ports:
+      - "127.0.0.1:8010:8000"

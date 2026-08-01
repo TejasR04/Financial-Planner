@@ -8,6 +8,7 @@ import {
   useMemo,
   useState,
 } from "react";
+import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { api, type ApiAccount, type ApiScenarioPreview, type ApiTransaction } from "@/lib/api-client";
 import {
@@ -199,20 +200,13 @@ const emptyState: Omit<DataState, "loading" | "error" | "refresh"> = {
 
 export function DataProvider({ children }: { children: React.ReactNode }) {
   const { status } = useAuth();
+  const pathname = usePathname();
   const [state, setState] = useState(emptyState);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshTick, setRefreshTick] = useState(0);
 
   const refresh = useCallback(() => setRefreshTick((t) => t + 1), []);
-
-  // Server-side Plaid sync keeps the database current. Re-read it while the
-  // app is open so users see those background updates without a full reload.
-  useEffect(() => {
-    if (status !== "authenticated") return;
-    const intervalId = window.setInterval(refresh, 5 * 60 * 1000);
-    return () => window.clearInterval(intervalId);
-  }, [refresh, status]);
 
   useEffect(() => {
     if (status !== "authenticated") return;
@@ -236,7 +230,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           planningProfile,
           accountList,
           institutionRows,
-          transactionList,
+          transactionRows,
           scenarioRows,
           recommendationRows,
           health,
@@ -246,7 +240,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           api.users.planningProfile(),
           api.accounts.list(),
           optional("institutions", api.accounts.institutions(), []),
-          optional("recent transactions", api.transactions.list({ limit: 1000, since: twelveMonthWindow().startDate }), { data: [], total: 0, limit: 1000, offset: 0 }),
+          optional("recent transactions", api.transactions.listAll({ since: twelveMonthWindow().startDate }), []),
           optional("scenarios", api.scenarios.list(), []),
           optional("recommendations", api.recommendations.list("new"), []),
           optional("financial health", api.financialHealth.get(), null, false),
@@ -284,7 +278,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         const window = twelveMonthWindow();
 
         // --- transactions + cashflow -----------------------------------
-        const transactions: Transaction[] = transactionList.data.map((t) => ({
+        const transactions: Transaction[] = transactionRows.map((t) => ({
           id: t.id,
           postedAt: t.posted_at,
           date: formatShortDate(t.posted_at),
@@ -295,7 +289,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           type: t.type,
           status: t.status,
         }));
-        const cashflowSeries = buildCashflowSeries(transactionList.data, window.start, window.end);
+        const cashflowSeries = buildCashflowSeries(transactionRows, window.start, window.end);
         const averageMonthlyIncome = cashflowSeries.reduce((sum, month) => sum + month.income, 0) / cashflowSeries.length;
         const averageMonthlyExpenses = cashflowSeries.reduce((sum, month) => sum + month.expenses, 0) / cashflowSeries.length;
         const averageMonthlySurplus = averageMonthlyIncome - averageMonthlyExpenses;
@@ -403,57 +397,35 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         }));
 
         // --- scenarios ----------------------------------------------------
-        // Each page load requests a non-persistent preview so the chart and
-        // metrics always reflect current balances and saved assumptions.
+        // Expensive projections are loaded separately, and only while the
+        // projections route is active. This base load remains fast for every
+        // other screen and never presents missing projections as zeroes.
         const retirementBalance = accountList.data
           .filter((a) => a.type === "retirement")
           .reduce((s, a) => s + parseFloat(a.balance), 0);
 
-        const scenarios: Scenario[] = await Promise.all(
-          scenarioRows.map(async (s, i) => {
-            let preview: ApiScenarioPreview | null = null;
-            try {
-              preview = await api.scenarios.preview(s.id, {
-                current_age: currentAge,
-                current_retirement_balance: String(retirementBalance),
-                include_monte_carlo: true,
-                monte_carlo_trials: 1000,
-              });
-            } catch {
-              preview = null;
-            }
-
-            const series = preview?.retirement_trajectory.map((p) => parseFloat(p.balance) / 1_000_000) ?? [];
-            const withdrawals = preview?.retirement_trajectory.map((p) => parseFloat(p.withdrawal)) ?? [];
-            const years = preview?.retirement_trajectory.map((p) => String(currentYear + p.year)) ?? [];
-            const withdrawalRate = parseFloat(s.withdrawal_rate);
-
-            return {
-              id: s.id,
-              name: s.name,
-              description: s.description ?? "",
-              netWorthAt65: preview ? parseFloat(preview.net_worth_at_target_age) : 0,
-              monthlyIncomeAtLifeExpectancy: preview?.monthly_sustainable_withdrawal
-                ? parseFloat(preview.monthly_sustainable_withdrawal)
-                : 0,
-              retirementAge: s.retirement_age,
-              monthlyContribution: parseFloat(s.monthly_contribution),
-              expectedReturn: parseFloat(s.expected_return),
-              inflationRate: parseFloat(s.inflation_rate),
-              desiredMonthlyIncomeToday: s.desired_monthly_income_today
-                ? parseFloat(s.desired_monthly_income_today)
-                : null,
-              withdrawalRate,
-              retirementYear: String(currentYear + s.retirement_age - currentAge),
-              successRate: preview?.success_rate ? Math.round(parseFloat(preview.success_rate) * 1000) / 10 : 0,
-              modelMetadata: preview?.model_metadata ? { modelVersion: preview.model_metadata.model_version, successMetric: preview.model_metadata.success_metric, trials: preview.model_metadata.trials, seed: preview.model_metadata.seed, percentileMethod: preview.model_metadata.percentile_method, exclusions: preview.model_metadata.exclusions } : undefined,
-              color: CHART_COLORS[i % CHART_COLORS.length],
-              series,
-              withdrawals,
-              years,
-            };
-          }),
-        );
+        const scenarios: Scenario[] = scenarioRows.map((s, i) => ({
+          id: s.id,
+          name: s.name,
+          description: s.description ?? "",
+          netWorthAt65: null,
+          monthlyIncomeAtLifeExpectancy: null,
+          retirementAge: s.retirement_age,
+          monthlyContribution: parseFloat(s.monthly_contribution),
+          expectedReturn: parseFloat(s.expected_return),
+          inflationRate: parseFloat(s.inflation_rate),
+          desiredMonthlyIncomeToday: s.desired_monthly_income_today
+            ? parseFloat(s.desired_monthly_income_today)
+            : null,
+          withdrawalRate: parseFloat(s.withdrawal_rate),
+          retirementYear: String(currentYear + s.retirement_age - currentAge),
+          successRate: null,
+          projectionStatus: "loading",
+          color: CHART_COLORS[i % CHART_COLORS.length],
+          series: [],
+          withdrawals: [],
+          years: [],
+        }));
 
         // --- insights + financial health -----------------------------------
         const insights: Insight[] = insightRows.map((ins) => ({
@@ -530,6 +502,89 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
     };
   }, [status, refreshTick]);
+
+  useEffect(() => {
+    if (
+      status !== "authenticated" ||
+      pathname !== "/projections" ||
+      !state.profile ||
+      state.scenarios.length === 0 ||
+      !state.scenarios.some((scenario) => scenario.projectionStatus === "loading")
+    ) {
+      return;
+    }
+
+    let cancelled = false;
+    const scenarios = state.scenarios;
+    const { currentAge, currentRetirementBalance } = state.profile;
+    const currentYear = new Date().getFullYear();
+
+    void Promise.all(
+      scenarios.map(async (scenario) => {
+        try {
+          const preview = await api.scenarios.preview(scenario.id, {
+            current_age: currentAge,
+            current_retirement_balance: String(currentRetirementBalance),
+            include_monte_carlo: true,
+            monte_carlo_trials: 1000,
+          });
+          return { scenarioId: scenario.id, preview };
+        } catch {
+          return { scenarioId: scenario.id, preview: null };
+        }
+      }),
+    ).then((results) => {
+      if (cancelled) return;
+      const previews = new Map(results.map((result) => [result.scenarioId, result.preview]));
+      setState((current) => ({
+        ...current,
+        scenarios: current.scenarios.map((scenario) => {
+          const preview: ApiScenarioPreview | null = previews.get(scenario.id) ?? null;
+          if (!preview) {
+            return {
+              ...scenario,
+              netWorthAt65: null,
+              monthlyIncomeAtLifeExpectancy: null,
+              successRate: null,
+              projectionStatus: "unavailable",
+              modelMetadata: undefined,
+              series: [],
+              withdrawals: [],
+              years: [],
+            };
+          }
+          return {
+            ...scenario,
+            netWorthAt65: parseFloat(preview.net_worth_at_target_age),
+            monthlyIncomeAtLifeExpectancy: preview.monthly_sustainable_withdrawal
+              ? parseFloat(preview.monthly_sustainable_withdrawal)
+              : null,
+            successRate: preview.success_rate
+              ? Math.round(parseFloat(preview.success_rate) * 1000) / 10
+              : null,
+            projectionStatus: "available",
+            modelMetadata: preview.model_metadata
+              ? {
+                  modelVersion: preview.model_metadata.model_version,
+                  successMetric: preview.model_metadata.success_metric,
+                  trials: preview.model_metadata.trials,
+                  seed: preview.model_metadata.seed,
+                  percentileMethod: preview.model_metadata.percentile_method,
+                  exclusions: preview.model_metadata.exclusions,
+                }
+              : undefined,
+            series: preview.retirement_trajectory.map((point) => parseFloat(point.balance) / 1_000_000),
+            withdrawals: preview.retirement_trajectory.map((point) => parseFloat(point.withdrawal)),
+            years: preview.retirement_trajectory.map((point) => String(currentYear + point.year)),
+          };
+        }),
+      }));
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [pathname, state.profile, state.scenarios, status]);
 
   const value = useMemo<DataState>(
     () => ({ ...state, loading, error, refresh }),

@@ -27,9 +27,12 @@ export default function ProjectionsPage() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [pendingEditId, setPendingEditId] = useState<string | null>(null);
+  const rankedScenarios = scenarios.filter(
+    (scenario): scenario is Scenario & { successRate: number } => scenario.successRate !== null,
+  );
   const best =
-    scenarios.length > 0
-      ? scenarios.reduce((a, b) => (b.successRate > a.successRate ? b : a))
+    rankedScenarios.length > 0
+      ? rankedScenarios.reduce((a, b) => (b.successRate > a.successRate ? b : a))
       : null;
 
   // After "Duplicate & edit" creates a copy, open the edit dialog on it as
@@ -176,7 +179,11 @@ export default function ProjectionsPage() {
                   Retirement balance at {s.retirementAge}
                 </p>
                 <p className="font-mono text-lg font-semibold text-foreground tabular-nums">
-                  {formatCurrency(displayProjectionDollars(s.netWorthAt65, Math.max(0, s.retirementAge - (currentAge ?? s.retirementAge)), s.inflationRate, dollarDisplay), { compact: true })}
+                  {s.netWorthAt65 !== null
+                    ? formatCurrency(displayProjectionDollars(s.netWorthAt65, Math.max(0, s.retirementAge - (currentAge ?? s.retirementAge)), s.inflationRate, dollarDisplay), { compact: true })
+                    : s.projectionStatus === "loading"
+                      ? "Loading…"
+                      : "Unavailable"}
                 </p>
               </div>
               <div className="text-right">
@@ -199,7 +206,11 @@ export default function ProjectionsPage() {
                   </Info>
                 </p>
                 <p className="font-mono text-lg font-semibold text-primary tabular-nums">
-                  {s.successRate}%
+                  {s.successRate !== null
+                    ? `${s.successRate}%`
+                    : s.projectionStatus === "loading"
+                      ? "…"
+                      : "Unavailable"}
                 </p>
               </div>
             </div>
