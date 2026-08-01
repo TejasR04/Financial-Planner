@@ -137,6 +137,8 @@ export type ApiPlanningProfile = {
 export type ApiIncomeSource = { id: string; name: string; annual_amount: string; growth_rate: string; active: boolean };
 export type ApiLiability = { id: string; account_id: string; principal: string; interest_rate: string; term_months: number; minimum_payment: string; origination_date: string };
 export type ApiHolding = { id: string; account_id: string; symbol: string; quantity: string; cost_basis: string; market_value: string; asset_class: "equity" | "fixed_income" | "real_estate" | "cash" | "alternatives"; as_of: string };
+export type ApiCashFlowOutlook = { series: { month_index: number; income: string; expenses: string; net: string }[]; average_monthly_surplus: string; projected_savings_rate: string; income_source: string; expense_source: string };
+export type ApiDebtPlan = { strategy: "avalanche" | "snowball"; months_to_debt_free: number; total_interest_paid: string; payoff_order: string[]; paid_off: boolean; warning: string | null };
 
 export type ApiAccount = {
   id: string;
@@ -470,6 +472,7 @@ export const api = {
     refresh: () => post<ApiPlaidRefreshResponse>("/plaid/refresh"),
   },
   transactions: {
+    update: (id: string, body: Partial<Pick<ApiTransaction, "posted_at" | "merchant" | "category" | "amount" | "type">>) => patch<ApiTransaction>(`/transactions/${id}`, body),
     list: (params?: {
       limit?: number;
       offset?: number;
@@ -582,6 +585,8 @@ export const api = {
       post<{ rows: ApiScenarioCompareRow[] }>("/scenarios/compare", { scenario_ids: scenarioIds }),
   },
   simulations: {
+    cashFlow: (months: number) => post<ApiCashFlowOutlook>("/simulations/cash-flow", { months }),
+    debtOptimization: (body: { account_ids: string[]; extra_monthly_payment: string; strategy: "avalanche" | "snowball" }) => post<ApiDebtPlan>("/simulations/debt-optimization", body),
     retirement: (body: {
       current_age: number;
       retirement_age: number;

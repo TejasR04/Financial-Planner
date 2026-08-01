@@ -2,7 +2,7 @@
 
 import { Download } from "lucide-react";
 import { useRouter } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { PageContainer, PageHeader } from "@/components/page-container";
 import { Panel, PanelHeader } from "@/components/panel";
 import { KpiCard } from "@/components/kpi-card";
@@ -15,6 +15,8 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAccountsData, useAllocationMeta, useCashflowSeries, useKpis, useTransactionsData } from "@/lib/data-provider";
 import { exportTransactionsCsv } from "@/lib/transaction-export";
+import { api } from "@/lib/api-client";
+import type { CashflowPoint } from "@/lib/data";
 
 export default function OverviewPage() {
   const router = useRouter();
@@ -24,7 +26,18 @@ export default function OverviewPage() {
   const cashflowSeries = useCashflowSeries();
   const transactions = useTransactionsData();
   const [periodMonths, setPeriodMonths] = useState<6 | 12>(12);
+  const [cashflowMode, setCashflowMode] = useState<"actuals" | "outlook">("actuals");
+  const [outlook, setOutlook] = useState<CashflowPoint[] | null>(null);
+  const [outlookNote, setOutlookNote] = useState<string | null>(null);
   const visibleCashflow = useMemo(() => cashflowSeries.slice(-periodMonths), [cashflowSeries, periodMonths]);
+  useEffect(() => {
+    if (cashflowMode !== "outlook") return;
+    api.simulations.cashFlow(periodMonths).then((result) => {
+      const formatter = new Intl.DateTimeFormat("en-US", { month: "short" });
+      setOutlook(result.series.map((point) => { const d = new Date(); d.setMonth(d.getMonth() + point.month_index - 1); return { month: formatter.format(d), income: Number(point.income), expenses: Number(point.expenses) }; }));
+      setOutlookNote(`${result.income_source} · ${result.expense_source}`);
+    }).catch((error) => { setOutlook([]); setOutlookNote(error instanceof Error ? error.message : "Outlook unavailable."); });
+  }, [cashflowMode, periodMonths]);
 
   const exportTransactions = () => {
     const cutoff = new Date();
@@ -133,9 +146,11 @@ export default function OverviewPage() {
         <Panel>
           <PanelHeader
             title="Cash flow"
-            description={`Monthly income vs. tracked expenses · last ${periodMonths} months`}
+            description={cashflowMode === "actuals" ? `Historical transaction actuals · last ${periodMonths} months` : outlookNote ?? "Loading planning outlook…"}
             actions={
-              <div className="flex items-center gap-3 text-[11px]">
+              <div className="flex items-center gap-2 text-[11px]">
+                <Button variant={cashflowMode === "actuals" ? "outline" : "ghost"} size="xs" onClick={() => setCashflowMode("actuals")}>Actuals</Button>
+                <Button variant={cashflowMode === "outlook" ? "outline" : "ghost"} size="xs" onClick={() => setCashflowMode("outlook")}>Outlook</Button>
                 <span className="flex items-center gap-1.5 text-muted-foreground">
                   <span className="size-2 rounded-[2px] bg-chart-1" />
                   Income
@@ -147,7 +162,7 @@ export default function OverviewPage() {
               </div>
             }
           />
-          <CashflowChart data={visibleCashflow} />
+          <CashflowChart data={cashflowMode === "actuals" ? visibleCashflow : outlook ?? []} />
         </Panel>
 
       </div>

@@ -5,7 +5,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import delete, func, select
 
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import NotFoundError, ValidationError
 from app.domain.entities import Transaction
 from app.domain.enums import TransactionStatus, TransactionType
 from app.persistence.models import AccountModel, TransactionModel
@@ -146,11 +146,11 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         await self.session.flush()
         return created, updated, removed
 
-    async def update_category_for_user(
+    async def update_for_user(
         self,
         user_id: UUID,
         transaction_id: UUID,
-        category: str,
+        **fields,
     ) -> Transaction:
         result = await self.session.execute(
             select(TransactionModel)
@@ -163,7 +163,13 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         row = result.scalar_one_or_none()
         if row is None:
             raise NotFoundError("Transaction", str(transaction_id))
-        row.category = category
+        account = await self.session.get(AccountModel, row.account_id)
+        linked = account is not None and account.institution_id is not None
+        if linked and any(key != "category" for key in fields):
+            raise ValidationError("Linked transaction details are managed by the institution; only category can be edited.")
+        for key, value in fields.items():
+            if value is not None:
+                setattr(row, key, value.value if hasattr(value, "value") else value)
         await self.session.flush()
         return _to_domain(row)
 

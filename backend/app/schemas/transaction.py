@@ -39,7 +39,11 @@ class TransactionCreateRequest(BaseModel):
 
 
 class TransactionUpdateRequest(BaseModel):
-    category: str
+    posted_at: date | None = None
+    merchant: str | None = None
+    category: str | None = None
+    amount: Decimal | None = None
+    type: TransactionType | None = None
 
 
 class CSVImportRequest(BaseModel):

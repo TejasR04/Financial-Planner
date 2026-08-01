@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useState } from "react";
 import { ChevronLeft, ChevronRight, Plus, RotateCcw } from "lucide-react";
 import { TransactionEntryDialog } from "@/components/transaction-entry-dialog";
+import { TransactionEditDialog } from "@/components/transaction-edit-dialog";
 import { PageContainer, PageHeader } from "@/components/page-container";
 import { Panel, PanelHeader } from "@/components/panel";
 import { Button } from "@/components/ui/button";
-import { ApiError, api, type ApiTransactionList } from "@/lib/api-client";
+import { ApiError, api, type ApiTransaction, type ApiTransactionList } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/data";
 import { useAccountsData, useDataRefresh } from "@/lib/data-provider";
 import { cn } from "@/lib/utils";
@@ -35,6 +36,7 @@ export default function TransactionsPage() {
   const [notice, setNotice] = useState<string | null>(null);
   const [entryOpen, setEntryOpen] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
+  const [editing, setEditing] = useState<ApiTransaction | null>(null);
 
   const accountNameById = useMemo(
     () => new Map(accounts.map((account) => [account.id, account.name])),
@@ -93,6 +95,7 @@ export default function TransactionsPage() {
         description="Search and review activity across every connected account"
         actions={<Button size="sm" onClick={() => setEntryOpen(true)}><Plus /> Add transactions</Button>}
       />
+      {editing && <TransactionEditDialog transaction={editing} account={accounts.find((a) => a.id === editing.account_id)} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); setReloadTick((x) => x + 1); refreshData(); }} />}
 
       <Panel>
         <PanelHeader title="Filters" description="Narrow the ledger by account, category, or date" />
@@ -154,7 +157,7 @@ export default function TransactionsPage() {
                   <tr key={transaction.id} className="border-b border-border/60 transition-colors last:border-0 hover:bg-muted/40">
                     <td className="whitespace-nowrap px-4 py-2.5 font-mono text-xs text-muted-foreground tabular-nums">{formatDate(transaction.posted_at)}</td>
                     <td className="px-4 py-2.5 font-medium text-foreground">
-                      <span>{transaction.merchant}</span>
+                      <button className="text-left hover:underline" onClick={() => setEditing(transaction)}>{transaction.merchant}</button>
                       {transaction.status === "pending" && <span className="ml-2 rounded border border-warning/30 bg-warning/10 px-1 py-px text-[10px] font-medium text-warning">pending</span>}
                     </td>
                     <td className="px-4 py-2.5 text-muted-foreground">{transaction.category}</td>

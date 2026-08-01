@@ -1,6 +1,7 @@
 from decimal import Decimal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
+from uuid import UUID
 
 
 class RetirementSimulationRequest(BaseModel):
@@ -60,11 +61,7 @@ class ScenarioMetricsResponse(BaseModel):
 
 
 class CashFlowSimulationRequest(BaseModel):
-    monthly_gross_income: Decimal
-    monthly_expenses: Decimal
-    months: int = 12
-    income_growth_rate: Decimal = Decimal("0.03")
-    inflation_rate: Decimal = Decimal("0.028")
+    months: int = Field(default=12, ge=1, le=60)
 
 
 class CashFlowMonthPointResponse(BaseModel):
@@ -78,6 +75,8 @@ class CashFlowSimulationResponse(BaseModel):
     series: list[CashFlowMonthPointResponse]
     average_monthly_surplus: Decimal
     projected_savings_rate: Decimal
+    income_source: str
+    expense_source: str
 
 
 class MonteCarloSimulationRequest(BaseModel):
@@ -103,17 +102,9 @@ class MonteCarloSimulationResponse(BaseModel):
     seed: int
 
 
-class DebtLiabilityInput(BaseModel):
-    name: str
-    principal: Decimal
-    interest_rate: Decimal
-    minimum_payment: Decimal
-    term_months: int = 360
-
-
 class DebtOptimizationRequest(BaseModel):
-    liabilities: list[DebtLiabilityInput]
-    extra_monthly_payment: Decimal
+    account_ids: list[UUID] = Field(min_length=1)
+    extra_monthly_payment: Decimal = Field(ge=0)
     strategy: str = "avalanche"
 
 
@@ -122,3 +113,5 @@ class DebtOptimizationResponse(BaseModel):
     months_to_debt_free: int
     total_interest_paid: Decimal
     payoff_order: list[str]
+    paid_off: bool
+    warning: str | None = None

@@ -4,6 +4,7 @@ import { useCallback, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { Pencil, Plus, RefreshCw, SlidersHorizontal, Unlink } from "lucide-react";
 import { FinancialDetailsDialog } from "@/components/financial-details-dialog";
+import { DebtPlanDialog } from "@/components/debt-plan-dialog";
 import { PageContainer, PageHeader } from "@/components/page-container";
 import { Panel, PanelHeader } from "@/components/panel";
 import { AccountCard } from "@/components/account-card";
@@ -48,6 +49,7 @@ export default function AccountsPage() {
   const [manualDialogOpen, setManualDialogOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
   const [detailsAccount, setDetailsAccount] = useState<Account | null>(null);
+  const [debtPlanOpen, setDebtPlanOpen] = useState(false);
   const [pendingActionId, setPendingActionId] = useState<string | null>(null);
 
   const visibleAccounts = selectedInstitutionId
@@ -145,10 +147,11 @@ export default function AccountsPage() {
     <PageContainer>
       <ManualAccountDialog open={manualDialogOpen} account={editingAccount} onClose={() => { setManualDialogOpen(false); setEditingAccount(null); }} />
       <FinancialDetailsDialog account={detailsAccount} onClose={() => setDetailsAccount(null)} />
+      {debtPlanOpen && <DebtPlanDialog accounts={liabilityAccounts} onClose={() => setDebtPlanOpen(false)} />}
       <PageHeader
         title="Accounts"
         description={`${visibleAccounts.length} account${visibleAccounts.length === 1 ? "" : "s"} · ${linkedCount} linked · ${manualCount} manual · USD`}
-        actions={<><Button variant="outline" size="sm" onClick={() => void syncAll()} disabled={syncing}><RefreshCw className={syncing ? "animate-spin" : undefined} />{syncing ? "Syncing…" : "Sync all"}</Button><Button variant="outline" size="sm" onClick={() => { setEditingAccount(null); setManualDialogOpen(true); }}><Plus />Add manual</Button><PlaidLinkButton size="sm" autoOpen={linkRequested} /></>}
+        actions={<>{liabilityAccounts.length > 0 && <Button variant="outline" size="sm" onClick={() => setDebtPlanOpen(true)}>Plan payoff</Button>}<Button variant="outline" size="sm" onClick={() => void syncAll()} disabled={syncing}><RefreshCw className={syncing ? "animate-spin" : undefined} />{syncing ? "Syncing…" : "Sync all"}</Button><Button variant="outline" size="sm" onClick={() => { setEditingAccount(null); setManualDialogOpen(true); }}><Plus />Add manual</Button><PlaidLinkButton size="sm" autoOpen={linkRequested} /></>}
       />
 
       {selectedInstitutionId && <div className="mb-4 flex items-center justify-between rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground"><span>Showing one linked institution.</span><Button variant="ghost" size="xs" onClick={() => router.replace("/accounts")}>Show all accounts</Button></div>}

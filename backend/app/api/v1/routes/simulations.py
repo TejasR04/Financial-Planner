@@ -2,9 +2,13 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
-from app.domain.entities import IncomeSource, Liability, User
-from app.domain.enums import DebtPayoffStrategy
+from app.domain.entities import User
+from app.domain.enums import DebtPayoffStrategy, TransactionType
 from app.persistence.repositories.account_repository import AccountRepository
+from app.persistence.repositories.income_source_repository import IncomeSourceRepository
+from app.persistence.repositories.liability_repository import LiabilityRepository
+from app.persistence.repositories.transaction_repository import TransactionRepository
+from app.persistence.repositories.user_repository import UserRepository
 from app.schemas.simulation import (
     CashFlowMonthPointResponse,
     CashFlowSimulationRequest,
@@ -95,24 +99,27 @@ async def simulate_net_worth(
 
 @router.post("/cash-flow", response_model=CashFlowSimulationResponse)
 async def simulate_cash_flow(
-    body: CashFlowSimulationRequest, current_user: User = Depends(get_current_user)
+    body: CashFlowSimulationRequest, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> CashFlowSimulationResponse:
-    from uuid import uuid4
-
-    income_sources = [
-        IncomeSource(
-            id=uuid4(),
-            user_id=current_user.id,
-            name="Primary income",
-            annual_amount=body.monthly_gross_income * 12,
-            growth_rate=body.income_growth_rate,
-        )
-    ]
+    from datetime import date, timedelta
+    from decimal import Decimal
+    income_sources = await IncomeSourceRepository(db).list_for_user(current_user.id)
+    if not income_sources:
+        from fastapi import HTTPException
+        raise HTTPException(422, "Add an active planning income source before generating an outlook.")
+    trailing_months = 3
+    transactions = await TransactionRepository(db).list_since_for_income_expense(current_user.id, date.today() - timedelta(days=30 * trailing_months))
+    expenses = sum((-row.amount for row in transactions if row.type == TransactionType.EXPENSE), Decimal("0"))
+    if expenses <= 0:
+        from fastapi import HTTPException
+        raise HTTPException(422, "At least one recent expense is required to generate an outlook.")
+    monthly_expenses = expenses / trailing_months
+    profile = await UserRepository(db).get_planning_profile(current_user.id)
     result = cash_flow_service.project(
         income_sources=income_sources,
-        monthly_expenses=body.monthly_expenses,
+        monthly_expenses=monthly_expenses,
         months=body.months,
-        inflation_rate=body.inflation_rate,
+        inflation_rate=profile.inflation_rate,
     )
     return CashFlowSimulationResponse(
         series=[
@@ -123,6 +130,8 @@ async def simulate_cash_flow(
         ],
         average_monthly_surplus=result.average_monthly_surplus,
         projected_savings_rate=result.projected_savings_rate,
+        income_source="Saved planning income sources (pre-tax unless entered as take-home)",
+        expense_source="Trailing 3-month tracked expense average",
     )
 
 
@@ -153,31 +162,29 @@ async def simulate_monte_carlo(
 
 @router.post("/debt-optimization", response_model=DebtOptimizationResponse)
 async def simulate_debt_optimization(
-    body: DebtOptimizationRequest, current_user: User = Depends(get_current_user)
+    body: DebtOptimizationRequest, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> DebtOptimizationResponse:
-    from datetime import date
-    from uuid import uuid4
-
-    liabilities = [
-        Liability(
-            id=uuid4(),
-            account_id=uuid4(),
-            principal=item.principal,
-            interest_rate=item.interest_rate,
-            term_months=item.term_months,
-            minimum_payment=item.minimum_payment,
-            origination_date=date.today(),
-        )
-        for item in body.liabilities
-    ]
+    liabilities = []
+    names = {}
+    for account_id in body.account_ids:
+        account = await AccountRepository(db).get_for_user(current_user.id, account_id)
+        details = await LiabilityRepository(db).get_for_user_account(current_user.id, account_id)
+        if not account.is_liability or details is None:
+            from fastapi import HTTPException
+            raise HTTPException(422, f"{account.name} needs debt terms before payoff planning.")
+        details.principal = abs(account.balance)
+        liabilities.append(details)
+        names[str(len(liabilities) - 1)] = account.name
     strategy = DebtPayoffStrategy(body.strategy)
     plan = debt_service.optimize(
         liabilities=liabilities, extra_monthly_payment=body.extra_monthly_payment, strategy=strategy
     )
-    name_by_index = {str(i): item.name for i, item in enumerate(body.liabilities)}
+    paid_off = len(plan.payoff_order) == len(liabilities)
     return DebtOptimizationResponse(
         strategy=plan.strategy.value,
         months_to_debt_free=plan.months_to_debt_free,
         total_interest_paid=plan.total_interest_paid,
-        payoff_order=[name_by_index[i] for i in plan.payoff_order],
+        payoff_order=[names[i] for i in plan.payoff_order],
+        paid_off=paid_off,
+        warning=None if paid_off else "The balances were not paid off within the 600-month calculation limit.",
     )

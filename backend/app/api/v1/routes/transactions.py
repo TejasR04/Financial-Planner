@@ -70,14 +70,17 @@ async def create_transaction(
 
 
 @router.patch("/{transaction_id}", response_model=TransactionResponse)
-async def update_transaction_category(
+async def update_transaction(
     transaction_id: UUID,
     body: TransactionUpdateRequest,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> TransactionResponse:
-    updated = await TransactionRepository(db).update_category_for_user(
-        current_user.id, transaction_id, body.category
+    fields = body.model_dump(exclude_unset=True)
+    if not fields:
+        raise HTTPException(status_code=422, detail="Provide at least one field to update.")
+    updated = await TransactionRepository(db).update_for_user(
+        current_user.id, transaction_id, **fields
     )
     await db.commit()
     return TransactionResponse.model_validate(updated, from_attributes=True)
