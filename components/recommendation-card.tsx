@@ -18,6 +18,7 @@ const effortColor: Record<Recommendation["effort"], string> = {
 export function RecommendationCard({ rec }: { rec: Recommendation }) {
   const refresh = useDataRefresh();
   const [pending, setPending] = useState<"applied" | "dismissed" | null>(null);
+  const confidenceLabel = rec.confidence >= 0.8 ? "High" : rec.confidence >= 0.6 ? "Medium" : "Limited";
 
   async function handleAction(status: "applied" | "dismissed") {
     setPending(status);
@@ -54,17 +55,7 @@ export function RecommendationCard({ rec }: { rec: Recommendation }) {
       </p>
 
       <div className="mt-4 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <div className="h-1.5 w-24 overflow-hidden rounded-full bg-muted">
-            <div
-              className="h-full rounded-full bg-primary"
-              style={{ width: `${Math.round(rec.confidence * 100)}%` }}
-            />
-          </div>
-          <span className="font-mono text-[11px] text-muted-foreground tabular-nums">
-            {Math.round(rec.confidence * 100)}% confidence
-          </span>
-        </div>
+        <span className="text-[11px] text-muted-foreground" title="Based on whether the required account data and explicit planning inputs are available.">{confidenceLabel} confidence · Why?</span>
         <div className="flex items-center gap-1.5">
           <Button
             variant="ghost"

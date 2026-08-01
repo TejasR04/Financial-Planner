@@ -130,7 +130,13 @@ export type ApiPlanningProfile = {
   include_social_security: boolean;
   expected_return: string;
   inflation_rate: string;
+  target_savings_rate: string | null;
+  cash_reserve_target: string | null;
 };
+
+export type ApiIncomeSource = { id: string; name: string; annual_amount: string; growth_rate: string; active: boolean };
+export type ApiLiability = { id: string; account_id: string; principal: string; interest_rate: string; term_months: number; minimum_payment: string; origination_date: string };
+export type ApiHolding = { id: string; account_id: string; symbol: string; quantity: string; cost_basis: string; market_value: string; asset_class: "equity" | "fixed_income" | "real_estate" | "cash" | "alternatives"; as_of: string };
 
 export type ApiAccount = {
   id: string;
@@ -412,7 +418,15 @@ export const api = {
       include_social_security: boolean;
       expected_return: string;
       inflation_rate: string;
+      target_savings_rate: string | null;
+      cash_reserve_target: string | null;
     }>) => patch<ApiPlanningProfile>("/users/me/planning-profile", body),
+  },
+  incomeSources: {
+    list: () => get<ApiIncomeSource[]>("/income-sources"),
+    create: (body: { name: string; annual_amount: string; growth_rate: string; active?: boolean }) => post<ApiIncomeSource>("/income-sources", body),
+    update: (id: string, body: Partial<{ name: string; annual_amount: string; growth_rate: string; active: boolean }>) => patch<ApiIncomeSource>(`/income-sources/${id}`, body),
+    delete: (id: string) => del<void>(`/income-sources/${id}`),
   },
   accounts: {
     list: (params?: { type?: ApiAccount["type"] }) => {
@@ -433,6 +447,11 @@ export const api = {
     institutions: () => get<ApiInstitution[]>("/accounts/institutions"),
     unlinkInstitution: (institutionId: string) => del(`/accounts/institutions/${institutionId}`),
     allocation: () => get<ApiAllocationAnalysis>("/accounts/allocation"),
+    liability: (id: string) => get<ApiLiability | null>(`/accounts/${id}/liability`),
+    saveLiability: (id: string, body: Omit<ApiLiability, "id" | "account_id">) => request<ApiLiability>(`/accounts/${id}/liability`, { method: "PUT", body: JSON.stringify(body) }),
+    holdings: (id: string) => get<ApiHolding[]>(`/accounts/${id}/holdings`),
+    addHolding: (id: string, body: Omit<ApiHolding, "id" | "account_id">) => post<ApiHolding>(`/accounts/${id}/holdings`, body),
+    deleteHolding: (id: string) => del<void>(`/holdings/${id}`),
   },
   investments: {
     dashboard: () => get<ApiInvestmentDashboard>("/investments/dashboard"),

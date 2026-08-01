@@ -51,6 +51,8 @@ class PlanningProfile:
     include_social_security: bool = True
     expected_return: Decimal = Decimal("0.065")
     inflation_rate: Decimal = Decimal("0.028")
+    target_savings_rate: Decimal | None = None
+    cash_reserve_target: Decimal | None = None
 
 
 @dataclass(slots=True)

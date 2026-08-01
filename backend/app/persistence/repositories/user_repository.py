@@ -104,6 +104,8 @@ class UserRepository(BaseRepository[UserModel]):
             include_social_security=row.include_social_security,
             expected_return=row.expected_return,
             inflation_rate=row.inflation_rate,
+            target_savings_rate=row.target_savings_rate,
+            cash_reserve_target=row.cash_reserve_target,
         )
 
     async def get_planning_profile(self, user_id: UUID) -> PlanningProfile:
@@ -119,6 +121,8 @@ class UserRepository(BaseRepository[UserModel]):
             include_social_security=row.include_social_security,
             expected_return=row.expected_return,
             inflation_rate=row.inflation_rate,
+            target_savings_rate=row.target_savings_rate,
+            cash_reserve_target=row.cash_reserve_target,
         )
 
 

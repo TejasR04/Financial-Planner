@@ -4,6 +4,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import delete, select
 
+from app.core.exceptions import NotFoundError
 from app.domain.entities import Holding
 from app.domain.enums import AssetClass
 from app.persistence.models import AccountModel, HoldingModel
@@ -39,6 +40,22 @@ class HoldingRepository(BaseRepository[HoldingModel]):
         self.session.add(row)
         await self.session.flush()
         return _to_domain(row)
+
+    async def update_for_user(self, user_id: UUID, holding_id: UUID, **fields) -> Holding:
+        row = await self.session.scalar(select(HoldingModel).join(AccountModel).where(HoldingModel.id == holding_id, AccountModel.user_id == user_id, AccountModel.archived_at.is_(None)))
+        if row is None:
+            raise NotFoundError("Holding", str(holding_id))
+        for key, value in fields.items():
+            setattr(row, key, value)
+        await self.session.flush()
+        return _to_domain(row)
+
+    async def delete_for_user(self, user_id: UUID, holding_id: UUID) -> None:
+        row = await self.session.scalar(select(HoldingModel).join(AccountModel).where(HoldingModel.id == holding_id, AccountModel.user_id == user_id, AccountModel.archived_at.is_(None)))
+        if row is None:
+            raise NotFoundError("Holding", str(holding_id))
+        await self.session.delete(row)
+        await self.session.flush()
 
     async def replace_for_accounts(self, account_ids: list[UUID], holdings: list[Holding]) -> list[Holding]:
         """Replace holdings only for accounts confirmed by a successful

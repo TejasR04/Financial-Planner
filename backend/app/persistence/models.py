@@ -67,6 +67,8 @@ class PlanningProfileModel(Base):
     include_social_security: Mapped[bool] = mapped_column(Boolean, default=True)
     expected_return: Mapped[Decimal] = mapped_column(Numeric(5, 4), default=Decimal("0.065"))
     inflation_rate: Mapped[Decimal] = mapped_column(Numeric(5, 4), default=Decimal("0.028"))
+    target_savings_rate: Mapped[Decimal | None] = mapped_column(Numeric(5, 4), nullable=True)
+    cash_reserve_target: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
 
     user: Mapped["UserModel"] = relationship(back_populates="profile")

@@ -183,7 +183,7 @@ def test_debt_optimization_snowball_pays_smallest_balance_first():
 def test_financial_health_score_within_bounds():
     service = FinancialHealthService()
     user = User(id=uuid4(), email="a@b.com", full_name="Test User", date_of_birth=date(1990, 1, 1))
-    profile = PlanningProfile(user_id=user.id)
+    profile = PlanningProfile(user_id=user.id, cash_reserve_target=Decimal("12000"))
     accounts = [
         Account(id=uuid4(), user_id=user.id, name="Checking", type=AccountType.DEPOSITORY, balance=Decimal("30000")),
         Account(id=uuid4(), user_id=user.id, name="Mortgage", type=AccountType.LOAN, balance=Decimal("-100000")),
@@ -206,11 +206,22 @@ def test_financial_health_score_within_bounds():
 def test_recommendation_engine_flags_idle_cash():
     engine = RecommendationEngine()
     user = User(id=uuid4(), email="a@b.com", full_name="Test User", date_of_birth=date(1990, 1, 1))
-    profile = PlanningProfile(user_id=user.id)
+    profile = PlanningProfile(user_id=user.id, cash_reserve_target=Decimal("12000"))
     accounts = [
         Account(id=uuid4(), user_id=user.id, name="Checking", type=AccountType.DEPOSITORY, balance=Decimal("30000")),
         Account(id=uuid4(), user_id=user.id, name="HYSA", type=AccountType.DEPOSITORY, balance=Decimal("5000"), apy=Decimal("4.3")),
     ]
     snapshot = FinancialSnapshot(user=user, profile=profile, accounts=accounts)
     drafts = engine.generate(snapshot)
-    assert any("Sweep idle cash" in d.title for d in drafts)
+    assert any("Move excess cash" in d.title for d in drafts)
+
+
+def test_recommendation_engine_suppresses_cash_advice_without_a_reserve_target():
+    engine = RecommendationEngine()
+    user = User(id=uuid4(), email="a@b.com", full_name="Test User")
+    accounts = [
+        Account(id=uuid4(), user_id=user.id, name="Checking", type=AccountType.DEPOSITORY, balance=Decimal("30000")),
+        Account(id=uuid4(), user_id=user.id, name="HYSA", type=AccountType.DEPOSITORY, balance=Decimal("5000"), apy=Decimal("4.3")),
+    ]
+    snapshot = FinancialSnapshot(user=user, profile=PlanningProfile(user_id=user.id), accounts=accounts)
+    assert engine.generate(snapshot) == []

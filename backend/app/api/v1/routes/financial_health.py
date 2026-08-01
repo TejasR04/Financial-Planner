@@ -19,7 +19,6 @@ router = APIRouter(prefix="/financial-health", tags=["financial-health"])
 health_service = FinancialHealthService()
 allocation_service = PortfolioAllocationService()
 
-DEFAULT_TARGET_SAVINGS_RATE = Decimal("0.20")
 TRAILING_MONTHS_FOR_DEFAULTS = 3
 
 
@@ -53,9 +52,8 @@ async def recalculate_financial_health(
     - monthly_expenses: average monthly expense total over the trailing
       3 months of transactions (0 if there's no transaction history yet,
       which FinancialHealthService documents as a neutral liquidity score).
-    - target_savings_rate: 20%, a standard planning guideline — there's no
-      per-user field for this yet (see ARCHITECTURE.md for the
-      PlanningProfile schema); flagged as a fields gap worth closing.
+    - target_savings_rate: the user's explicit Planning input. Calculation
+      stops with a validation message when neither request nor profile has one.
     - actual_savings_rate: (trailing income - trailing expenses) / trailing
       income over the same 3-month window, 0 if no income transactions.
     - actual_equity_allocation: computed from real Holdings via
@@ -84,7 +82,12 @@ async def recalculate_financial_health(
                 (total_income - total_expenses) / total_income if total_income > 0 else Decimal("0")
             )
 
-    target_savings_rate = body.target_savings_rate or DEFAULT_TARGET_SAVINGS_RATE
+    target_savings_rate = body.target_savings_rate or snapshot.profile.target_savings_rate
+    if target_savings_rate is None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Set a target savings rate in Planning inputs before calculating financial health.",
+        )
 
     holdings = await HoldingRepository(db).list_for_user(current_user.id)
     allocation = allocation_service.analyze(holdings, snapshot.profile.target_equity_allocation)

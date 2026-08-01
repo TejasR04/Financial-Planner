@@ -154,6 +154,8 @@ type UserAccountDetails = {
   targetEquityAllocation: number; // 0-1 fraction, as the API expects
   defaultWithdrawalRate: number; // 0-1 fraction
   includeSocialSecurity: boolean;
+  targetSavingsRate: number | null;
+  cashReserveTarget: number | null;
 };
 
 type DataState = {
@@ -490,6 +492,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           targetEquityAllocation: parseFloat(planningProfile.target_equity_allocation),
           defaultWithdrawalRate: parseFloat(planningProfile.default_withdrawal_rate),
           includeSocialSecurity: planningProfile.include_social_security,
+          targetSavingsRate: planningProfile.target_savings_rate == null ? null : parseFloat(planningProfile.target_savings_rate),
+          cashReserveTarget: planningProfile.cash_reserve_target == null ? null : parseFloat(planningProfile.cash_reserve_target),
         };
 
         if (!cancelled) {

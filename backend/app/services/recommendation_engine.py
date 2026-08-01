@@ -9,10 +9,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
-from uuid import uuid4
-
 from app.domain.entities import FinancialSnapshot
-from app.domain.enums import AccountType, RecommendationEffort, RecommendationStatus
+from app.domain.enums import AccountType, RecommendationEffort
 
 ZERO = Decimal("0")
 
@@ -39,7 +37,8 @@ class RecommendationEngine:
     def generate(self, snapshot: FinancialSnapshot) -> list[RecommendationDraft]:
         drafts: list[RecommendationDraft] = []
         drafts.extend(self._idle_cash_rule(snapshot))
-        drafts.extend(self._retirement_headroom_rule(snapshot))
+        # Retirement headroom is intentionally suppressed until the product
+        # models plan eligibility and the user's actual contribution election.
         return sorted(drafts, key=lambda d: d.impact_value, reverse=True)
 
     def _idle_cash_rule(self, snapshot: FinancialSnapshot) -> list[RecommendationDraft]:
@@ -60,63 +59,18 @@ class RecommendationEngine:
         if best_apy_account is None:
             return []
 
-        drafts = []
-        spend_buffer = Decimal("12000")  # a simple placeholder; a later phase
-        # should derive this from CashFlowProjectionService's monthly expense
-        # figure (e.g. 1x projected monthly expenses) rather than a constant.
-        for account in checking_accounts:
-            if account.id == best_apy_account.id:
-                continue
-            idle = account.balance - spend_buffer
-            if idle <= Decimal("1000"):
-                continue
-            annual_interest_gain = (idle * (best_apy_account.apy or ZERO) / Decimal(100)).quantize(Decimal("0.01"))
-            drafts.append(
-                RecommendationDraft(
-                    title=f"Sweep idle cash from {account.name} into {best_apy_account.name}",
-                    body=(
-                        f"{account.name} is holding roughly ${idle:,.0f} above a reasonable "
-                        f"spend buffer. Moving it to {best_apy_account.name} at "
-                        f"{best_apy_account.apy}% APY yields incremental interest with no "
-                        "liquidity impact."
-                    ),
-                    category="Cash Management",
-                    impact_value=annual_interest_gain,
-                    effort=RecommendationEffort.LOW,
-                    confidence=0.85,
-                )
-            )
-        return drafts
-
-    def _retirement_headroom_rule(self, snapshot: FinancialSnapshot) -> list[RecommendationDraft]:
-        """Flags contribution headroom against the current-year 401(k)
-        limit using the same engine primitive the AI tool layer calls."""
-        from app.simulation.engine import contribution_limit_headroom
-
-        retirement_income_sources = [s for s in snapshot.income_sources if s.active]
-        if not retirement_income_sources:
+        reserve_target = snapshot.profile.cash_reserve_target
+        if reserve_target is None:
             return []
-
-        # In a fuller model this would read the user's actual elected
-        # contribution rate from a RetirementAccount entity; using zero here
-        # as an explicit placeholder for "no election on file yet".
-        planned_contribution = ZERO
-        age = snapshot.user.age_on(snapshot.as_of) or 30
-        headroom = contribution_limit_headroom(planned_contribution, "401k_employee", age)
-        if headroom["headroom"] <= ZERO:
+        total_cash = sum((account.balance for account in checking_accounts), ZERO)
+        excess = total_cash - reserve_target
+        if excess <= Decimal("1000") or not best_apy_account.apy:
             return []
-
-        return [
-            RecommendationDraft(
-                title="Elect a 401(k) contribution to capture available tax-advantaged space",
-                body=(
-                    f"You have ${headroom['headroom']:,.0f} of unused 401(k) contribution "
-                    "room this year based on the IRS limit. Electing a contribution "
-                    "captures tax-deferred growth on that headroom."
-                ),
-                category="Retirement",
-                impact_value=headroom["headroom"],
-                effort=RecommendationEffort.LOW,
-                confidence=0.7,
-            )
-        ]
+        annual_interest_gain = (excess * best_apy_account.apy / Decimal(100)).quantize(Decimal("0.01"))
+        return [RecommendationDraft(
+            title=f"Move excess cash to {best_apy_account.name}",
+            body=(f"Across your deposit accounts, cash is about ${excess:,.0f} above your configured "
+                  f"${reserve_target:,.0f} reserve target. At {best_apy_account.apy}% APY, the estimated annual interest is ${annual_interest_gain:,.0f}."),
+            category="Cash Management", impact_value=annual_interest_gain,
+            effort=RecommendationEffort.LOW, confidence=0.85,
+        )]

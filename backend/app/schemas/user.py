@@ -31,6 +31,8 @@ class PlanningProfileResponse(BaseModel):
     include_social_security: bool
     expected_return: Decimal
     inflation_rate: Decimal
+    target_savings_rate: Decimal | None
+    cash_reserve_target: Decimal | None
 
 
 class PlanningProfileUpdateRequest(BaseModel):
@@ -40,3 +42,5 @@ class PlanningProfileUpdateRequest(BaseModel):
     include_social_security: bool | None = None
     expected_return: Decimal | None = None
     inflation_rate: Decimal | None = None
+    target_savings_rate: Decimal | None = None
+    cash_reserve_target: Decimal | None = None

@@ -4,6 +4,8 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import select
 
+from app.core.exceptions import NotFoundError
+
 from app.domain.entities import IncomeSource
 from app.persistence.models import IncomeSourceModel
 from app.persistence.repositories.base import BaseRepository
@@ -31,6 +33,22 @@ class IncomeSourceRepository(BaseRepository[IncomeSourceModel]):
         self.session.add(row)
         await self.session.flush()
         return _to_domain(row)
+
+    async def update_for_user(self, user_id: UUID, source_id: UUID, **fields) -> IncomeSource:
+        row = await self.session.scalar(select(IncomeSourceModel).where(IncomeSourceModel.id == source_id, IncomeSourceModel.user_id == user_id))
+        if row is None:
+            raise NotFoundError("Income source", str(source_id))
+        for key, value in fields.items():
+            setattr(row, key, value)
+        await self.session.flush()
+        return _to_domain(row)
+
+    async def delete_for_user(self, user_id: UUID, source_id: UUID) -> None:
+        row = await self.session.scalar(select(IncomeSourceModel).where(IncomeSourceModel.id == source_id, IncomeSourceModel.user_id == user_id))
+        if row is None:
+            raise NotFoundError("Income source", str(source_id))
+        await self.session.delete(row)
+        await self.session.flush()
 
 
 def _to_domain(row: IncomeSourceModel) -> IncomeSource:

@@ -2,7 +2,8 @@
 
 import { useCallback, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Pencil, Plus, RefreshCw, Unlink } from "lucide-react";
+import { Pencil, Plus, RefreshCw, SlidersHorizontal, Unlink } from "lucide-react";
+import { FinancialDetailsDialog } from "@/components/financial-details-dialog";
 import { PageContainer, PageHeader } from "@/components/page-container";
 import { Panel, PanelHeader } from "@/components/panel";
 import { AccountCard } from "@/components/account-card";
@@ -46,6 +47,7 @@ export default function AccountsPage() {
   const [syncFeedback, setSyncFeedback] = useState<SyncFeedback>(null);
   const [manualDialogOpen, setManualDialogOpen] = useState(false);
   const [editingAccount, setEditingAccount] = useState<Account | null>(null);
+  const [detailsAccount, setDetailsAccount] = useState<Account | null>(null);
   const [pendingActionId, setPendingActionId] = useState<string | null>(null);
 
   const visibleAccounts = selectedInstitutionId
@@ -124,12 +126,16 @@ export default function AccountsPage() {
     }
   };
 
+  const detailsEligible = (account: Account) => isLiability(account) || account.type === "Investment" || account.type === "Retirement";
+  const detailsButton = (account: Account) => detailsEligible(account) ? <Button variant="ghost" size="icon-xs" aria-label={`Planning details for ${account.name}`} onClick={() => setDetailsAccount(account)}><SlidersHorizontal /></Button> : null;
   const cardActions = (account: Account) => account.institutionId ? (
+    <div className="flex items-center">{detailsButton(account)}
     <Button variant="ghost" size="icon-xs" aria-label={`Sync ${account.name}`} onClick={() => { const institution = institutions.find((item) => item.id === account.institutionId); if (institution) void syncInstitution(institution); }} disabled={pendingActionId !== null}>
       <RefreshCw className={pendingActionId === account.institutionId ? "animate-spin" : undefined} />
-    </Button>
+    </Button></div>
   ) : (
     <div className="flex items-center">
+      {detailsButton(account)}
       <Button variant="ghost" size="icon-xs" aria-label={`Edit ${account.name}`} onClick={() => { setEditingAccount(account); setManualDialogOpen(true); }}><Pencil /></Button>
       <Button variant="ghost" size="icon-xs" aria-label={`Archive ${account.name}`} onClick={() => void archiveManual(account)} disabled={pendingActionId === account.id}><Unlink /></Button>
     </div>
@@ -138,6 +144,7 @@ export default function AccountsPage() {
   return (
     <PageContainer>
       <ManualAccountDialog open={manualDialogOpen} account={editingAccount} onClose={() => { setManualDialogOpen(false); setEditingAccount(null); }} />
+      <FinancialDetailsDialog account={detailsAccount} onClose={() => setDetailsAccount(null)} />
       <PageHeader
         title="Accounts"
         description={`${visibleAccounts.length} account${visibleAccounts.length === 1 ? "" : "s"} · ${linkedCount} linked · ${manualCount} manual · USD`}

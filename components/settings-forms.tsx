@@ -6,7 +6,7 @@ import { Check } from "lucide-react";
 import { Panel, PanelHeader } from "@/components/panel";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { api } from "@/lib/api-client";
+import { api, ApiIncomeSource } from "@/lib/api-client";
 import { useAccountsData, useDataRefresh, useInstitutionsData, useUserAccount } from "@/lib/data-provider";
 
 const sections = [
@@ -110,6 +110,11 @@ export function SettingsForms() {
   const [equityAllocation, setEquityAllocation] = useState(60);
   const [withdrawalRate, setWithdrawalRate] = useState(4);
   const [includeSS, setIncludeSS] = useState(true);
+  const [targetSavingsRate, setTargetSavingsRate] = useState("");
+  const [cashReserveTarget, setCashReserveTarget] = useState("");
+  const [incomeSources, setIncomeSources] = useState<ApiIncomeSource[]>([]);
+  const [incomeName, setIncomeName] = useState("");
+  const [incomeAmount, setIncomeAmount] = useState("");
   const [planningSaving, setPlanningSaving] = useState(false);
   const [planningSaved, setPlanningSaved] = useState(false);
 
@@ -119,7 +124,11 @@ export function SettingsForms() {
     setEquityAllocation(Math.round(userAccount.targetEquityAllocation * 100));
     setWithdrawalRate(Math.round(userAccount.defaultWithdrawalRate * 1000) / 10);
     setIncludeSS(userAccount.includeSocialSecurity);
+    setTargetSavingsRate(userAccount.targetSavingsRate == null ? "" : String(userAccount.targetSavingsRate * 100));
+    setCashReserveTarget(userAccount.cashReserveTarget == null ? "" : String(userAccount.cashReserveTarget));
   }, [userAccount]);
+
+  useEffect(() => { api.incomeSources.list().then(setIncomeSources).catch(() => setIncomeSources([])); }, []);
 
   async function savePlanning() {
     setPlanningSaving(true);
@@ -130,6 +139,8 @@ export function SettingsForms() {
         target_equity_allocation: String(equityAllocation / 100),
         default_withdrawal_rate: String(withdrawalRate / 100),
         include_social_security: includeSS,
+        target_savings_rate: targetSavingsRate === "" ? null : String(Number(targetSavingsRate) / 100),
+        cash_reserve_target: cashReserveTarget === "" ? null : cashReserveTarget,
       });
       refresh();
       setPlanningSaved(true);
@@ -252,6 +263,22 @@ export function SettingsForms() {
                 hint="Add projected benefits to models"
               >
                 <Toggle on={includeSS} onChange={setIncludeSS} />
+              </Field>
+              <Field label="Target savings rate" hint="Required for the savings-discipline health score (%)">
+                <input className={inputClass} type="number" min="0" max="100" step="0.1" value={targetSavingsRate} onChange={(e) => setTargetSavingsRate(e.target.value)} placeholder="Not configured" />
+              </Field>
+              <Field label="Cash reserve target" hint="Your chosen emergency/liquidity reserve in dollars">
+                <input className={inputClass} type="number" min="0" step="100" value={cashReserveTarget} onChange={(e) => setCashReserveTarget(e.target.value)} placeholder="Not configured" />
+              </Field>
+              <Field label="Income sources" hint="Planning inputs only; never added to historical transaction income">
+                <div className="space-y-2">
+                  {incomeSources.map((source) => <div key={source.id} className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-[12px]"><span>{source.name} · ${Number(source.annual_amount).toLocaleString()}/yr</span><Button variant="outline" size="xs" onClick={async () => { await api.incomeSources.delete(source.id); setIncomeSources((rows) => rows.filter((row) => row.id !== source.id)); }}>Remove</Button></div>)}
+                  <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                    <input className={inputClass} value={incomeName} onChange={(e) => setIncomeName(e.target.value)} placeholder="Salary, pension…" />
+                    <input className={inputClass} type="number" min="0" value={incomeAmount} onChange={(e) => setIncomeAmount(e.target.value)} placeholder="Annual amount" />
+                    <Button variant="outline" size="sm" disabled={!incomeName || !incomeAmount} onClick={async () => { const source = await api.incomeSources.create({ name: incomeName, annual_amount: incomeAmount, growth_rate: "0.03" }); setIncomeSources((rows) => [...rows, source]); setIncomeName(""); setIncomeAmount(""); }}>Add</Button>
+                  </div>
+                </div>
               </Field>
             </div>
             <div className="flex items-center justify-end gap-2 border-t border-border p-3">

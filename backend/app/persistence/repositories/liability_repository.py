@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 
 from app.domain.entities import Liability
+from app.core.exceptions import NotFoundError
 from app.persistence.models import AccountModel, LiabilityModel
 from app.persistence.repositories.base import BaseRepository
 
@@ -38,6 +39,31 @@ class LiabilityRepository(BaseRepository[LiabilityModel]):
         self.session.add(row)
         await self.session.flush()
         return _to_domain(row)
+
+    async def get_for_user_account(self, user_id: UUID, account_id: UUID) -> Liability | None:
+        row = await self.session.scalar(select(LiabilityModel).join(AccountModel).where(LiabilityModel.account_id == account_id, AccountModel.user_id == user_id, AccountModel.archived_at.is_(None)))
+        return _to_domain(row) if row else None
+
+    async def upsert_for_user_account(self, user_id: UUID, account_id: UUID, **fields) -> Liability:
+        account = await self.session.scalar(select(AccountModel).where(AccountModel.id == account_id, AccountModel.user_id == user_id, AccountModel.archived_at.is_(None)))
+        if account is None:
+            raise NotFoundError("Account", str(account_id))
+        row = await self.session.scalar(select(LiabilityModel).where(LiabilityModel.account_id == account_id))
+        if row is None:
+            row = LiabilityModel(id=uuid4(), account_id=account_id, **fields)
+            self.session.add(row)
+        else:
+            for key, value in fields.items():
+                setattr(row, key, value)
+        await self.session.flush()
+        return _to_domain(row)
+
+    async def delete_for_user_account(self, user_id: UUID, account_id: UUID) -> None:
+        row = await self.session.scalar(select(LiabilityModel).join(AccountModel).where(LiabilityModel.account_id == account_id, AccountModel.user_id == user_id))
+        if row is None:
+            raise NotFoundError("Liability details", str(account_id))
+        await self.session.delete(row)
+        await self.session.flush()
 
 
 def _to_domain(row: LiabilityModel) -> Liability:
