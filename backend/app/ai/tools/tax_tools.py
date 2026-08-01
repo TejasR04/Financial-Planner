@@ -14,6 +14,7 @@ class EstimateTaxesInput(BaseModel):
     filing_status: FilingStatus
     state: str | None = None
     pretax_deductions: Decimal = Decimal("0")
+    tax_year: int = 2026
 
 
 @registry.register(
@@ -28,6 +29,7 @@ def estimate_taxes(args: EstimateTaxesInput):
         filing_status=args.filing_status,
         state=args.state,
         pretax_deductions=args.pretax_deductions,
+        tax_year=args.tax_year,
     )
 
 
@@ -35,12 +37,14 @@ class HsaTaxSavingsInput(BaseModel):
     annual_hsa_contribution: Decimal
     marginal_federal_rate: Decimal
     state_rate: Decimal = Decimal("0")
+    payroll_contribution: bool = False
+    annual_wages_before_hsa: Decimal | None = None
 
 
 @registry.register(
     "calculate_hsa_tax_savings",
-    "Calculate the immediate payroll-tax-year savings from contributing to "
-    "an HSA pretax (federal + state + FICA).",
+    "Calculate immediate HSA income-tax savings and, when payroll wages are "
+    "provided, applicable Social Security and Medicare savings.",
     HsaTaxSavingsInput,
 )
 def calculate_hsa_tax_savings(args: HsaTaxSavingsInput):
@@ -48,6 +52,8 @@ def calculate_hsa_tax_savings(args: HsaTaxSavingsInput):
         annual_hsa_contribution=args.annual_hsa_contribution,
         marginal_federal_rate=args.marginal_federal_rate,
         state_rate=args.state_rate,
+        payroll_contribution=args.payroll_contribution,
+        annual_wages_before_hsa=args.annual_wages_before_hsa,
     )
     return {"annual_tax_savings": savings}
 

@@ -13,6 +13,7 @@ from app.simulation.engine import (
     future_value_of_annuity,
     inflate,
     project_balance_series,
+    project_balance_series_monthly_contributions,
     project_retirement_withdrawal_series,
     real_return,
     safe_withdrawal_amount,
@@ -80,6 +81,16 @@ def test_project_balance_series_length_and_monotonic_growth():
 
 def test_project_balance_series_zero_years_returns_empty():
     assert project_balance_series(Decimal("100"), Decimal("10"), Decimal("0.05"), 0, 30) == []
+
+
+def test_monthly_contributions_earn_more_than_year_end_contribution():
+    monthly = project_balance_series_monthly_contributions(
+        Decimal("0"), Decimal("12000"), Decimal("0.12"), 1, 30
+    )
+    annual = project_balance_series(
+        Decimal("0"), Decimal("12000"), Decimal("0.12"), 1, 30
+    )
+    assert monthly[-1].ending_balance > annual[-1].ending_balance
 
 
 def test_retirement_withdrawal_series_continues_after_retirement():
@@ -152,14 +163,14 @@ def test_employer_match_below_cap_matches_full_contribution():
 
 def test_contribution_limit_headroom_under_limit():
     result = contribution_limit_headroom(Decimal("10000"), "401k_employee", age=35)
-    assert result["limit"] == Decimal("23500")
-    assert result["headroom"] == Decimal("13500")
+    assert result["limit"] == Decimal("24500")
+    assert result["headroom"] == Decimal("14500")
     assert result["over_limit"] is False
 
 
 def test_contribution_limit_headroom_catchup_applies_at_50():
     result = contribution_limit_headroom(Decimal("23500"), "401k_employee", age=52)
-    assert result["limit"] == Decimal("31000")
+    assert result["limit"] == Decimal("32500")
     assert result["over_limit"] is False
 
 
@@ -174,9 +185,9 @@ def test_estimate_federal_tax_zero_income_is_zero_tax():
 
 
 def test_estimate_federal_tax_progressive_brackets_single():
-    # $100,000 single filer, 2025 brackets, standard deduction
+    # $100,000 single filer, 2026 brackets and standard deduction
     result = estimate_federal_tax(Decimal("100000"), FilingStatus.SINGLE)
-    assert result["taxable_income"] == Decimal("85000")
+    assert result["taxable_income"] == Decimal("83900")
     assert result["total_tax"] > Decimal("0")
     assert result["marginal_rate"] == Decimal("0.22")
     # effective rate should always be below the marginal rate in a progressive system

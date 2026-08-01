@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 from uuid import UUID
@@ -62,6 +63,8 @@ class ScenarioMetricsResponse(BaseModel):
 
 class CashFlowSimulationRequest(BaseModel):
     months: int = Field(default=12, ge=1, le=60)
+    income_basis: Literal["gross", "take_home"] = "take_home"
+    estimated_effective_tax_rate: Decimal | None = Field(default=None, ge=0, lt=1)
 
 
 class CashFlowMonthPointResponse(BaseModel):
@@ -77,6 +80,7 @@ class CashFlowSimulationResponse(BaseModel):
     projected_savings_rate: Decimal
     income_source: str
     expense_source: str
+    income_basis: Literal["gross", "take_home"]
 
 
 class MonteCarloSimulationRequest(BaseModel):
@@ -91,6 +95,7 @@ class MonteCarloSimulationRequest(BaseModel):
     return_volatility: Decimal = Field(default=Decimal("0.106"), ge=0, le=1)
     trials: int = Field(default=1000, ge=100, le=100000)
     seed: int = 42
+    annual_fee_rate: Decimal = Field(default=Decimal("0"), ge=0, lt=1)
 
 
 class MonteCarloSimulationResponse(BaseModel):

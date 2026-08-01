@@ -54,10 +54,44 @@ FEDERAL_BRACKETS_2025: dict[FilingStatus, list[Bracket]] = {
 }
 
 STANDARD_DEDUCTION_2025: dict[FilingStatus, Decimal] = {
-    FilingStatus.SINGLE: Decimal("15000"),
-    FilingStatus.MARRIED_JOINT: Decimal("30000"),
-    FilingStatus.MARRIED_SEPARATE: Decimal("15000"),
-    FilingStatus.HEAD_OF_HOUSEHOLD: Decimal("22500"),
+    FilingStatus.SINGLE: Decimal("15750"),
+    FilingStatus.MARRIED_JOINT: Decimal("31500"),
+    FilingStatus.MARRIED_SEPARATE: Decimal("15750"),
+    FilingStatus.HEAD_OF_HOUSEHOLD: Decimal("23625"),
+}
+
+FEDERAL_BRACKETS_2026: dict[FilingStatus, list[Bracket]] = {
+    FilingStatus.SINGLE: [
+        (Decimal("12400"), Decimal("0.10")), (Decimal("50400"), Decimal("0.12")),
+        (Decimal("105700"), Decimal("0.22")), (Decimal("201775"), Decimal("0.24")),
+        (Decimal("256225"), Decimal("0.32")), (Decimal("640600"), Decimal("0.35")),
+        (None, Decimal("0.37")),
+    ],
+    FilingStatus.MARRIED_JOINT: [
+        (Decimal("24800"), Decimal("0.10")), (Decimal("100800"), Decimal("0.12")),
+        (Decimal("211400"), Decimal("0.22")), (Decimal("403550"), Decimal("0.24")),
+        (Decimal("512450"), Decimal("0.32")), (Decimal("768700"), Decimal("0.35")),
+        (None, Decimal("0.37")),
+    ],
+    FilingStatus.MARRIED_SEPARATE: [
+        (Decimal("12400"), Decimal("0.10")), (Decimal("50400"), Decimal("0.12")),
+        (Decimal("105700"), Decimal("0.22")), (Decimal("201775"), Decimal("0.24")),
+        (Decimal("256225"), Decimal("0.32")), (Decimal("384350"), Decimal("0.35")),
+        (None, Decimal("0.37")),
+    ],
+    FilingStatus.HEAD_OF_HOUSEHOLD: [
+        (Decimal("17700"), Decimal("0.10")), (Decimal("67450"), Decimal("0.12")),
+        (Decimal("105700"), Decimal("0.22")), (Decimal("201750"), Decimal("0.24")),
+        (Decimal("256200"), Decimal("0.32")), (Decimal("640600"), Decimal("0.35")),
+        (None, Decimal("0.37")),
+    ],
+}
+
+STANDARD_DEDUCTION_2026: dict[FilingStatus, Decimal] = {
+    FilingStatus.SINGLE: Decimal("16100"),
+    FilingStatus.MARRIED_JOINT: Decimal("32200"),
+    FilingStatus.MARRIED_SEPARATE: Decimal("16100"),
+    FilingStatus.HEAD_OF_HOUSEHOLD: Decimal("24150"),
 }
 
 # IRS annual contribution limits, by year.
@@ -70,23 +104,35 @@ CONTRIBUTION_LIMITS_2025 = {
     "hsa_family": Decimal("8550"),
 }
 
-DEFAULT_TAX_YEAR = 2025
+CONTRIBUTION_LIMITS_2026 = {
+    "401k_employee": Decimal("24500"),
+    "401k_employee_catchup_50plus": Decimal("8000"),
+    "ira": Decimal("7500"),
+    "ira_catchup_50plus": Decimal("1100"),
+    "hsa_individual": Decimal("4400"),
+    "hsa_family": Decimal("8750"),
+}
+
+DEFAULT_TAX_YEAR = 2026
+
+BRACKETS_BY_YEAR = {2025: FEDERAL_BRACKETS_2025, 2026: FEDERAL_BRACKETS_2026}
+DEDUCTIONS_BY_YEAR = {2025: STANDARD_DEDUCTION_2025, 2026: STANDARD_DEDUCTION_2026}
+LIMITS_BY_YEAR = {2025: CONTRIBUTION_LIMITS_2025, 2026: CONTRIBUTION_LIMITS_2026}
 
 
 def get_brackets(tax_year: int, filing_status: FilingStatus) -> list[Bracket]:
-    if tax_year != DEFAULT_TAX_YEAR:
-        # Only one table is loaded today; documented extension point.
+    if tax_year not in BRACKETS_BY_YEAR:
         raise ValueError(f"No bracket table loaded for tax year {tax_year}")
-    return FEDERAL_BRACKETS_2025[filing_status]
+    return BRACKETS_BY_YEAR[tax_year][filing_status]
 
 
 def get_standard_deduction(tax_year: int, filing_status: FilingStatus) -> Decimal:
-    if tax_year != DEFAULT_TAX_YEAR:
+    if tax_year not in DEDUCTIONS_BY_YEAR:
         raise ValueError(f"No standard deduction loaded for tax year {tax_year}")
-    return STANDARD_DEDUCTION_2025[filing_status]
+    return DEDUCTIONS_BY_YEAR[tax_year][filing_status]
 
 
 def get_contribution_limits(tax_year: int) -> dict[str, Decimal]:
-    if tax_year != DEFAULT_TAX_YEAR:
+    if tax_year not in LIMITS_BY_YEAR:
         raise ValueError(f"No contribution limits loaded for tax year {tax_year}")
-    return CONTRIBUTION_LIMITS_2025
+    return LIMITS_BY_YEAR[tax_year]

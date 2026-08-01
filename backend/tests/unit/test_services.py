@@ -167,6 +167,24 @@ def test_cash_flow_projection_rejects_zero_months():
         service.project([], Decimal("1000"), months=0)
 
 
+def test_cash_flow_gross_income_requires_and_applies_tax_rate():
+    service = CashFlowProjectionService()
+    income = [IncomeSource(
+        id=uuid4(), user_id=uuid4(), name="Salary",
+        annual_amount=Decimal("120000"), growth_rate=Decimal("0"),
+    )]
+    with pytest.raises(ValueError):
+        service.project(income, Decimal("5000"), 12, income_basis="gross")
+
+    result = service.project(
+        income, Decimal("5000"), 12, income_basis="gross",
+        estimated_effective_tax_rate=Decimal("0.25"),
+    )
+    assert result.series[0].income == Decimal("7500.00")
+    assert result.average_monthly_surplus == Decimal("2500.00")
+    assert result.income_basis == "gross"
+
+
 # ---------- TaxCalculationService ----------
 
 def test_tax_estimate_includes_state_tax_for_known_state():
@@ -180,6 +198,32 @@ def test_tax_estimate_zero_state_tax_for_no_income_tax_state():
     service = TaxCalculationService()
     result = service.estimate(Decimal("150000"), FilingStatus.SINGLE, state="TX")
     assert result.state_tax == Decimal("0.00")
+
+
+def test_tax_estimate_does_not_invent_unknown_state_tax():
+    service = TaxCalculationService()
+    result = service.estimate(Decimal("150000"), FilingStatus.SINGLE, state="PA")
+    assert result.state_tax is None
+    assert result.total_tax == result.federal_tax
+    assert result.warning is not None
+
+
+def test_hsa_fica_savings_respect_payroll_and_social_security_wage_base():
+    service = TaxCalculationService()
+    direct = service.calculate_hsa_tax_savings(
+        Decimal("4000"), Decimal("0.24"), payroll_contribution=False,
+    )
+    payroll_below_cap = service.calculate_hsa_tax_savings(
+        Decimal("4000"), Decimal("0.24"), payroll_contribution=True,
+        annual_wages_before_hsa=Decimal("100000"),
+    )
+    payroll_above_cap = service.calculate_hsa_tax_savings(
+        Decimal("4000"), Decimal("0.24"), payroll_contribution=True,
+        annual_wages_before_hsa=Decimal("250000"),
+    )
+    assert direct == Decimal("960.00")
+    assert payroll_below_cap == Decimal("1266.00")
+    assert payroll_above_cap == Decimal("1018.00")
 
 
 def test_roth_vs_traditional_prefers_roth_when_rate_rises():

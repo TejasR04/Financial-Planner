@@ -86,6 +86,7 @@ def find_earliest_retirement_age(args: EarliestRetirementAgeInput):
 
 class ForecastCashFlowInput(BaseModel):
     monthly_gross_income: Decimal
+    estimated_effective_tax_rate: Decimal
     monthly_expenses: Decimal
     months: int = 12
     income_growth_rate: Decimal = Decimal("0.03")
@@ -115,4 +116,6 @@ def forecast_cash_flow(args: ForecastCashFlowInput):
         monthly_expenses=args.monthly_expenses,
         months=args.months,
         inflation_rate=args.inflation_rate,
+        income_basis="gross",
+        estimated_effective_tax_rate=args.estimated_effective_tax_rate,
     )

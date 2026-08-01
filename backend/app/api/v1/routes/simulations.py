@@ -122,6 +122,8 @@ async def simulate_cash_flow(
         monthly_expenses=monthly_expenses,
         months=body.months,
         inflation_rate=profile.inflation_rate,
+        income_basis=body.income_basis,
+        estimated_effective_tax_rate=body.estimated_effective_tax_rate,
     )
     return CashFlowSimulationResponse(
         series=[
@@ -132,8 +134,13 @@ async def simulate_cash_flow(
         ],
         average_monthly_surplus=result.average_monthly_surplus,
         projected_savings_rate=result.projected_savings_rate,
-        income_source="Saved planning income sources (pre-tax unless entered as take-home)",
+        income_source=(
+            "Saved planning income sources adjusted by the supplied effective tax rate"
+            if body.income_basis == "gross"
+            else "Saved planning take-home income sources"
+        ),
         expense_source="Trailing 3-month tracked expense average",
+        income_basis=result.income_basis,
     )
 
 
@@ -151,6 +158,7 @@ async def simulate_monte_carlo(
         target_balance=body.target_balance,
         trials=body.trials,
         seed=body.seed,
+        annual_fee_rate=body.annual_fee_rate,
     )
     return MonteCarloSimulationResponse(
         trials=result.trials,
@@ -162,8 +170,8 @@ async def simulate_monte_carlo(
         success_metric=result.success_metric,
         model_version=result.model_version,
         percentile_method=result.percentile_method,
-        estimate_disclosure="Estimate based on randomized returns, not a guarantee or precise probability.",
-        exclusions=["taxes", "investment fees", "advisory fees"],
+        estimate_disclosure="Modeled success frequency under stated assumptions; not a calibrated probability or guarantee.",
+        exclusions=(["taxes"] if body.annual_fee_rate > 0 else ["taxes", "investment fees", "advisory fees"]),
     )
 
 

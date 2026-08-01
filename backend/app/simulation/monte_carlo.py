@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 ZERO = Decimal("0")
-MODEL_VERSION = "normal-iid-v2"
+MODEL_VERSION = "normal-iid-monthly-contributions-v3"
 PERCENTILE_METHOD = "nearest-rank"
 
 
@@ -45,6 +45,7 @@ def run_monte_carlo(
     retirement_years: int = 0,
     annual_withdrawal: Decimal = ZERO,
     annual_withdrawal_growth_rate: Decimal = ZERO,
+    annual_fee_rate: Decimal = ZERO,
 ) -> MonteCarloResult:
     """Runs `trials` independent projections with the annual return sampled
     from a normal distribution around `expected_return`.
@@ -93,6 +94,8 @@ def run_monte_carlo(
         raise ValueError("expected_return must be between -0.50 and 0.50")
     if not ZERO <= return_volatility <= Decimal("1.00"):
         raise ValueError("return_volatility must be between 0 and 1")
+    if not ZERO <= annual_fee_rate < Decimal("1.00"):
+        raise ValueError("annual_fee_rate must be between 0 and 1")
     if not Decimal("-0.20") <= annual_withdrawal_growth_rate <= Decimal("0.20"):
         raise ValueError("annual_withdrawal_growth_rate must be between -0.20 and 0.20")
 
@@ -103,15 +106,19 @@ def run_monte_carlo(
     mean = float(expected_return)
     stdev = float(return_volatility)
     growth_factor = Decimal("1") + annual_withdrawal_growth_rate
+    monthly_contribution = annual_contribution / Decimal("12")
 
     for _ in range(trials):
         balance = starting_balance
-        contribution = annual_contribution
         for _year in range(years):
             sampled_rate = Decimal(str(rng.normalvariate(mean, stdev)))
-            balance = balance + contribution + balance * sampled_rate
-            if balance < ZERO:
-                balance = ZERO
+            net_annual_factor = max(
+                ZERO,
+                (Decimal("1") + sampled_rate) * (Decimal("1") - annual_fee_rate),
+            )
+            monthly_factor = net_annual_factor ** (Decimal("1") / Decimal("12"))
+            for _month in range(12):
+                balance = balance * monthly_factor + monthly_contribution
 
         ran_out = False
         withdrawal = annual_withdrawal
@@ -122,7 +129,10 @@ def run_monte_carlo(
                 balance = ZERO
                 ran_out = True
             else:
-                balance = balance * (Decimal("1") + sampled_rate)
+                balance = balance * max(
+                    ZERO,
+                    (Decimal("1") + sampled_rate) * (Decimal("1") - annual_fee_rate),
+                )
                 if balance < ZERO:
                     balance = ZERO
             withdrawal = withdrawal * growth_factor

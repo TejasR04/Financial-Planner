@@ -109,6 +109,41 @@ def project_balance_series(
     return series
 
 
+def project_balance_series_monthly_contributions(
+    starting_balance: Decimal,
+    annual_contribution: Decimal,
+    annual_rate: Decimal,
+    years: int,
+    starting_age: int,
+    contribution_growth_rate: Decimal = ZERO,
+) -> list[YearProjection]:
+    """Annual output with contributions deposited at each month-end."""
+    if years < 0:
+        raise ValueError("years must be non-negative")
+    monthly_rate = annual_rate_to_monthly(annual_rate)
+    balance = starting_balance
+    annual_amount = annual_contribution
+    series: list[YearProjection] = []
+    for year_index in range(1, years + 1):
+        opening = balance
+        monthly_contribution = annual_amount / Decimal(MONTHS_PER_YEAR)
+        growth = ZERO
+        for _month in range(MONTHS_PER_YEAR):
+            month_growth = balance * monthly_rate
+            growth += month_growth
+            balance += month_growth + monthly_contribution
+        series.append(YearProjection(
+            year_index=year_index,
+            age=starting_age + year_index,
+            starting_balance=opening,
+            contributions=annual_amount,
+            growth=growth,
+            ending_balance=balance,
+        ))
+        annual_amount *= ONE + contribution_growth_rate
+    return series
+
+
 def project_retirement_withdrawal_series(
     starting_balance: Decimal,
     annual_withdrawal: Decimal,

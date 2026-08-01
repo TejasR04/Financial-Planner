@@ -211,6 +211,7 @@ async def run_scenario(
             "allocation": str(assumptions.target_equity_allocation),
             "return_basis": "real_pre_tax_pre_fee",
             "withdrawal_timing": "start_of_year",
+            "contribution_timing": "month_end",
             "inflation_treatment": "nominal returns deflated by constant inflation; withdrawals flat in today's dollars",
             "retirement_dollar_basis": "today_dollars",
             "percentile_method": result.monte_carlo.percentile_method,
@@ -267,7 +268,7 @@ async def preview_scenario(
             "trials": result.monte_carlo.trials,
             "seed": result.monte_carlo.seed,
             "percentile_method": result.monte_carlo.percentile_method,
-            "estimate_disclosure": "Estimate based on randomized returns, not a guarantee or precise probability.",
+            "estimate_disclosure": "Modeled success frequency under stated assumptions; not a calibrated probability or guarantee.",
             "exclusions": ["taxes", "investment fees", "advisory fees"],
         } if result.monte_carlo else None),
     )

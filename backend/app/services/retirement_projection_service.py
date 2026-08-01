@@ -12,7 +12,7 @@ from decimal import Decimal
 from app.simulation.assumptions import PlanningAssumptions
 from app.simulation.engine import (
     YearProjection,
-    project_balance_series,
+    project_balance_series_monthly_contributions,
     project_retirement_withdrawal_series,
     safe_withdrawal_amount,
 )
@@ -57,7 +57,7 @@ class RetirementProjectionService:
         current_age = assumptions.current_age
         years = assumptions.years_to_retirement
 
-        series = project_balance_series(
+        series = project_balance_series_monthly_contributions(
             starting_balance=current_retirement_balance,
             annual_contribution=annual_contribution,
             annual_rate=assumptions.real_return,

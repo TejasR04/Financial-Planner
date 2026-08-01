@@ -78,3 +78,14 @@ def test_running_out_mid_retirement_clamps_to_zero_not_negative():
     )
     assert result.median_ending_balance >= Decimal("0")
     assert result.success_rate < 1.0
+
+
+def test_fees_reduce_accumulation_ending_balance():
+    common = dict(
+        starting_balance=Decimal("100000"), annual_contribution=Decimal("12000"),
+        expected_return=Decimal("0.07"), return_volatility=Decimal("0"),
+        years=20, starting_age=35, target_balance=Decimal("0"), trials=100,
+    )
+    no_fee = run_monte_carlo(**common)
+    with_fee = run_monte_carlo(**common, annual_fee_rate=Decimal("0.01"))
+    assert with_fee.median_ending_balance < no_fee.median_ending_balance

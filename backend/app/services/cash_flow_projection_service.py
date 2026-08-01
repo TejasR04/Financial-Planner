@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from decimal import Decimal
+from typing import Literal
 
 from app.domain.entities import IncomeSource
 from app.simulation.engine import inflate
@@ -30,6 +31,7 @@ class CashFlowProjection:
     series: list[CashFlowMonthPoint]
     average_monthly_surplus: Decimal
     projected_savings_rate: Decimal
+    income_basis: Literal["gross", "take_home"]
 
 
 class CashFlowProjectionService:
@@ -39,9 +41,17 @@ class CashFlowProjectionService:
         monthly_expenses: Decimal,
         months: int,
         inflation_rate: Decimal = Decimal("0.028"),
+        income_basis: Literal["gross", "take_home"] = "take_home",
+        estimated_effective_tax_rate: Decimal | None = None,
     ) -> CashFlowProjection:
         if months <= 0:
             raise ValueError("months must be positive")
+        if income_basis == "gross" and estimated_effective_tax_rate is None:
+            raise ValueError(
+                "estimated_effective_tax_rate is required when income_basis is gross"
+            )
+        if estimated_effective_tax_rate is not None and not ZERO <= estimated_effective_tax_rate < Decimal("1"):
+            raise ValueError("estimated_effective_tax_rate must be between 0 and 1")
 
         active_sources = [s for s in income_sources if s.active]
         series: list[CashFlowMonthPoint] = []
@@ -52,6 +62,8 @@ class CashFlowProjectionService:
             for source in active_sources:
                 grown_annual = source.annual_amount * (Decimal("1") + source.growth_rate) ** years_elapsed
                 monthly_income += grown_annual / Decimal(MONTHS_PER_YEAR)
+            if income_basis == "gross":
+                monthly_income *= Decimal("1") - estimated_effective_tax_rate
 
             expenses_this_month = inflate(monthly_expenses, inflation_rate, years_elapsed)
             net = monthly_income - expenses_this_month
@@ -73,4 +85,5 @@ class CashFlowProjectionService:
             series=series,
             average_monthly_surplus=avg_surplus,
             projected_savings_rate=savings_rate,
+            income_basis=income_basis,
         )

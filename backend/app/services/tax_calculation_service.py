@@ -29,7 +29,9 @@ STATE_FLAT_RATE_ESTIMATES: dict[str, Decimal] = {
     "MA": Decimal("0.05"),
     "IL": Decimal("0.0495"),
 }
-DEFAULT_STATE_RATE = Decimal("0.05")
+SOCIAL_SECURITY_WAGE_BASE_2026 = Decimal("184500")
+SOCIAL_SECURITY_RATE = Decimal("0.062")
+MEDICARE_RATE = Decimal("0.0145")
 
 
 @dataclass(slots=True, frozen=True)
@@ -38,10 +40,11 @@ class TaxEstimate:
     filing_status: FilingStatus
     taxable_income: Decimal
     federal_tax: Decimal
-    state_tax: Decimal
+    state_tax: Decimal | None
     total_tax: Decimal
     effective_rate: Decimal
     marginal_federal_rate: Decimal
+    warning: str | None = None
 
 
 @dataclass(slots=True, frozen=True)
@@ -66,10 +69,17 @@ class TaxCalculationService:
         federal = estimate_federal_tax(
             taxable_before_std_deduction, filing_status, tax_year, itemized_deduction
         )
-        state_rate = STATE_FLAT_RATE_ESTIMATES.get((state or "").upper(), DEFAULT_STATE_RATE)
-        state_tax = (federal["taxable_income"] * state_rate).quantize(Decimal("0.01"))
-        total_tax = federal["total_tax"] + state_tax
+        state_code = (state or "").upper()
+        state_rate = STATE_FLAT_RATE_ESTIMATES.get(state_code)
+        state_tax = (
+            (federal["taxable_income"] * state_rate).quantize(Decimal("0.01"))
+            if state_rate is not None else None
+        )
+        total_tax = federal["total_tax"] + (state_tax or ZERO)
         effective_rate = (total_tax / gross_income).quantize(Decimal("0.0001")) if gross_income > ZERO else ZERO
+        warning = None if state_rate is not None else (
+            "State tax excluded because no supported state was provided."
+        )
 
         return TaxEstimate(
             tax_year=tax_year,
@@ -80,6 +90,7 @@ class TaxCalculationService:
             total_tax=total_tax,
             effective_rate=effective_rate,
             marginal_federal_rate=federal["marginal_rate"],
+            warning=warning,
         )
 
     def calculate_hsa_tax_savings(
@@ -87,14 +98,33 @@ class TaxCalculationService:
         annual_hsa_contribution: Decimal,
         marginal_federal_rate: Decimal,
         state_rate: Decimal = ZERO,
-        fica_rate: Decimal = Decimal("0.0765"),
+        payroll_contribution: bool = True,
+        annual_wages_before_hsa: Decimal | None = None,
+        social_security_wage_base: Decimal = SOCIAL_SECURITY_WAGE_BASE_2026,
     ) -> Decimal:
         """HSA contributions are triple tax-advantaged; this estimates the
         immediate payroll-tax-year savings (federal + state + FICA) from
         contributing pretax via payroll, not the long-run growth benefit
         (use RetirementProjectionService for that)."""
-        combined_rate = marginal_federal_rate + state_rate + fica_rate
-        return (annual_hsa_contribution * combined_rate).quantize(Decimal("0.01"))
+        income_tax_savings = annual_hsa_contribution * (
+            marginal_federal_rate + state_rate
+        )
+        payroll_tax_savings = ZERO
+        if payroll_contribution:
+            if annual_wages_before_hsa is None:
+                raise ValueError(
+                    "annual_wages_before_hsa is required for payroll HSA contributions"
+                )
+            wages_after_hsa = max(ZERO, annual_wages_before_hsa - annual_hsa_contribution)
+            social_security_wages_reduced = (
+                min(annual_wages_before_hsa, social_security_wage_base)
+                - min(wages_after_hsa, social_security_wage_base)
+            )
+            payroll_tax_savings = (
+                social_security_wages_reduced * SOCIAL_SECURITY_RATE
+                + annual_hsa_contribution * MEDICARE_RATE
+            )
+        return (income_tax_savings + payroll_tax_savings).quantize(Decimal("0.01"))
 
     def calculate_roth_vs_traditional(
         self,
