@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { Info, Pencil, Plus, Sparkles, Trash2 } from "lucide-react";
+import { Info, Pencil, Plus, Trash2 } from "lucide-react";
 import { PageContainer, PageHeader } from "@/components/page-container";
 import { ScenarioCompare } from "@/components/scenario-compare";
 import { ProjectionAssumptions } from "@/components/projection-assumptions";
@@ -84,10 +84,6 @@ export default function ProjectionsPage() {
               <button type="button" onClick={() => setDollarDisplay("today")} className={dollarDisplay === "today" ? "rounded bg-muted px-2 py-1 font-medium text-foreground" : "px-2 py-1 text-muted-foreground"}>Today&apos;s dollars</button>
               <button type="button" onClick={() => setDollarDisplay("future")} className={dollarDisplay === "future" ? "rounded bg-muted px-2 py-1 font-medium text-foreground" : "px-2 py-1 text-muted-foreground"}>Future dollars</button>
             </div>
-            <Button variant="outline" size="sm">
-              <Sparkles />
-              Optimize
-            </Button>
             <Button size="sm" onClick={openCreate}>
               <Plus />
               New scenario

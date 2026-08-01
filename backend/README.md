@@ -5,7 +5,7 @@ FastAPI backend for the Meridian financial planning platform. See
 analysis, domain model, DB schema, API contracts, AI tool registry, and the
 phased roadmap this repo implements against).
 
-## What's implemented in this pass
+## What's implemented
 
 - **Phase 0 — Scaffolding.** Layered folder structure, config, JWT auth,
   async SQLAlchemy session setup, Docker Compose, Alembic wiring.
@@ -16,8 +16,8 @@ phased roadmap this repo implements against).
   repositories for User, Account, Transaction, IncomeSource,
   Liability, and Scenario, all fully implemented. Live routes:
   `/auth/*`, `/users/me*`, `/accounts*`, `/transactions*` (including
-  `/transactions/import/csv`). `ManualProvider` and
-  `CSVImportProvider` are wired end to end into these routes.
+  `/transactions/import/csv`). Manual entry uses the account and transaction
+  repositories directly; `CSVImportProvider` normalizes uploaded rows.
 - **Phase 3 — Projections API.** `ScenarioService` (the "run a scenario"
   computation, composing NetWorth + Retirement + optional Monte Carlo) is
   implemented and tested. Live routes: `/scenarios*` full CRUD,
@@ -41,20 +41,18 @@ phased roadmap this repo implements against).
   58" example in the spec) — `AgentOrchestrator` implements the full
   Gemini function-calling loop; `POST /agent/chat` is live when
   `GEMINI_API_KEY` is configured.
+- **Phase 6 — Plaid integration.** Plaid Link, encrypted access-token
+  storage, account/transaction/holding synchronization, reconnect flows,
+  and singleton scheduled polling are wired through `PlaidProvider`.
 
-32 API endpoints total (see `/docs` once running, or the route list in
-`ARCHITECTURE.md` §7). Every endpoint's OpenAPI schema has been verified to
-generate without error, and all 42 unit tests (simulation engine + every
-service, zero DB dependency) pass.
+See `/docs` once running (or `ARCHITECTURE.md` §7) for the current API
+surface. OpenAPI generation and the unit/Postgres integration suites are
+exercised by CI rather than duplicated here as volatile counts.
 
-Not yet wired: Plaid integration and a tuned Monte Carlo sampler (Phases
-6–7 per the roadmap in `ARCHITECTURE.md` §12 — both have their interfaces
-already in place: `PlaidProvider` stub, pluggable `simulation/monte_carlo.py`
-sampler). Also flagged as a known gap in the Phase 4 code itself:
-`RecommendationRepository.save_drafts` doesn't dedupe against existing open
-recommendations yet, and `PlanningProfile` has no `target_savings_rate`
-field, so `/financial-health/recalculate` defaults to a flat 20% — see the
-docstrings on those two for the exact follow-up needed.
+Monte Carlo projections are implemented in `simulation/monte_carlo.py` and
+used by both scenario runs and the ad-hoc simulation endpoint. Plaid webhooks
+are not implemented; synchronization currently uses explicit and scheduled
+polling.
 
 ## Running locally
 
@@ -112,7 +110,7 @@ app/domain/        framework-free entities, enums, value objects
 app/simulation/     the deterministic engine — compounding, amortization, tax, Monte Carlo
 app/services/         business services built on the engine (one calculation, one place)
 app/persistence/       SQLAlchemy models + repositories (ORM <-> domain translation)
-app/providers/           FinancialDataProvider abstraction (Plaid/Manual/CSV)
+app/providers/           FinancialDataProvider abstraction (Plaid/CSV)
 app/ai/                    tool registry + agent orchestration
 app/api/                    FastAPI routes (thin — no business logic)
 app/schemas/                  Pydantic request/response DTOs

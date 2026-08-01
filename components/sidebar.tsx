@@ -2,9 +2,11 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronsLeft, PiggyBank } from "lucide-react";
+import { ChevronsLeft, LogOut, PiggyBank } from "lucide-react";
 import { navGroups } from "@/lib/nav";
 import { cn } from "@/lib/utils";
+import { useUserAccount } from "@/lib/data-provider";
+import { useAuth } from "@/lib/auth-context";
 
 export function Sidebar({
   collapsed,
@@ -14,6 +16,15 @@ export function Sidebar({
   onToggle: () => void;
 }) {
   const pathname = usePathname();
+  const user = useUserAccount();
+  const { logout } = useAuth();
+  const displayName = user?.fullName.trim() || user?.email || "Account";
+  const initials = displayName
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("") || "A";
 
   return (
     <aside
@@ -90,18 +101,31 @@ export function Sidebar({
         {!collapsed && (
           <div className="mb-1.5 flex items-center gap-2.5 rounded-md px-2 py-1.5">
             <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-chart-2/20 text-[11px] font-semibold text-chart-2">
-              AV
+              {initials}
             </div>
             <div className="flex min-w-0 flex-col">
               <span className="truncate text-xs font-medium text-sidebar-accent-foreground">
-                Tejas Ravi
+                {displayName}
               </span>
               <span className="truncate text-[10px] text-muted-foreground">
-                Analyst · Pro
+                {user?.email ?? "Signed in"}
               </span>
             </div>
           </div>
         )}
+        <button
+          type="button"
+          onClick={() => void logout().catch(() => undefined)}
+          title={collapsed ? "Sign out" : undefined}
+          aria-label={collapsed ? "Sign out" : undefined}
+          className={cn(
+            "mb-0.5 flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
+            collapsed && "justify-center",
+          )}
+        >
+          <LogOut className="size-4 shrink-0" />
+          {!collapsed && <span>Sign out</span>}
+        </button>
         <button
           type="button"
           onClick={onToggle}

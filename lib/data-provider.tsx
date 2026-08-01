@@ -42,17 +42,17 @@ function ageFromBirthDate(dob: string | null): number {
   return age;
 }
 
-function formatRelativeTime(iso: string | null): string {
+function formatTimestamp(iso: string | null): string {
   if (!iso) return "—";
-  const then = new Date(iso).getTime();
-  const diffMs = Date.now() - then;
-  const minutes = Math.floor(diffMs / 60000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  const days = Math.floor(hours / 24);
-  return `${days}d ago`;
+  const timestamp = new Date(iso);
+  if (Number.isNaN(timestamp.getTime())) return "—";
+  return timestamp.toLocaleString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    hour: "numeric",
+    minute: "2-digit",
+  });
 }
 
 function formatShortDate(iso: string): string {
@@ -275,7 +275,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           balance: parseFloat(a.balance),
           apy: a.apy != null ? parseFloat(a.apy) : undefined,
           status: a.institution_status === "error" || a.institution_status === "action_required" ? "attention" : a.status,
-          updated: formatRelativeTime(a.institution_last_synced_at ?? a.updated_at),
+          updated: formatTimestamp(a.institution_last_synced_at ?? a.updated_at),
         }));
         const institutions: Institution[] = institutionRows.map((institution) => ({
           id: institution.id,

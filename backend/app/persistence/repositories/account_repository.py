@@ -63,12 +63,6 @@ class AccountRepository(BaseRepository[AccountModel]):
         await self.session.flush()
         return _to_domain(row)
 
-    async def get_by_external_account_id(self, external_account_id: str) -> Account | None:
-        query = select(AccountModel).where(AccountModel.external_account_id == external_account_id)
-        result = await self.session.execute(query)
-        row = result.scalar_one_or_none()
-        return _to_domain(row) if row is not None else None
-
     async def upsert_from_plaid(self, user_id: UUID, account: Account) -> Account:
         """Create or update an account sourced from Plaid, matched by
         `external_account_id`. Ownership is always the authenticated
@@ -116,12 +110,6 @@ class AccountRepository(BaseRepository[AccountModel]):
             ):
                 value = -value
             setattr(row, field, value)
-        await self.session.flush()
-        return _to_domain(row)
-
-    async def update_balance(self, account_id: UUID, new_balance) -> Account:
-        row = await self._get_or_raise("Account", account_id)
-        row.balance = new_balance
         await self.session.flush()
         return _to_domain(row)
 

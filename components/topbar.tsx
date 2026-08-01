@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { Search, Bell, Sun, Moon, ChevronRight } from "lucide-react";
+import { Search, Sun, Moon, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PlaidLinkButton } from "@/components/plaid-link-button";
 import { KeyboardShortcut } from "@/components/keyboard-shortcut";
@@ -11,6 +11,8 @@ const titles: Record<string, string> = {
   "/": "Overview",
   "/accounts": "Accounts",
   "/transactions": "Transactions",
+  "/budget": "Budget",
+  "/investments": "Investments",
   "/projections": "Projections",
   "/insights": "Insights",
   "/settings": "Settings",
@@ -49,15 +51,6 @@ export function Topbar({ onOpenCommand }: { onOpenCommand: () => void }) {
           onClick={toggle}
         >
           {theme === "dark" ? <Sun /> : <Moon />}
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Notifications"
-          className="relative"
-        >
-          <Bell />
-          <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-primary" />
         </Button>
         <PlaidLinkButton size="sm" className="ml-1" />
       </div>

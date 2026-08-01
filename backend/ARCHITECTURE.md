@@ -75,7 +75,8 @@ Domain models (dataclasses/value objects)   <- Account, Transaction, Scenario, P
         |
 Persistence layer (SQLAlchemy repositories) <- translates domain <-> ORM rows
         |
-External integrations (Plaid, CSV, manual entry)  <- normalized behind FinancialDataProvider
+External integrations (Plaid, CSV)       <- normalized behind FinancialDataProvider
+Manual entry routes                       <- persist normalized domain entities directly
 ```
 
 Rules enforced by the folder structure and by code review / CI lint:
@@ -98,10 +99,10 @@ Core entities (see `app/domain/entities.py` for the actual dataclasses):
   allocation, default withdrawal rate, include-Social-Security flag,
   inflation assumption, expected-return assumption. Backs the Settings →
   Planning tab and seeds new scenarios.
-- **Institution** — a linked data source (Plaid item, or manual).
+- **Institution** — a linked Plaid data source.
 - **Account** — normalized account (Investment / Depository / Retirement /
-  Credit / Loan / Property), always in the user's base currency, sourced
-  from exactly one `FinancialDataProvider`.
+  Credit / Loan / Property), always in the user's base currency, populated
+  either by a provider integration or a validated manual-entry route.
 - **Holding** — investment position within an Investment/Retirement account
   (symbol, quantity, cost basis, asset class) — needed for allocation and
   tax-lot-aware recommendations even though the current UI only shows
@@ -214,7 +215,7 @@ backend/
     core/
       config.py                 # Pydantic Settings (env-driven)
       security.py                # JWT issue/verify, password hashing
-      database.py                 # async engine/session factory
+      session.py                  # async engine/session factory
       exceptions.py                # domain exceptions -> HTTP mapping
     domain/
       entities.py                  # framework-free dataclasses (User, Account, Scenario, ...)
@@ -248,12 +249,9 @@ backend/
     providers/
       base.py                        # FinancialDataProvider ABC
       plaid_provider.py
-      manual_provider.py
       csv_import_provider.py
-      normalizer.py                   # provider payload -> domain Account/Transaction
     ai/
       tool_registry.py                 # ToolRegistry: name -> (schema, handler)
-      tool_schemas.py                   # Gemini-compatible JSON schemas, generated from Pydantic
       agent.py                          # orchestration loop (LLM <-> tools)
       tools/
         forecast_tools.py
@@ -391,13 +389,13 @@ FinancialDataProvider (ABC)
   get_holdings(user, account_id) -> list[NormalizedHolding]
 
 PlaidProvider(FinancialDataProvider)     # calls Plaid, maps Plaid types -> normalized
-ManualProvider(FinancialDataProvider)     # reads directly from the DB (user-entered)
 CSVImportProvider(FinancialDataProvider)   # parses uploaded CSV -> normalized
 ```
 
 Nothing outside `app/providers/` ever imports a Plaid SDK type. Sync jobs and
-`POST /accounts/{id}/sync` call `provider.get_accounts()` /
-`normalizer.to_domain_account()` and hand the result to the repository.
+`POST /accounts/{id}/sync` call `PlaidProvider`, which maps SDK payloads to
+domain entities before handing them to repositories. Manual-entry routes
+construct the same domain entities directly after Pydantic validation.
 
 ---
 
@@ -494,7 +492,7 @@ against known values, independent of any DB.
 
 **Phase 2 — Persistence + core CRUD.** SQLAlchemy models, repositories,
 Alembic migration, `/accounts`, `/transactions`, `/scenarios`
-CRUD endpoints. Manual + CSV providers (no external dependency).
+CRUD endpoints. Manual-entry routes plus CSV import provider (no external dependency).
 
 **Phase 3 — Projections API.** `/simulations/*`, `/scenarios/{id}/run` +
 `simulation_runs`, scenario comparison endpoint — this is what unblocks the
@@ -509,8 +507,10 @@ wrappers, Gemini `AgentOrchestrator`, authenticated financial context,
 database-backed conversation memory, `/agent/chat`, and the Insights chat
 surface.
 
-**Phase 6 — Plaid integration.** `PlaidProvider`, webhook handling, account
-linking flow, scheduled sync job.
+**Phase 6 — Plaid integration (implemented for Link and polling sync).**
+`PlaidProvider`, account linking/reconnect flows, encrypted token storage,
+explicit refresh, and a singleton scheduled sync job. Webhook ingestion is
+not yet implemented.
 
 **Phase 7 — Monte Carlo & optimization.** Swap in a real sampler in
 `simulation/monte_carlo.py`, `PortfolioAllocationService` optimization,

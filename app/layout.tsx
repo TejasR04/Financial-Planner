@@ -20,7 +20,6 @@ export const metadata: Metadata = {
   title: "Meridian — Financial Planning Platform",
   description:
     "A precision financial modeling and planning platform for analysts. Model scenarios, track accounts, and act on insights.",
-  generator: "v0.app",
 };
 
 export const viewport: Viewport = {

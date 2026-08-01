@@ -113,10 +113,6 @@ export function NewScenarioDialog({ open, onClose, scenario = null }: Props) {
               ? { clear_income_target: true }
               : {}),
         });
-        // The dashboard reuses the scenario's most recent run rather than
-        // re-simulating on every page load (Monte Carlo isn't free) — so
-        // without this, editing a scenario would silently keep showing
-        // the OLD chart/sensitivity numbers from before the edit.
         if (currentAge != null && currentRetirementBalance != null) {
           await api.scenarios.run(scenario.id, {
             current_age: currentAge,
