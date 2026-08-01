@@ -36,6 +36,9 @@ def test_overweight_equity_suggests_sell():
     assert result.is_within_tolerance is False
     assert result.rebalance_suggestions[0].action == "sell"
     assert result.rebalance_suggestions[0].asset_class == AssetClass.EQUITY
+    assert result.rebalance_suggestions[1].action == "buy"
+    assert result.rebalance_suggestions[1].asset_class == AssetClass.FIXED_INCOME
+    assert result.rebalance_suggestions[0].amount == result.rebalance_suggestions[1].amount
 
 
 def test_underweight_equity_suggests_buy():
@@ -45,7 +48,11 @@ def test_underweight_equity_suggests_buy():
         _holding(AssetClass.FIXED_INCOME, Decimal("80000")),
     ]
     result = service.analyze(holdings, target_equity_allocation=Decimal("0.60"))
-    assert result.rebalance_suggestions[0].action == "buy"
+    assert result.rebalance_suggestions[0].action == "sell"
+    assert result.rebalance_suggestions[0].asset_class == AssetClass.FIXED_INCOME
+    assert result.rebalance_suggestions[1].action == "buy"
+    assert result.rebalance_suggestions[1].asset_class == AssetClass.EQUITY
+    assert result.rebalance_suggestions[0].amount == result.rebalance_suggestions[1].amount
 
 
 def test_empty_portfolio_does_not_divide_by_zero():

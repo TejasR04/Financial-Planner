@@ -46,45 +46,84 @@ class DebtOptimizationService:
         """
         if not liabilities:
             return DebtPayoffPlan(strategy, 0, ZERO, [], [])
+        if extra_monthly_payment < ZERO:
+            raise ValueError("extra_monthly_payment must be non-negative")
 
         balances = {str(i): l.principal for i, l in enumerate(liabilities)}
         monthly_rates = {str(i): l.interest_rate / Decimal(12) for i, l in enumerate(liabilities)}
         minimums = {str(i): l.minimum_payment for i, l in enumerate(liabilities)}
-        priority_key = (
-            (lambda i: -liabilities[int(i)].interest_rate)
-            if strategy == DebtPayoffStrategy.AVALANCHE
-            else (lambda i: liabilities[int(i)].principal)
-        )
+        total_monthly_budget = sum(minimums.values(), ZERO) + extra_monthly_payment
+
+        def ordered_active() -> list[str]:
+            active = [i for i, balance in balances.items() if balance > ZERO]
+            if strategy == DebtPayoffStrategy.AVALANCHE:
+                return sorted(
+                    active,
+                    key=lambda i: (
+                        -liabilities[int(i)].interest_rate,
+                        balances[i],
+                        int(i),
+                    ),
+                )
+            return sorted(active, key=lambda i: (balances[i], int(i)))
 
         schedule: list[DebtPayoffMonth] = []
         payoff_order: list[str] = []
         total_interest = ZERO
         month = 0
-        freed_up_minimums = ZERO
-
         while any(b > ZERO for b in balances.values()) and month < max_months:
             month += 1
             active_ids = [i for i, b in balances.items() if b > ZERO]
-            ordered = sorted(active_ids, key=priority_key)
-            focus_id = ordered[0]
+            payments = {i: ZERO for i in active_ids}
 
+            # Interest accrues before this month's payments.
             for lid in active_ids:
                 rate = monthly_rates[lid]
                 interest = (balances[lid] * rate).quantize(Decimal("0.01"))
                 total_interest += interest
                 balances[lid] += interest
 
-                payment = minimums[lid]
-                if lid == focus_id:
-                    payment += extra_monthly_payment + freed_up_minimums
-                payment = min(payment, balances[lid])
+            # Preserve one fixed monthly payment budget. Minimum payments are
+            # made once, and any unused portion (including payoff overage) is
+            # immediately available to the priority waterfall.
+            remaining_budget = total_monthly_budget
+            for lid in active_ids:
+                payment = min(minimums[lid], balances[lid], remaining_budget)
                 balances[lid] -= payment
+                payments[lid] += payment
+                remaining_budget -= payment
 
-                schedule.append(DebtPayoffMonth(month, lid, payment.quantize(Decimal("0.01")), balances[lid]))
+            while remaining_budget > ZERO:
+                ordered = ordered_active()
+                if not ordered:
+                    break
+                lid = ordered[0]
+                payment = min(remaining_budget, balances[lid])
+                balances[lid] -= payment
+                payments[lid] += payment
+                remaining_budget -= payment
 
-                if balances[lid] <= ZERO and lid not in payoff_order:
-                    payoff_order.append(lid)
-                    freed_up_minimums += minimums[lid]
+            newly_paid = [
+                lid for lid in active_ids
+                if balances[lid] <= ZERO and lid not in payoff_order
+            ]
+            if strategy == DebtPayoffStrategy.AVALANCHE:
+                newly_paid.sort(
+                    key=lambda i: (-liabilities[int(i)].interest_rate, int(i))
+                )
+            else:
+                newly_paid.sort(key=int)
+            payoff_order.extend(newly_paid)
+
+            for lid in active_ids:
+                schedule.append(
+                    DebtPayoffMonth(
+                        month,
+                        lid,
+                        payments[lid].quantize(Decimal("0.01")),
+                        balances[lid].quantize(Decimal("0.01")),
+                    )
+                )
 
         return DebtPayoffPlan(
             strategy=strategy,

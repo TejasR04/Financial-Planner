@@ -82,9 +82,36 @@ class PortfolioAllocationService:
             target_equity_value = total * target_equity_allocation
             delta = equity_value - target_equity_value
             if delta > ZERO:
-                suggestions.append(RebalanceSuggestion(AssetClass.EQUITY, "sell", delta.quantize(Decimal("0.01"))))
+                amount = delta.quantize(Decimal("0.01"))
+                suggestions.extend([
+                    RebalanceSuggestion(AssetClass.EQUITY, "sell", amount),
+                    RebalanceSuggestion(AssetClass.FIXED_INCOME, "buy", amount),
+                ])
             else:
-                suggestions.append(RebalanceSuggestion(AssetClass.EQUITY, "buy", (-delta).quantize(Decimal("0.01"))))
+                amount = (-delta).quantize(Decimal("0.01"))
+                non_equity_classes = [
+                    (asset_class, value)
+                    for asset_class, value in by_class.items()
+                    if asset_class not in EQUITY_CLASSES and value > ZERO
+                ]
+                # Fund the equity purchase from existing non-equity buckets,
+                # largest first, without suggesting a sale larger than the
+                # value held in any one class.
+                remaining = amount
+                for source_class, value in sorted(
+                    non_equity_classes, key=lambda item: item[1], reverse=True
+                ):
+                    sale = min(remaining, value).quantize(Decimal("0.01"))
+                    if sale > ZERO:
+                        suggestions.append(
+                            RebalanceSuggestion(source_class, "sell", sale)
+                        )
+                        remaining -= sale
+                    if remaining <= ZERO:
+                        break
+                suggestions.append(
+                    RebalanceSuggestion(AssetClass.EQUITY, "buy", amount)
+                )
 
         return AllocationAnalysis(
             total_market_value=total,

@@ -42,17 +42,15 @@ class RecommendationEngine:
         return sorted(drafts, key=lambda d: d.impact_value, reverse=True)
 
     def _idle_cash_rule(self, snapshot: FinancialSnapshot) -> list[RecommendationDraft]:
-        """Flags checking-account balances well above a reasonable spend
-        buffer and estimates the interest given up vs. the best-APY
-        depository account on file."""
-        checking_accounts = [
+        """Estimate incremental yield from moving excess low-yield cash."""
+        cash_accounts = [
             a for a in snapshot.accounts if a.type == AccountType.DEPOSITORY and a.balance > 0
         ]
-        if not checking_accounts:
+        if not cash_accounts:
             return []
 
         best_apy_account = max(
-            (a for a in snapshot.accounts if a.type == AccountType.DEPOSITORY and a.apy),
+            (a for a in cash_accounts if a.apy is not None),
             key=lambda a: a.apy or ZERO,
             default=None,
         )
@@ -62,15 +60,43 @@ class RecommendationEngine:
         reserve_target = snapshot.profile.cash_reserve_target
         if reserve_target is None:
             return []
-        total_cash = sum((account.balance for account in checking_accounts), ZERO)
+        total_cash = sum((account.balance for account in cash_accounts), ZERO)
         excess = total_cash - reserve_target
         if excess <= Decimal("1000") or not best_apy_account.apy:
             return []
-        annual_interest_gain = (excess * best_apy_account.apy / Decimal(100)).quantize(Decimal("0.01"))
+
+        # Move only enough low-yield source cash to account for the total
+        # amount above the reserve. Funds already in the destination neither
+        # need moving nor generate a new benefit.
+        remaining_to_move = excess
+        moved = ZERO
+        annual_interest_gain = ZERO
+        weighted_source_interest = ZERO
+        sources = sorted(
+            (a for a in cash_accounts if a.id != best_apy_account.id),
+            key=lambda a: a.apy or ZERO,
+        )
+        for source in sources:
+            source_apy = source.apy or ZERO
+            apy_spread = best_apy_account.apy - source_apy
+            if apy_spread <= ZERO or remaining_to_move <= ZERO:
+                continue
+            transfer = min(source.balance, remaining_to_move)
+            moved += transfer
+            remaining_to_move -= transfer
+            annual_interest_gain += transfer * apy_spread / Decimal("100")
+            weighted_source_interest += transfer * source_apy
+
+        if moved <= Decimal("1000") or annual_interest_gain <= ZERO:
+            return []
+        annual_interest_gain = annual_interest_gain.quantize(Decimal("0.01"))
+        current_weighted_apy = (weighted_source_interest / moved).quantize(Decimal("0.01"))
         return [RecommendationDraft(
             title=f"Move excess cash to {best_apy_account.name}",
-            body=(f"Across your deposit accounts, cash is about ${excess:,.0f} above your configured "
-                  f"${reserve_target:,.0f} reserve target. At {best_apy_account.apy}% APY, the estimated annual interest is ${annual_interest_gain:,.0f}."),
+            body=(f"Move about ${moved:,.0f} of cash above your configured "
+                  f"${reserve_target:,.0f} reserve target from accounts averaging "
+                  f"{current_weighted_apy}% APY to {best_apy_account.apy}% APY. "
+                  f"The estimated incremental annual interest is ${annual_interest_gain:,.0f} before tax."),
             category="Cash Management", impact_value=annual_interest_gain,
             effort=RecommendationEffort.LOW, confidence=0.85,
         )]

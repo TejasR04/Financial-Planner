@@ -114,6 +114,40 @@ def test_net_worth_projection_series_length_and_direction():
     assert result.projected_net_worth_at_horizon > result.net_worth_today
 
 
+def test_net_worth_projection_uses_account_specific_growth_rates():
+    service = NetWorthProjectionService()
+    user_id = uuid4()
+    accounts = [
+        Account(id=uuid4(), user_id=user_id, name="Brokerage", type=AccountType.INVESTMENT,
+                balance=Decimal("100000")),
+        Account(id=uuid4(), user_id=user_id, name="Savings", type=AccountType.DEPOSITORY,
+                balance=Decimal("100000"), apy=Decimal("1.0")),
+        Account(id=uuid4(), user_id=user_id, name="Home", type=AccountType.PROPERTY,
+                balance=Decimal("100000")),
+    ]
+    assumptions = PlanningAssumptions(
+        current_age=40, retirement_age=65,
+        expected_return=Decimal("0.10"), inflation_rate=Decimal("0.03"),
+    )
+
+    result = service.project(accounts, assumptions, years=1)
+
+    assert result.series[0].assets == Decimal("314000.00")
+
+
+def test_net_worth_projection_classifies_liabilities_by_account_type():
+    service = NetWorthProjectionService()
+    account = Account(
+        id=uuid4(), user_id=uuid4(), name="Credit card",
+        type=AccountType.CREDIT, balance=Decimal("10000"),
+    )
+    assumptions = PlanningAssumptions(current_age=40, retirement_age=65)
+
+    result = service.project([account], assumptions, years=0)
+
+    assert result.net_worth_today == Decimal("-10000")
+
+
 # ---------- CashFlowProjectionService ----------
 
 def test_cash_flow_projection_basic():
@@ -201,6 +235,27 @@ def test_debt_optimization_snowball_pays_smallest_balance_first():
     assert plan.payoff_order[0] == "1"  # smaller balance, index 1
 
 
+def test_debt_optimization_conserves_monthly_payment_budget():
+    service = DebtOptimizationService()
+    liabilities = [
+        Liability(id=uuid4(), account_id=uuid4(), principal=Decimal("100"),
+                  interest_rate=Decimal("0"), term_months=12,
+                  minimum_payment=Decimal("50"), origination_date=date(2025, 1, 1)),
+        Liability(id=uuid4(), account_id=uuid4(), principal=Decimal("1000"),
+                  interest_rate=Decimal("0"), term_months=24,
+                  minimum_payment=Decimal("50"), origination_date=date(2025, 1, 1)),
+    ]
+
+    plan = service.optimize(
+        liabilities, extra_monthly_payment=Decimal("400"),
+        strategy=DebtPayoffStrategy.AVALANCHE,
+    )
+    first_month = [row for row in plan.schedule if row.month_index == 1]
+
+    assert sum((row.payment for row in first_month), Decimal("0")) == Decimal("500.00")
+    assert sum((row.remaining_balance for row in first_month), Decimal("0")) == Decimal("600.00")
+
+
 # ---------- FinancialHealthService ----------
 
 def test_financial_health_score_within_bounds():
@@ -237,6 +292,24 @@ def test_recommendation_engine_flags_idle_cash():
     snapshot = FinancialSnapshot(user=user, profile=profile, accounts=accounts)
     drafts = engine.generate(snapshot)
     assert any("Move excess cash" in d.title for d in drafts)
+    assert drafts[0].impact_value == Decimal("989.00")
+    assert "incremental annual interest" in drafts[0].body
+
+
+def test_recommendation_engine_uses_apy_spread_not_destination_apy():
+    engine = RecommendationEngine()
+    user = User(id=uuid4(), email="a@b.com", full_name="Test User")
+    profile = PlanningProfile(user_id=user.id, cash_reserve_target=Decimal("12000"))
+    accounts = [
+        Account(id=uuid4(), user_id=user.id, name="Savings", type=AccountType.DEPOSITORY,
+                balance=Decimal("30000"), apy=Decimal("4.0")),
+        Account(id=uuid4(), user_id=user.id, name="HYSA", type=AccountType.DEPOSITORY,
+                balance=Decimal("5000"), apy=Decimal("5.0")),
+    ]
+
+    drafts = engine.generate(FinancialSnapshot(user=user, profile=profile, accounts=accounts))
+
+    assert drafts[0].impact_value == Decimal("230.00")
 
 
 def test_recommendation_engine_suppresses_cash_advice_without_a_reserve_target():

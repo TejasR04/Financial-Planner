@@ -209,9 +209,10 @@ async def run_scenario(
             "seed": result.monte_carlo.seed,
             "return_volatility": str(implied_return_volatility(assumptions.target_equity_allocation)),
             "allocation": str(assumptions.target_equity_allocation),
-            "return_basis": "nominal_pre_tax_pre_fee",
+            "return_basis": "real_pre_tax_pre_fee",
             "withdrawal_timing": "start_of_year",
-            "inflation_treatment": "withdrawals_escalate_annually",
+            "inflation_treatment": "nominal returns deflated by constant inflation; withdrawals flat in today's dollars",
+            "retirement_dollar_basis": "today_dollars",
             "percentile_method": result.monte_carlo.percentile_method,
             "exclusions": ["taxes", "investment fees", "advisory fees"],
         } if result.monte_carlo else None),
@@ -221,7 +222,7 @@ async def run_scenario(
         user_id=current_user.id,
         scenario_id=scenario_id,
         engine_version=result.engine_version,
-        net_worth_at_target_age=result.retirement_projection.projected_balance_at_retirement,
+        net_worth_at_target_age=result.net_worth_projection.projected_net_worth_at_horizon,
         monthly_sustainable_withdrawal=result.retirement_projection.monthly_sustainable_withdrawal,
         trajectory=trajectory,
         retirement_trajectory=retirement_trajectory,
@@ -255,7 +256,7 @@ async def preview_scenario(
         for p in result.net_worth_projection.series
     ]
     return ScenarioPreviewResponse(
-        net_worth_at_target_age=result.retirement_projection.projected_balance_at_retirement,
+        net_worth_at_target_age=result.net_worth_projection.projected_net_worth_at_horizon,
         monthly_sustainable_withdrawal=result.retirement_projection.monthly_sustainable_withdrawal,
         success_rate=(round(result.monte_carlo.success_rate, 4) if result.monte_carlo else None),
         trajectory=trajectory,
