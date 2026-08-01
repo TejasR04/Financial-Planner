@@ -497,8 +497,8 @@ export const api = {
       category?: string;
       since?: string;
       until?: string;
-    }) => {
-      const pageSize = 1000;
+    }, signal?: AbortSignal) => {
+      const pageSize = 200;
       const data: ApiTransaction[] = [];
       let offset = 0;
       let total = Number.POSITIVE_INFINITY;
@@ -508,7 +508,7 @@ export const api = {
           ...params,
           limit: pageSize,
           offset,
-        });
+        }, signal);
         data.push(...page.data);
         total = page.total;
         if (page.data.length === 0) break;

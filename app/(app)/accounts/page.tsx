@@ -14,19 +14,9 @@ import { PlaidLinkButton } from "@/components/plaid-link-button";
 import { formatCurrency, type Account, type Institution } from "@/lib/data";
 import { ApiError, api } from "@/lib/api-client";
 import { useAccountsData, useDataRefresh, useInstitutionsData } from "@/lib/data-provider";
+import { requestPlaidRefresh } from "@/lib/plaid-sync";
 
 type SyncFeedback = { tone: "success" | "error"; message: string } | null;
-
-let activePlaidRefresh: ReturnType<typeof api.plaid.refresh> | null = null;
-
-function requestPlaidRefresh() {
-  if (activePlaidRefresh === null) {
-    activePlaidRefresh = api.plaid.refresh().finally(() => {
-      activePlaidRefresh = null;
-    });
-  }
-  return activePlaidRefresh;
-}
 
 const isLiability = (account: Account) => account.type === "Credit" || account.type === "Loan";
 

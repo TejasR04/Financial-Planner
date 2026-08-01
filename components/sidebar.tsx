@@ -2,7 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronsLeft, LogOut, PiggyBank } from "lucide-react";
+import { ChevronsLeft, LogOut } from "lucide-react";
+import { MeridianAppIcon } from "@/components/meridian-logo";
 import { navGroups } from "@/lib/nav";
 import { cn } from "@/lib/utils";
 import { useUserAccount } from "@/lib/data-provider";
@@ -35,9 +36,7 @@ export function Sidebar({
     >
       {/* Brand */}
       <div className="flex h-12 items-center gap-2 border-b border-sidebar-border px-3">
-        <div className="flex size-7 shrink-0 items-center justify-center rounded-md bg-primary text-primary-foreground">
-          <PiggyBank className="size-4" />
-        </div>
+        <MeridianAppIcon className="size-7 shrink-0 rounded-md shadow-none" />
         {!collapsed && (
           <div className="flex min-w-0 flex-col">
             <span className="truncate text-[13px] font-semibold leading-tight text-sidebar-accent-foreground">

@@ -223,6 +223,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (status !== "authenticated") return;
     let cancelled = false;
+    const controller = new AbortController();
 
     async function loadAll() {
       setLoading(true);
@@ -252,7 +253,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           api.users.planningProfile(),
           api.accounts.list(),
           optional("institutions", api.accounts.institutions(), []),
-          optional("recent transactions", api.transactions.listAll({ since: twelveMonthWindow().startDate }), []),
+          optional(
+            "recent transactions",
+            api.transactions.listAll(
+              { since: twelveMonthWindow().startDate },
+              controller.signal,
+            ),
+            [],
+          ),
           optional("scenarios", api.scenarios.list(), []),
           optional("recommendations", api.recommendations.list("new"), []),
           optional("financial health", api.financialHealth.get(), null, false),
@@ -512,6 +520,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     loadAll();
     return () => {
       cancelled = true;
+      controller.abort();
     };
   }, [status, refreshTick]);
 
