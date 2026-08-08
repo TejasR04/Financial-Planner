@@ -131,14 +131,12 @@ async def budget_summary(
 async def uncategorized_transactions(
     month: date | None = None, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
-    selected_month = (month or date.today()).replace(day=1)
-    end = selected_month.replace(day=monthrange(selected_month.year, selected_month.month)[1])
     repo = BudgetRepository(db)
     categories = await repo.list_categories(current_user.id)
     rules = await repo.list_rules(current_user.id)
     active_category_ids = {row.id for row in categories if row.active}
     rule_inputs = [MerchantRuleInput(rule.budget_category_id, rule.merchant_pattern) for rule, _ in rules]
-    rows = await repo.expense_transactions_for_month(current_user.id, selected_month, end)
+    rows = await repo.uncategorized_expense_transactions(current_user.id)
     result = []
     for row in rows:
         classification = service.classify_category_id(

@@ -31,12 +31,13 @@ async def list_transactions(
     until: date | None = None,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
+    include_archived: bool = False,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> TransactionListResponse:
     transactions, total = await TransactionRepository(db).list_for_user(
         current_user.id, account_id=account_id, category=category, since=since, until=until,
-        limit=limit, offset=offset,
+        limit=limit, offset=offset, include_archived=include_archived,
     )
     return TransactionListResponse(
         data=[TransactionResponse.model_validate(t, from_attributes=True) for t in transactions],

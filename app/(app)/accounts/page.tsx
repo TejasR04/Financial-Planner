@@ -105,14 +105,15 @@ export default function AccountsPage() {
     }
   };
 
-  const archiveManual = async (account: Account) => {
-    if (!window.confirm(`Archive ${account.name}?`)) return;
+  const archiveAccount = async (account: Account) => {
+    const action = account.institutionId ? "Disconnect" : "Archive";
+    if (!window.confirm(`${action} ${account.name}?${account.institutionId ? " This only removes this account; the rest of the institution stays linked." : ""}`)) return;
     setPendingActionId(account.id);
     try {
       await api.accounts.delete(account.id);
       refreshData();
     } catch (error) {
-      setSyncFeedback({ tone: "error", message: error instanceof ApiError ? error.message : `Couldn't archive ${account.name}.` });
+      setSyncFeedback({ tone: "error", message: error instanceof ApiError ? error.message : `Couldn't ${action.toLowerCase()} ${account.name}.` });
     } finally {
       setPendingActionId(null);
     }
@@ -122,14 +123,15 @@ export default function AccountsPage() {
   const detailsButton = (account: Account) => detailsEligible(account) ? <Button variant="ghost" size="icon-xs" aria-label={`Planning details for ${account.name}`} onClick={() => setDetailsAccount(account)}><SlidersHorizontal /></Button> : null;
   const cardActions = (account: Account) => account.institutionId ? (
     <div className="flex items-center">{detailsButton(account)}
+    <Button variant="ghost" size="icon-xs" aria-label={`Rename ${account.name}`} onClick={() => { setEditingAccount(account); setManualDialogOpen(true); }}><Pencil /></Button>
     <Button variant="ghost" size="icon-xs" aria-label={`Sync ${account.name}`} onClick={() => { const institution = institutions.find((item) => item.id === account.institutionId); if (institution) void syncInstitution(institution); }} disabled={pendingActionId !== null}>
       <RefreshCw className={pendingActionId === account.institutionId ? "animate-spin" : undefined} />
-    </Button></div>
+    </Button><Button variant="ghost" size="icon-xs" aria-label={`Disconnect ${account.name}`} onClick={() => void archiveAccount(account)} disabled={pendingActionId === account.id}><Unlink /></Button></div>
   ) : (
     <div className="flex items-center">
       {detailsButton(account)}
       <Button variant="ghost" size="icon-xs" aria-label={`Edit ${account.name}`} onClick={() => { setEditingAccount(account); setManualDialogOpen(true); }}><Pencil /></Button>
-      <Button variant="ghost" size="icon-xs" aria-label={`Archive ${account.name}`} onClick={() => void archiveManual(account)} disabled={pendingActionId === account.id}><Unlink /></Button>
+      <Button variant="ghost" size="icon-xs" aria-label={`Archive ${account.name}`} onClick={() => void archiveAccount(account)} disabled={pendingActionId === account.id}><Unlink /></Button>
     </div>
   );
 

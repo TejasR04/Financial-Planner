@@ -140,10 +140,9 @@ class PlaidClient:
             "language": "en",
         }
         if update_access_token is None:
-            # Keep first-time linking broadly compatible with everyday U.S.
-            # checking, savings, and credit institutions. Investments can be
-            # enabled as a separate consented product later when needed.
-            request_args["products"] = [Products("transactions")]
+            # Request investment access alongside Transactions so brokerage
+            # and retirement Items can supply their holdings and allocation.
+            request_args["products"] = [Products("transactions"), Products("investments")]
         else:
             # Credential-repair update mode keeps the access token and does
             # not need to request a new product consent.

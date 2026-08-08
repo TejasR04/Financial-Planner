@@ -56,3 +56,12 @@ class AccountListResponse(BaseModel):
     total_assets: Decimal
     total_liabilities: Decimal
     net_worth: Decimal
+
+
+class DisconnectedDataSummary(BaseModel):
+    account_count: int
+    transaction_count: int
+
+
+class DisconnectedDataDeleteResponse(DisconnectedDataSummary):
+    deleted: bool = True

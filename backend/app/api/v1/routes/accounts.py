@@ -18,6 +18,8 @@ from app.schemas.account import (
     AccountResponse,
     AccountUpdateRequest,
     InstitutionResponse,
+    DisconnectedDataDeleteResponse,
+    DisconnectedDataSummary,
 )
 from app.schemas.plaid import PlaidRefreshInstitutionResponse
 from app.providers.plaid_provider import PlaidProvider
@@ -31,6 +33,19 @@ from app.services.portfolio_allocation_service import PortfolioAllocationService
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 allocation_service = PortfolioAllocationService()
+
+
+@router.get("/disconnected-imported-data", response_model=DisconnectedDataSummary)
+async def disconnected_imported_data_summary(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> DisconnectedDataSummary:
+    account_count, transaction_count = await AccountRepository(db).disconnected_imported_data_summary(current_user.id)
+    return DisconnectedDataSummary(account_count=account_count, transaction_count=transaction_count)
+
+
+@router.delete("/disconnected-imported-data", response_model=DisconnectedDataDeleteResponse)
+async def permanently_delete_disconnected_imported_data(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)) -> DisconnectedDataDeleteResponse:
+    account_count, transaction_count = await AccountRepository(db).permanently_delete_disconnected_imported_data(current_user.id)
+    await db.commit()
+    return DisconnectedDataDeleteResponse(account_count=account_count, transaction_count=transaction_count)
 
 
 def _to_response(account: Account, institutions: dict[UUID, Institution]) -> AccountResponse:
@@ -179,10 +194,11 @@ async def update_account(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> AccountResponse:
-    updated = await AccountRepository(db).update_manual_for_user(
+    updated = await AccountRepository(db).update_for_user(
         current_user.id, account_id, **body.model_dump(exclude_unset=True)
     )
-    await InvestmentValueSnapshotRepository(db).record_for_accounts([updated])
+    if "balance" in body.model_fields_set:
+        await InvestmentValueSnapshotRepository(db).record_for_accounts([updated])
     await db.commit()
     return _to_response(updated, {})
 
@@ -206,7 +222,9 @@ async def delete_account(
     account_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> None:
     account = await AccountRepository(db).get_for_user(current_user.id, account_id)
+    repository = AccountRepository(db)
     if account.institution_id is not None:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Unlink the institution instead of deleting a linked account.")
-    await AccountRepository(db).archive_for_user(current_user.id, account_id)
+        await repository.archive_and_detach_linked_account(current_user.id, account_id)
+    else:
+        await repository.archive_for_user(current_user.id, account_id)
     await db.commit()

@@ -136,3 +136,18 @@ class BudgetRepository(BaseRepository[BudgetCategoryModel]):
             )
         )
         return list(result.scalars().all())
+
+    async def uncategorized_expense_transactions(self, user_id: UUID) -> list[TransactionModel]:
+        from app.persistence.models import AccountModel
+
+        result = await self.session.execute(
+            select(TransactionModel)
+            .join(AccountModel, AccountModel.id == TransactionModel.account_id)
+            .where(
+                AccountModel.user_id == user_id,
+                AccountModel.archived_at.is_(None),
+                TransactionModel.type == "expense",
+            )
+            .order_by(TransactionModel.posted_at.desc(), TransactionModel.id.desc())
+        )
+        return list(result.scalars().all())

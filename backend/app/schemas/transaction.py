@@ -19,6 +19,9 @@ class TransactionResponse(BaseModel):
     type: TransactionType
     status: TransactionStatus
     budget_category_id: UUID | None = None
+    budget_category_name: str | None = None
+    account_name: str | None = None
+    account_archived: bool = False
 
 
 class TransactionListResponse(BaseModel):

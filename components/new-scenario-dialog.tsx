@@ -188,15 +188,7 @@ export function NewScenarioDialog({ open, onClose, scenario = null }: Props) {
               <label className="mb-1 block text-[12px] font-medium text-foreground">
                 Expected real return
               </label>
-              <input
-                className={inputClass}
-                type="number"
-                min={0}
-                max={20}
-                step="0.1"
-                value={expectedReturn}
-                onChange={(e) => setExpectedReturn(e.target.value)}
-              />
+              <div className="relative"><input className={`${inputClass} pr-7`} type="number" inputMode="decimal" min={0} max={20} step="0.1" value={expectedReturn} onChange={(e) => setExpectedReturn(e.target.value)} /><span className="pointer-events-none absolute right-2.5 top-2 text-[13px] text-muted-foreground">%</span></div>
               <p className="mt-1 text-[11px] text-muted-foreground">Annual %, e.g. 6.5</p>
             </div>
           </div>

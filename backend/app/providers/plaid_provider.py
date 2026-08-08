@@ -215,6 +215,7 @@ class PlaidProvider(FinancialDataProvider):
                 )
                 for raw_account in raw_accounts
             ]
+            saved_accounts = [account for account in saved_accounts if account is not None]
             await self._investment_history.record_for_accounts(saved_accounts)
             await self._accounts.archive_missing_from_plaid(
                 user_id,

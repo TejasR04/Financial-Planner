@@ -9,7 +9,7 @@ from sqlalchemy import delete, func, select
 from app.core.exceptions import NotFoundError, ValidationError
 from app.domain.entities import Transaction
 from app.domain.enums import TransactionStatus, TransactionType
-from app.persistence.models import AccountModel, TransactionModel
+from app.persistence.models import AccountModel, BudgetCategoryModel, TransactionModel
 from app.persistence.repositories.base import BaseRepository
 
 
@@ -25,12 +25,16 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         until: date | None = None,
         limit: int = 50,
         offset: int = 0,
+        include_archived: bool = False,
     ) -> tuple[list[Transaction], int]:
         query = (
-            select(TransactionModel)
+            select(TransactionModel, AccountModel.name, AccountModel.archived_at, BudgetCategoryModel.name)
             .join(AccountModel, AccountModel.id == TransactionModel.account_id)
+            .outerjoin(BudgetCategoryModel, BudgetCategoryModel.id == TransactionModel.budget_category_id)
             .where(AccountModel.user_id == user_id)
         )
+        if not include_archived:
+            query = query.where(AccountModel.archived_at.is_(None))
         if account_id is not None:
             query = query.where(TransactionModel.account_id == account_id)
         if category is not None and category.strip():
@@ -40,7 +44,10 @@ class TransactionRepository(BaseRepository[TransactionModel]):
             # like spaces for a natural search experience.
             normalized_category = func.replace(func.lower(TransactionModel.category), "_", " ")
             normalized_query = " ".join(category.lower().replace("_", " ").split())
-            query = query.where(normalized_category.contains(normalized_query, autoescape=True))
+            query = query.where(
+                normalized_category.contains(normalized_query, autoescape=True)
+                | func.lower(BudgetCategoryModel.name).contains(normalized_query, autoescape=True)
+            )
         if since is not None:
             query = query.where(TransactionModel.posted_at >= since)
         if until is not None:
@@ -55,8 +62,11 @@ class TransactionRepository(BaseRepository[TransactionModel]):
             TransactionModel.posted_at.desc(), TransactionModel.id.desc()
         ).limit(limit).offset(offset)
         result = await self.session.execute(query)
-        rows = result.scalars().all()
-        return [_to_domain(row) for row in rows], total
+        rows = result.all()
+        return [
+            _to_domain(row, account_name=name, account_archived=archived_at is not None, budget_category_name=budget_name)
+            for row, name, archived_at, budget_name in rows
+        ], total
 
     async def create(self, account_id: UUID, transaction: Transaction) -> Transaction:
         row = TransactionModel(
@@ -243,7 +253,12 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         return {TransactionType(type_): Decimal(total) for type_, total in result.all()}
 
 
-def _to_domain(row: TransactionModel) -> Transaction:
+def _to_domain(
+    row: TransactionModel,
+    account_name: str | None = None,
+    account_archived: bool = False,
+    budget_category_name: str | None = None,
+) -> Transaction:
     return Transaction(
         id=row.id,
         account_id=row.account_id,
@@ -255,4 +270,7 @@ def _to_domain(row: TransactionModel) -> Transaction:
         status=TransactionStatus(row.status),
         external_transaction_id=row.external_transaction_id,
         budget_category_id=row.budget_category_id,
+        budget_category_name=budget_category_name,
+        account_name=account_name,
+        account_archived=account_archived,
     )

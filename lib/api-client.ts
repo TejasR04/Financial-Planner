@@ -205,6 +205,9 @@ export type ApiTransaction = {
   type: "income" | "expense" | "transfer" | "contribution";
   status: "cleared" | "pending";
   budget_category_id: string | null;
+  budget_category_name: string | null;
+  account_name: string | null;
+  account_archived: boolean;
 };
 
 export type ApiBudgetCategory = {
@@ -481,6 +484,7 @@ export const api = {
       category?: string;
       since?: string;
       until?: string;
+      includeArchived?: boolean;
     }, signal?: AbortSignal) => {
       const qs = new URLSearchParams();
       if (params?.limit) qs.set("limit", String(params.limit));
@@ -489,6 +493,7 @@ export const api = {
       if (params?.category) qs.set("category", params.category);
       if (params?.since) qs.set("since", params.since);
       if (params?.until) qs.set("until", params.until);
+      if (params?.includeArchived) qs.set("include_archived", "true");
       const suffix = qs.toString() ? `?${qs}` : "";
       return get<ApiTransactionList>(`/transactions${suffix}`, { signal });
     },

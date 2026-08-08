@@ -94,6 +94,7 @@ class InstitutionModel(Base):
     id: Mapped[uuid.UUID] = _uuid_pk()
     user_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("users.id"), index=True)
     name: Mapped[str] = mapped_column(String(255))
+    custom_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     provider: Mapped[str] = mapped_column(String(20))
     status: Mapped[str] = mapped_column(String(20), default="healthy")
     external_item_id: Mapped[str | None] = mapped_column(String(255), nullable=True)

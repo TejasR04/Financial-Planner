@@ -219,7 +219,7 @@ export default function BudgetPage() {
             <PanelHeader title="Categorization progress" description="Every assigned expense becomes part of your budget." />
             <div className="p-4">
               <p className="font-mono text-2xl font-semibold text-foreground">{uncategorized.length}</p>
-              <p className="mt-1 text-[12px] text-muted-foreground">uncategorized transactions this month</p>
+              <p className="mt-1 text-[12px] text-muted-foreground">uncategorized transactions across all time</p>
               <p className="mt-3 text-[12px] text-muted-foreground">{formatCurrency(Number(summary?.uncategorized.spent ?? 0))} posted · {formatCurrency(Number(summary?.uncategorized.pending ?? 0))} pending</p>
             </div>
           </Panel>
@@ -235,7 +235,7 @@ export default function BudgetPage() {
       </div>
 
       <Panel className="mt-4">
-        <PanelHeader title="Uncategorized inbox" description="Choose a category for each expense. We’ll then ask whether that merchant should become a rule." />
+        <PanelHeader title="Uncategorized inbox" description="Choose a category for any unassigned expense. Change an existing category from Transactions." />
         {uncategorized.length ? <div className="overflow-x-auto"><table className="w-full border-collapse text-[13px]"><thead><tr className="border-b border-border text-left text-[11px] uppercase tracking-wider text-muted-foreground"><th className="px-4 py-2">Merchant</th><th className="px-4 py-2">Provider category</th><th className="px-4 py-2">Assign to</th><th className="px-4 py-2 text-right">Amount</th></tr></thead><tbody>{uncategorized.map((transaction) => <tr key={transaction.id} className="border-b border-border/60 last:border-0"><td className="px-4 py-3"><p className="font-medium text-foreground">{transaction.merchant}</p><p className="text-[11px] text-muted-foreground">{transaction.posted_at}{transaction.status === "pending" ? " · pending" : ""}</p></td><td className="px-4 py-3 text-muted-foreground">{transaction.provider_category}</td><td className="px-4 py-3"><select value={pendingAssignment?.transaction.id === transaction.id ? pendingAssignment.categoryId : ""} onChange={(event) => requestAssignment(transaction, event.target.value)} className="h-8 min-w-36 rounded-md border border-border bg-background px-2 text-[12px] text-foreground outline-none focus:border-ring"><option value="" disabled>Choose category</option>{activeCategories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></td><td className="px-4 py-3 text-right font-mono tabular-nums">{formatCurrency(Math.abs(Number(transaction.amount)))}</td></tr>)}</tbody></table></div> : <div className="flex items-center gap-2 p-5 text-sm text-positive"><Tag className="size-4" />Everything in this month is categorized.</div>}
       </Panel>
 

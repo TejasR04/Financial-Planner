@@ -179,26 +179,13 @@ export default function OnboardingPage() {
                 </div>
                 <div>
                   <label className="text-[13px] text-foreground">Target equity %</label>
-                  <input
-                    className={`${inputClass} mt-1.5`}
-                    type="number"
-                    value={equityAllocation}
-                    onChange={(e) => setEquityAllocation(Number(e.target.value))}
-                    min={0}
-                    max={100}
-                  />
+                  <div className="relative"><input className={`${inputClass} mt-1.5 pr-7`} type="number" inputMode="decimal" value={equityAllocation} onChange={(e) => setEquityAllocation(Number(e.target.value))} min={0} max={100} /><span className="pointer-events-none absolute bottom-2 right-2.5 text-[13px] text-muted-foreground">%</span></div>
                 </div>
               </div>
               <div className="grid grid-cols-2 items-end gap-3">
                 <div>
                   <label className="text-[13px] text-foreground">Withdrawal rate %</label>
-                  <input
-                    className={`${inputClass} mt-1.5`}
-                    type="number"
-                    step="0.1"
-                    value={withdrawalRate}
-                    onChange={(e) => setWithdrawalRate(Number(e.target.value))}
-                  />
+                  <div className="relative"><input className={`${inputClass} mt-1.5 pr-7`} type="number" inputMode="decimal" step="0.1" value={withdrawalRate} onChange={(e) => setWithdrawalRate(Number(e.target.value))} /><span className="pointer-events-none absolute bottom-2 right-2.5 text-[13px] text-muted-foreground">%</span></div>
                 </div>
                 <label className="flex h-9 items-center gap-2 text-[13px] text-foreground">
                   <input

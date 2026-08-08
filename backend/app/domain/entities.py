@@ -111,6 +111,9 @@ class Transaction:
     status: TransactionStatus = TransactionStatus.CLEARED
     external_transaction_id: str | None = None
     budget_category_id: UUID | None = None
+    budget_category_name: str | None = None
+    account_name: str | None = None
+    account_archived: bool = False
 
 
 @dataclass(slots=True)

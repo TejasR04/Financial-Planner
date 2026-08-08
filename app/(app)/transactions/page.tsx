@@ -29,6 +29,7 @@ export default function TransactionsPage() {
   const [category, setCategory] = useState("");
   const [since, setSince] = useState("");
   const [until, setUntil] = useState("");
+  const [includeArchived, setIncludeArchived] = useState(false);
   const [page, setPage] = useState(0);
   const [result, setResult] = useState<ApiTransactionList | null>(null);
   const [loading, setLoading] = useState(true);
@@ -57,6 +58,7 @@ export default function TransactionsPage() {
           category: category.trim() || undefined,
           since: since || undefined,
           until: until || undefined,
+          includeArchived,
         }, controller.signal)
         .then((next) => {
           if (!cancelled) setResult(next);
@@ -76,7 +78,7 @@ export default function TransactionsPage() {
       window.clearTimeout(handle);
       controller.abort();
     };
-  }, [accountId, category, page, reloadTick, since, until]);
+  }, [accountId, category, includeArchived, page, reloadTick, since, until]);
 
   const resetFilters = () => {
     setAccountId("");
@@ -104,7 +106,7 @@ export default function TransactionsPage() {
 
       <Panel>
         <PanelHeader title="Filters" description="Narrow the ledger by account, category, or date" />
-        <div className="grid grid-cols-1 gap-3 border-t border-border p-4 sm:grid-cols-2 xl:grid-cols-5">
+        <div className="grid grid-cols-1 gap-3 border-t border-border p-4 sm:grid-cols-2 xl:grid-cols-6">
           <select
             value={accountId}
             onChange={(event) => setFilterPage(() => setAccountId(event.target.value))}
@@ -127,6 +129,7 @@ export default function TransactionsPage() {
             From
             <input type="date" value={since} onChange={(event) => setFilterPage(() => setSince(event.target.value))} className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-foreground outline-none focus:border-ring" />
           </label>
+          <label className="flex items-center gap-2 text-[12px] text-muted-foreground"><input type="checkbox" checked={includeArchived} onChange={(event) => setFilterPage(() => setIncludeArchived(event.target.checked))} />Include disconnected accounts</label>
           <label className="flex items-center gap-2 text-[12px] text-muted-foreground">
             To
             <input type="date" value={until} onChange={(event) => setFilterPage(() => setUntil(event.target.value))} className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-foreground outline-none focus:border-ring" />
@@ -165,8 +168,8 @@ export default function TransactionsPage() {
                       <button className="text-left hover:underline" onClick={() => setEditing(transaction)}>{transaction.merchant}</button>
                       {transaction.status === "pending" && <span className="ml-2 rounded border border-warning/30 bg-warning/10 px-1 py-px text-[10px] font-medium text-warning">pending</span>}
                     </td>
-                    <td className="px-4 py-2.5 text-muted-foreground">{transaction.category}</td>
-                    <td className="hidden px-4 py-2.5 text-muted-foreground md:table-cell">{accountNameById.get(transaction.account_id) ?? "Account"}</td>
+                    <td className="px-4 py-2.5 text-muted-foreground">{transaction.budget_category_name ?? transaction.category}</td>
+                    <td className="hidden px-4 py-2.5 text-muted-foreground md:table-cell">{transaction.account_name ?? accountNameById.get(transaction.account_id) ?? "Account"}{transaction.account_archived ? " (disconnected)" : ""}</td>
                     <td className="hidden px-4 py-2.5 capitalize text-muted-foreground lg:table-cell">{transaction.type}</td>
                     <td className={cn("whitespace-nowrap px-4 py-2.5 text-right font-mono font-medium tabular-nums", Number(transaction.amount) >= 0 ? "text-positive" : "text-foreground")}>
                       {formatCurrency(Number(transaction.amount), { sign: true })}

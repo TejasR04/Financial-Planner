@@ -3,12 +3,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select, update
+from sqlalchemy import delete, func, select, update
 
 from app.core.exceptions import ValidationError
 from app.domain.entities import Account
 from app.domain.enums import AccountStatus, AccountType
-from app.persistence.models import AccountModel
+from app.persistence.models import AccountModel, HoldingModel, InvestmentValueSnapshotModel, LiabilityModel, TransactionModel
 from app.persistence.repositories.base import BaseRepository
 
 
@@ -63,7 +63,7 @@ class AccountRepository(BaseRepository[AccountModel]):
         await self.session.flush()
         return _to_domain(row)
 
-    async def upsert_from_plaid(self, user_id: UUID, account: Account) -> Account:
+    async def upsert_from_plaid(self, user_id: UUID, account: Account) -> Account | None:
         """Create or update an account sourced from Plaid, matched by
         `external_account_id`. Ownership is always the authenticated
         `user_id` passed in by the caller — never trusted from the Plaid
@@ -79,6 +79,11 @@ class AccountRepository(BaseRepository[AccountModel]):
             existing = result.scalar_one_or_none()
 
         if existing is not None:
+            # An account explicitly disconnected by the user is archived and
+            # detached from its Item. Keep it out of future Item refreshes;
+            # otherwise the next sync would immediately add it back.
+            if existing.archived_at is not None and existing.institution_id is None:
+                return None
             existing.name = account.name
             existing.type = account.type.value
             existing.mask = account.mask
@@ -97,10 +102,11 @@ class AccountRepository(BaseRepository[AccountModel]):
 
         return await self.create(user_id, account)
 
-    async def update_manual_for_user(self, user_id: UUID, account_id: UUID, **fields) -> Account:
+    async def update_for_user(self, user_id: UUID, account_id: UUID, **fields) -> Account:
         row = await self._row_for_user(user_id, account_id)
-        if row.institution_id is not None:
-            raise ValidationError("Linked accounts are updated by their institution; only manual accounts can be edited.")
+        linked = row.institution_id is not None
+        if linked and any(field != "name" for field in fields):
+            raise ValidationError("Linked account balances and details are managed by the institution; only the account name can be edited.")
         for field, value in fields.items():
             if (
                 field == "balance"
@@ -109,9 +115,16 @@ class AccountRepository(BaseRepository[AccountModel]):
                 and value > 0
             ):
                 value = -value
-            setattr(row, field, value)
+            if field == "name" and linked:
+                row.custom_name = value.strip() if value else None
+            else:
+                setattr(row, field, value)
         await self.session.flush()
         return _to_domain(row)
+
+    async def update_manual_for_user(self, user_id: UUID, account_id: UUID, **fields) -> Account:
+        """Backward-compatible name for callers that only update manual rows."""
+        return await self.update_for_user(user_id, account_id, **fields)
 
     async def archive_for_user(self, user_id: UUID, account_id: UUID) -> None:
         row = await self._row_for_user(user_id, account_id)
@@ -149,6 +162,33 @@ class AccountRepository(BaseRepository[AccountModel]):
         )
         await self.session.flush()
 
+    async def archive_and_detach_linked_account(self, user_id: UUID, account_id: UUID) -> None:
+        row = await self._row_for_user(user_id, account_id)
+        if row.institution_id is None:
+            raise ValidationError("Only linked accounts can be disconnected this way.")
+        row.archived_at = datetime.now(timezone.utc)
+        row.institution_id = None
+        await self.session.flush()
+
+    async def disconnected_imported_data_summary(self, user_id: UUID) -> tuple[int, int]:
+        ids = select(AccountModel.id).where(AccountModel.user_id == user_id, AccountModel.archived_at.is_not(None), AccountModel.external_account_id.is_not(None))
+        accounts = await self.session.scalar(select(func.count()).select_from(ids.subquery()))
+        transactions = await self.session.scalar(select(func.count()).select_from(TransactionModel).where(TransactionModel.account_id.in_(ids)))
+        return accounts or 0, transactions or 0
+
+    async def permanently_delete_disconnected_imported_data(self, user_id: UUID) -> tuple[int, int]:
+        ids = list((await self.session.execute(select(AccountModel.id).where(AccountModel.user_id == user_id, AccountModel.archived_at.is_not(None), AccountModel.external_account_id.is_not(None)))).scalars().all())
+        if not ids:
+            return 0, 0
+        deleted_transactions = await self.session.execute(delete(TransactionModel).where(TransactionModel.account_id.in_(ids)).returning(TransactionModel.id))
+        transaction_count = len(deleted_transactions.scalars().all())
+        await self.session.execute(delete(HoldingModel).where(HoldingModel.account_id.in_(ids)))
+        await self.session.execute(delete(InvestmentValueSnapshotModel).where(InvestmentValueSnapshotModel.account_id.in_(ids)))
+        await self.session.execute(delete(LiabilityModel).where(LiabilityModel.account_id.in_(ids)))
+        await self.session.execute(delete(AccountModel).where(AccountModel.id.in_(ids)))
+        await self.session.flush()
+        return len(ids), transaction_count
+
     async def count_active_for_institutions(self, user_id: UUID) -> dict[UUID, int]:
         from sqlalchemy import func
 
@@ -183,7 +223,7 @@ def _to_domain(row: AccountModel) -> Account:
     return Account(
         id=row.id,
         user_id=row.user_id,
-        name=row.name,
+        name=getattr(row, "custom_name", None) or row.name,
         type=AccountType(row.type),
         balance=row.balance,
         currency=row.currency,
