@@ -53,6 +53,27 @@ async def test_unlink_detaches_already_archived_accounts_too():
 
 
 @pytest.mark.asyncio
+async def test_linked_account_rename_sets_local_name_only():
+    provider_name = "Investment Account"
+    row = SimpleNamespace(
+        id=uuid4(), user_id=uuid4(), institution_id=uuid4(),
+        name=provider_name, custom_name=None, type=AccountType.INVESTMENT.value,
+        balance=Decimal("100"), currency="USD", mask="1234", apy=None,
+        status="connected", updated_at=None, external_account_id="plaid-account",
+        archived_at=None,
+    )
+    session = SimpleNamespace(flush=AsyncMock())
+    repository = AccountRepository(session)
+    repository._row_for_user = AsyncMock(return_value=row)
+
+    renamed = await repository.rename_for_user(row.user_id, row.id, "Roth IRA")
+
+    assert row.name == provider_name
+    assert row.custom_name == "Roth IRA"
+    assert renamed.name == "Roth IRA"
+
+
+@pytest.mark.asyncio
 async def test_complete_history_query_has_no_hidden_limit():
     session = SimpleNamespace(execute=AsyncMock(return_value=_empty_result()))
 
@@ -78,6 +99,21 @@ async def test_paginated_transaction_order_has_stable_id_tiebreaker():
     assert total == 0
     sql = _sql(session.execute.await_args_list[1].args[0])
     assert "transactions.posted_at DESC, transactions.id DESC" in sql
+
+
+@pytest.mark.asyncio
+async def test_transaction_filters_support_budget_category_and_merchant():
+    count_result = SimpleNamespace(scalar_one=lambda: 0)
+    session = SimpleNamespace(execute=AsyncMock(side_effect=[count_result, _empty_result()]))
+    category_id = uuid4()
+
+    await TransactionRepository(session).list_for_user(
+        uuid4(), budget_category_id=category_id, merchant="Corner Market"
+    )
+
+    sql = _sql(session.execute.await_args_list[1].args[0])
+    assert "transactions.budget_category_id" in sql
+    assert "lower(transactions.merchant)" in sql
 
 
 @pytest.mark.asyncio

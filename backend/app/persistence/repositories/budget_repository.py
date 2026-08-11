@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, datetime, timezone
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
+from app.domain.enums import TransactionType
 from app.persistence.models import BudgetCategoryModel, MerchantBudgetRuleModel, TransactionModel
 from app.persistence.repositories.base import BaseRepository
 
@@ -83,17 +84,26 @@ class BudgetRepository(BaseRepository[BudgetCategoryModel]):
             query = query.where(BudgetCategoryModel.id != excluding_id)
         return await self.session.scalar(query) is not None
 
-    async def list_rules(self, user_id: UUID) -> list[tuple[MerchantBudgetRuleModel, BudgetCategoryModel]]:
+    async def list_rules(self, user_id: UUID) -> list[tuple[MerchantBudgetRuleModel, BudgetCategoryModel | None]]:
         result = await self.session.execute(
             select(MerchantBudgetRuleModel, BudgetCategoryModel)
-            .join(BudgetCategoryModel, BudgetCategoryModel.id == MerchantBudgetRuleModel.budget_category_id)
+            .outerjoin(BudgetCategoryModel, BudgetCategoryModel.id == MerchantBudgetRuleModel.budget_category_id)
             .where(MerchantBudgetRuleModel.user_id == user_id)
             .order_by(MerchantBudgetRuleModel.created_at)
         )
         return list(result.all())
 
-    async def create_rule(self, user_id: UUID, category_id: UUID, merchant_pattern: str) -> MerchantBudgetRuleModel:
-        await self.get_category_for_user(user_id, category_id)
+    async def create_rule(
+        self,
+        user_id: UUID,
+        category_id: UUID | None,
+        merchant_pattern: str,
+        transaction_type: TransactionType | None = None,
+    ) -> MerchantBudgetRuleModel:
+        if category_id is not None:
+            await self.get_category_for_user(user_id, category_id)
+        elif transaction_type not in {TransactionType.INCOME, TransactionType.TRANSFER}:
+            raise ValidationError("Merchant rules require a budget category, income, or transfer treatment")
         normalized = normalize_merchant(merchant_pattern)
         if not normalized:
             raise ValidationError("Merchant pattern cannot be blank")
@@ -106,11 +116,60 @@ class BudgetRepository(BaseRepository[BudgetCategoryModel]):
         if existing.scalar_one_or_none() is not None:
             raise ConflictError("A merchant rule with that pattern already exists")
         row = MerchantBudgetRuleModel(
-            id=uuid4(), user_id=user_id, budget_category_id=category_id, merchant_pattern=normalized
+            id=uuid4(), user_id=user_id, budget_category_id=category_id,
+            transaction_type=transaction_type.value if transaction_type else None,
+            merchant_pattern=normalized,
         )
         self.session.add(row)
         await self.session.flush()
+        await self.apply_merchant_rules_for_user(user_id, include_reviewed=True)
         return row
+
+    async def apply_merchant_rules_for_user(self, user_id: UUID, *, include_reviewed: bool = False) -> int:
+        """Materialize active merchant rules on every currently unassigned
+        expense. Persisting the assignment keeps the ledger, exports, and
+        category filters consistent instead of applying rules only to budget
+        rollups.
+        """
+        from app.persistence.models import AccountModel
+
+        updated_count = 0
+        for rule, category in await self.list_rules(user_id):
+            if category is not None and not category.active:
+                continue
+            normalized_merchant = func.replace(func.lower(TransactionModel.merchant), "_", " ")
+            conditions = [
+                TransactionModel.account_id.in_(
+                    select(AccountModel.id).where(AccountModel.user_id == user_id)
+                ),
+                normalized_merchant.contains(rule.merchant_pattern, autoescape=True),
+            ]
+            # Creating a rule intentionally applies it to past transactions.
+            # Routine syncs only classify brand-new, unreviewed rows so a
+            # later one-off user correction is never overwritten.
+            if not include_reviewed:
+                conditions.append(TransactionModel.reviewed_at.is_(None))
+            if rule.budget_category_id is not None:
+                conditions.append(TransactionModel.budget_category_id.is_(None))
+                values = {
+                    "budget_category_id": rule.budget_category_id,
+                    "reviewed_at": datetime.now(timezone.utc),
+                }
+            else:
+                values = {
+                    "type": rule.transaction_type,
+                    "budget_category_id": None,
+                    "ignored_from_budget": False,
+                    "reviewed_at": datetime.now(timezone.utc),
+                }
+            result = await self.session.execute(
+                update(TransactionModel)
+                .where(*conditions)
+                .values(**values)
+            )
+            updated_count += result.rowcount or 0
+        await self.session.flush()
+        return updated_count
 
     async def delete_rule(self, user_id: UUID, rule_id: UUID) -> None:
         result = await self.session.execute(
@@ -132,12 +191,13 @@ class BudgetRepository(BaseRepository[BudgetCategoryModel]):
                 AccountModel.user_id == user_id,
                 TransactionModel.posted_at >= start,
                 TransactionModel.posted_at <= end,
-                TransactionModel.type == "expense",
+                TransactionModel.ignored_from_budget.is_(False),
+                (TransactionModel.type == "expense") | (TransactionModel.budget_category_id.is_not(None)),
             )
         )
         return list(result.scalars().all())
 
-    async def uncategorized_expense_transactions(self, user_id: UUID) -> list[TransactionModel]:
+    async def unreviewed_transactions(self, user_id: UUID) -> list[TransactionModel]:
         from app.persistence.models import AccountModel
 
         result = await self.session.execute(
@@ -146,7 +206,7 @@ class BudgetRepository(BaseRepository[BudgetCategoryModel]):
             .where(
                 AccountModel.user_id == user_id,
                 AccountModel.archived_at.is_(None),
-                TransactionModel.type == "expense",
+                TransactionModel.reviewed_at.is_(None),
             )
             .order_by(TransactionModel.posted_at.desc(), TransactionModel.id.desc())
         )

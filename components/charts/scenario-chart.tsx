@@ -45,9 +45,12 @@ export function ScenarioChart({
 
   if (years.length === 0) {
     const loading = scenarios.some((scenario) => scenario.projectionStatus === "loading");
+    const emptyMessage = scenarios.length === 0
+      ? "Create a scenario to see its retirement projection."
+      : "No projection is available for these scenarios. Edit a scenario or create a new one to continue.";
     return (
       <div className="flex h-[300px] items-center justify-center px-4 text-center text-[13px] text-muted-foreground">
-        {loading ? "Loading scenario projections…" : "Scenario projections are unavailable. Try refreshing the projections page."}
+        {loading ? "Loading scenario projections…" : emptyMessage}
       </div>
     );
   }

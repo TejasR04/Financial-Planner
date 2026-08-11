@@ -13,8 +13,17 @@ export function TransactionEditDialog({ transaction, account, onClose, onSaved }
   const [categories, setCategories] = useState<ApiBudgetCategory[]>([]);
   const [budgetCategoryId, setBudgetCategoryId] = useState(transaction.budget_category_id ?? "");
   const [error, setError] = useState("");
-  useEffect(() => { void api.budgets.categories().then(setCategories).catch(() => setCategories([])); }, []);
+  const [loadingCategories, setLoadingCategories] = useState(true);
+  const [saving, setSaving] = useState(false);
+  useEffect(() => {
+    void api.budgets.categories()
+      .then(setCategories)
+      .catch(() => setError("Unable to load your budget categories."))
+      .finally(() => setLoadingCategories(false));
+  }, []);
   async function save() {
+    setSaving(true);
+    setError("");
     try {
       const linked = Boolean(account?.institutionId);
       if (!linked) await api.transactions.update(transaction.id, values);
@@ -22,6 +31,8 @@ export function TransactionEditDialog({ transaction, account, onClose, onSaved }
       onSaved();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to update transaction.");
+    } finally {
+      setSaving(false);
     }
   }
   const set = (key: keyof typeof values, value: string) => setValues({ ...values, [key]: value });
@@ -29,19 +40,19 @@ export function TransactionEditDialog({ transaction, account, onClose, onSaved }
     <DialogShell onClose={onClose} ariaLabelledBy="transaction-edit-title" panelClassName="max-w-lg rounded-lg bg-card p-4">
       <h2 id="transaction-edit-title" className="text-sm font-semibold">Edit transaction</h2>
       <p className="mt-1 text-xs text-muted-foreground">{account?.institutionId ? "Institution-owned details are read-only. Assign your budget category below." : "Manual and CSV transactions can be corrected."}</p>
-      <div className="mt-4 grid grid-cols-2 gap-2">
-        <input className={input} type="date" disabled={Boolean(account?.institutionId)} value={values.posted_at} onChange={(event) => set("posted_at", event.target.value)} />
-        <input className={input} disabled={Boolean(account?.institutionId)} value={values.merchant} onChange={(event) => set("merchant", event.target.value)} />
-        <select className={input} value={budgetCategoryId} onChange={(event) => setBudgetCategoryId(event.target.value)}><option value="">Provider category: {transaction.category}</option>{categories.filter((category) => category.active).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select>
-        <input className={input} type="number" inputMode="decimal" disabled={Boolean(account?.institutionId)} value={values.amount} onChange={(event) => set("amount", event.target.value)} />
-        <select className={input} disabled={Boolean(account?.institutionId)} value={values.type} onChange={(event) => set("type", event.target.value)}>
+      <div className="mt-4 grid grid-cols-2 gap-3">
+        <label className="text-xs font-medium text-muted-foreground">Date<input aria-label="Transaction date" className={`${input} mt-1`} type="date" disabled={Boolean(account?.institutionId)} value={values.posted_at} onChange={(event) => set("posted_at", event.target.value)} /></label>
+        <label className="text-xs font-medium text-muted-foreground">Merchant<input aria-label="Merchant" className={`${input} mt-1`} disabled={Boolean(account?.institutionId)} value={values.merchant} onChange={(event) => set("merchant", event.target.value)} /></label>
+        <label className="col-span-2 text-xs font-medium text-muted-foreground">Your budget category<select aria-label="Your budget category" className={`${input} mt-1`} disabled={loadingCategories} value={budgetCategoryId} onChange={(event) => setBudgetCategoryId(event.target.value)}><option value="">Use provider category ({transaction.category})</option>{categories.filter((category) => category.active).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+        <label className="text-xs font-medium text-muted-foreground">Amount<input aria-label="Amount" className={`${input} mt-1`} type="number" inputMode="decimal" disabled={Boolean(account?.institutionId)} value={values.amount} onChange={(event) => set("amount", event.target.value)} /></label>
+        <label className="text-xs font-medium text-muted-foreground">Type<select aria-label="Transaction type" className={`${input} mt-1`} disabled={Boolean(account?.institutionId)} value={values.type} onChange={(event) => set("type", event.target.value)}>
           {["expense", "income", "transfer", "contribution"].map((type) => <option key={type}>{type}</option>)}
-        </select>
+        </select></label>
       </div>
       {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
       <div className="mt-4 flex justify-end gap-2">
-        <Button variant="outline" size="sm" onClick={onClose}>Cancel</Button>
-        <Button size="sm" onClick={() => void save()}>Save</Button>
+        <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>Cancel</Button>
+        <Button size="sm" onClick={() => void save()} disabled={saving || loadingCategories}>{saving ? "Saving…" : "Save"}</Button>
       </div>
     </DialogShell>
   );

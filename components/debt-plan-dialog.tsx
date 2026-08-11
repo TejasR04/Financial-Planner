@@ -5,6 +5,7 @@ import { api, ApiDebtPlan } from "@/lib/api-client";
 import { formatCurrency, type Account } from "@/lib/data";
 import { Button } from "@/components/ui/button";
 import { DialogShell } from "@/components/ui/dialog-shell";
+import { sanitizeUnsignedNumberInput } from "@/lib/numeric-input";
 
 export function DebtPlanDialog({ accounts, onClose }: { accounts: Account[]; onClose: () => void }) {
   const [strategy, setStrategy] = useState<"avalanche" | "snowball">("avalanche");
@@ -34,7 +35,7 @@ export function DebtPlanDialog({ accounts, onClose }: { accounts: Account[]; onC
           <option value="avalanche">Avalanche · highest APR</option>
           <option value="snowball">Snowball · smallest balance</option>
         </select>
-        <input className="h-8 rounded-md border border-border bg-background px-2 text-xs" type="number" min="0" value={extra} onChange={(event) => setExtra(event.target.value)} placeholder="Extra monthly payment" />
+        <input className="h-8 rounded-md border border-border bg-background px-2 text-xs" type="text" inputMode="decimal" pattern="[0-9]*[.]?[0-9]*" value={extra} onChange={(event) => setExtra(sanitizeUnsignedNumberInput(event.target.value))} placeholder="Extra monthly payment" />
       </div>
       {plan && (
         <div className="mt-4 rounded-md border border-border bg-muted/30 p-3 text-xs">

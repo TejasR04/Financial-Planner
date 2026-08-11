@@ -112,6 +112,7 @@ class Transaction:
     external_transaction_id: str | None = None
     budget_category_id: UUID | None = None
     budget_category_name: str | None = None
+    ignored_from_budget: bool = False
     account_name: str | None = None
     account_archived: bool = False
 
@@ -130,11 +131,11 @@ class IncomeSource:
 class Liability:
     id: UUID
     account_id: UUID
-    principal: Decimal
-    interest_rate: Decimal
-    term_months: int
-    minimum_payment: Decimal
-    origination_date: date
+    principal: Decimal | None
+    interest_rate: Decimal | None
+    term_months: int | None
+    minimum_payment: Decimal | None
+    origination_date: date | None
 
 
 @dataclass(slots=True)

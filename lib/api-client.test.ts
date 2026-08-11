@@ -1,5 +1,14 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api } from "@/lib/api-client";
+import { api, formatApiErrorDetail } from "@/lib/api-client";
+
+describe("formatApiErrorDetail", () => {
+  it("turns structured validation details into readable field messages", () => {
+    expect(formatApiErrorDetail([
+      { loc: ["body", "term_months"], msg: "Field required" },
+      { loc: ["body", "origination_date"], msg: "Field required" },
+    ], "Request failed")).toBe("term months: Field required; origination date: Field required");
+  });
+});
 
 describe("transactions.listAll", () => {
   afterEach(() => vi.restoreAllMocks());
@@ -37,5 +46,23 @@ describe("transactions.listAll", () => {
       name: "AbortError",
     });
     expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ signal: controller.signal });
+  });
+});
+
+describe("transactions.list", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("sends transaction search and user budget category filters separately", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(new Response(JSON.stringify({
+      data: [], total: 0, limit: 50, offset: 0,
+    }), { status: 200, headers: { "Content-Type": "application/json" } }));
+
+    await api.transactions.list({ search: "12.50", budgetCategoryId: "category-id", cashFlowOnly: true });
+
+    const url = new URL(String(fetchMock.mock.calls[0]?.[0]));
+    expect(url.searchParams.get("search")).toBe("12.50");
+    expect(url.searchParams.get("budget_category_id")).toBe("category-id");
+    expect(url.searchParams.get("cash_flow_only")).toBe("true");
+    expect(url.searchParams.has("category")).toBe(false);
   });
 });

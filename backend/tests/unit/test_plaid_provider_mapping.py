@@ -98,12 +98,13 @@ def test_plaid_outflow_amount_is_inverted_for_normalized_cash_flow():
             date=date(2026, 7, 25),
             merchant_name=None,
             name="Payroll",
-            personal_finance_category=SimpleNamespace(primary="INCOME_WAGES"),
+            personal_finance_category=SimpleNamespace(primary="INCOME", detailed="INCOME_WAGES"),
             amount=-2500.00,
             pending=False,
         )
     )
     assert raw.amount == Decimal("2500.0")
+    assert raw.category == "INCOME_WAGES"
 
 
 def test_positive_normalized_amount_is_income():
@@ -139,6 +140,38 @@ def test_transfer_category_is_not_misclassified_as_income():
     )
     assert transaction.type == TransactionType.TRANSFER
     assert transaction.status == TransactionStatus.PENDING
+
+
+def test_credit_card_payment_is_a_transfer_not_income():
+    transaction = _to_transaction_entity(
+        RawPlaidTransaction(
+            external_transaction_id="transaction-3",
+            external_account_id="account-1",
+            posted_at=date(2026, 7, 25),
+            merchant="Autopay Payment",
+            category="LOAN_PAYMENTS_CREDIT_CARD_PAYMENT",
+            amount=Decimal("1200.00"),
+            pending=False,
+        ),
+        uuid4(),
+    )
+    assert transaction.type == TransactionType.TRANSFER
+
+
+def test_bilt_card_payment_is_a_transfer_even_when_provider_calls_it_income():
+    transaction = _to_transaction_entity(
+        RawPlaidTransaction(
+            external_transaction_id="transaction-4",
+            external_account_id="account-1",
+            posted_at=date(2026, 7, 25),
+            merchant="Payment - Bilt Housing",
+            category="INCOME",
+            amount=Decimal("2100.00"),
+            pending=False,
+        ),
+        uuid4(),
+    )
+    assert transaction.type == TransactionType.TRANSFER
 
 
 def test_etf_holding_maps_to_equity():

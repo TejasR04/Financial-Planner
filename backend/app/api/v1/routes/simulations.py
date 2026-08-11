@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
-from app.domain.entities import User
+from app.domain.entities import IncomeSource, User
 from app.domain.enums import DebtPayoffStrategy, TransactionType
 from app.persistence.repositories.account_repository import AccountRepository
 from app.persistence.repositories.income_source_repository import IncomeSourceRepository
@@ -103,19 +103,39 @@ async def simulate_cash_flow(
 ) -> CashFlowSimulationResponse:
     from datetime import date, timedelta
     from decimal import Decimal
+    from uuid import uuid4
     income_sources = await IncomeSourceRepository(db).list_for_user(current_user.id)
+    trailing_months = 3
+    since = date.today() - timedelta(days=30 * trailing_months)
+    transaction_repo = TransactionRepository(db)
+    totals = await transaction_repo.totals_by_type_since(current_user.id, since)
+    recent_transactions = await transaction_repo.list_since_for_income_expense(current_user.id, since)
+    if recent_transactions:
+        earliest = min(transaction.posted_at for transaction in recent_transactions)
+        coverage_months = max(1, (date.today().year - earliest.year) * 12 + date.today().month - earliest.month + 1)
+        coverage_months = min(trailing_months, coverage_months)
+    else:
+        coverage_months = trailing_months
+    categorized_income = totals.get(TransactionType.INCOME, Decimal("0"))
+    uses_categorized_income = body.income_basis == "take_home" and categorized_income > 0
+    if uses_categorized_income:
+        income_sources = [
+            IncomeSource(
+                id=uuid4(),
+                user_id=current_user.id,
+                name="Recent categorized income",
+                annual_amount=(categorized_income / coverage_months) * 12,
+                growth_rate=Decimal("0"),
+            )
+        ]
     if not income_sources:
         from fastapi import HTTPException
-        raise HTTPException(422, "Add an active planning income source before generating an outlook.")
-    trailing_months = 3
-    totals = await TransactionRepository(db).totals_by_type_since(
-        current_user.id, date.today() - timedelta(days=30 * trailing_months)
-    )
+        raise HTTPException(422, "Categorize recent deposits as income or add an active planning income source before generating an outlook.")
     expenses = -totals.get(TransactionType.EXPENSE, Decimal("0"))
     if expenses <= 0:
         from fastapi import HTTPException
         raise HTTPException(422, "At least one recent expense is required to generate an outlook.")
-    monthly_expenses = expenses / trailing_months
+    monthly_expenses = expenses / coverage_months
     profile = await UserRepository(db).get_planning_profile(current_user.id)
     result = cash_flow_service.project(
         income_sources=income_sources,
@@ -135,11 +155,13 @@ async def simulate_cash_flow(
         average_monthly_surplus=result.average_monthly_surplus,
         projected_savings_rate=result.projected_savings_rate,
         income_source=(
-            "Saved planning income sources adjusted by the supplied effective tax rate"
+            f"Recent categorized income averaged across {coverage_months} month{'s' if coverage_months != 1 else ''}"
+            if uses_categorized_income
+            else "Saved planning income sources adjusted by the supplied effective tax rate"
             if body.income_basis == "gross"
             else "Saved planning take-home income sources"
         ),
-        expense_source="Trailing 3-month tracked expense average",
+        expense_source=f"Recent tracked expenses averaged across {coverage_months} month{'s' if coverage_months != 1 else ''}",
         income_basis=result.income_basis,
     )
 
@@ -184,9 +206,14 @@ async def simulate_debt_optimization(
     for account_id in body.account_ids:
         account = await AccountRepository(db).get_for_user(current_user.id, account_id)
         details = await LiabilityRepository(db).get_for_user_account(current_user.id, account_id)
-        if not account.is_liability or details is None:
+        if (
+            not account.is_liability
+            or details is None
+            or details.interest_rate is None
+            or details.minimum_payment is None
+        ):
             from fastapi import HTTPException
-            raise HTTPException(422, f"{account.name} needs debt terms before payoff planning.")
+            raise HTTPException(422, f"{account.name} needs an APR and minimum payment before payoff planning.")
         details.principal = abs(account.balance)
         liabilities.append(details)
         names[str(len(liabilities) - 1)] = account.name

@@ -63,10 +63,13 @@ export function ManualAccountDialog({
     setError(null);
     try {
       if (account) {
-        await api.accounts.update(account.id, {
-          name: name.trim(),
-          ...(linked ? {} : { balance, mask: mask || undefined, apy: apy || undefined }),
-        });
+        if (linked) {
+          await api.accounts.rename(account.id, name.trim());
+        } else {
+          await api.accounts.update(account.id, {
+            name: name.trim(), balance, mask: mask || undefined, apy: apy || undefined,
+          });
+        }
       } else {
         await api.accounts.create({
           name: name.trim(),

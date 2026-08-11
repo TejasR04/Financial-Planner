@@ -32,7 +32,7 @@ export async function exportAllTransactionsCsv(accounts: Pick<Account, "id" | "n
       postedAt: transaction.posted_at,
       date: transaction.posted_at,
       merchant: transaction.merchant,
-      category: transaction.category,
+      category: transaction.budget_category_name ?? transaction.category,
       account: accountNames.get(transaction.account_id) ?? "Account",
       amount: Number(transaction.amount),
       type: transaction.type,

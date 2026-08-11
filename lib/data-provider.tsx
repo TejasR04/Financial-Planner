@@ -83,6 +83,17 @@ function buildCashflowSeries(transactions: ApiTransaction[], start: Date, end: D
   }
 
   for (const transaction of transactions) {
+    // Paying a credit-card bill only moves money between two owned accounts:
+    // the underlying card purchases are the expenses. Older synced rows only
+    // retained Plaid's broad LOAN_PAYMENTS category, so retain a conservative
+    // merchant fallback until those rows are refreshed with the detailed one.
+    const category = transaction.category.toUpperCase();
+    const merchant = transaction.merchant.toUpperCase();
+    const isCreditCardPayment = category === "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"
+      || merchant.includes("PAYMENT - BILT")
+      || (category === "LOAN_PAYMENTS" && ["CREDIT CRD", "CREDIT CARD", "AUTOPAY PAYMENT", "AUTOMATIC PAYMENT", "PAYMENT - THANK"].some((marker) => merchant.includes(marker)));
+    if (transaction.type === "transfer" || isCreditCardPayment) continue;
+
     const posted = new Date(`${transaction.posted_at}T00:00:00`);
     const bucket = buckets.get(monthKey(posted));
     if (!bucket) continue;
@@ -95,6 +106,7 @@ function buildCashflowSeries(transactions: ApiTransaction[], start: Date, end: D
     const [year, month] = key.split("-");
     return {
       month: new Date(Number(year), Number(month) - 1, 1).toLocaleDateString("en-US", { month: "short" }),
+      monthKey: key,
       income: value.income,
       expenses: value.expenses,
     };
@@ -310,8 +322,22 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           status: t.status,
         }));
         const cashflowSeries = buildCashflowSeries(transactionRows, window.start, window.end);
-        const averageMonthlyIncome = cashflowSeries.reduce((sum, month) => sum + month.income, 0) / cashflowSeries.length;
-        const averageMonthlyExpenses = cashflowSeries.reduce((sum, month) => sum + month.expenses, 0) / cashflowSeries.length;
+        // Do not treat months before the first imported transaction as real
+        // zero-income months. Plaid history can be shorter than the chart's
+        // requested 12-month window.
+        const firstTransactionMonth = transactionRows.length
+          ? monthKey(new Date(`${transactionRows.reduce((earliest, row) => row.posted_at < earliest ? row.posted_at : earliest, transactionRows[0].posted_at)}T00:00:00`))
+          : null;
+        const actualMonths = firstTransactionMonth
+          ? cashflowSeries.slice(Math.max(0, Array.from({ length: 12 }, (_, index) => monthKey(new Date(window.start.getFullYear(), window.start.getMonth() + index, 1))).indexOf(firstTransactionMonth)))
+          : [];
+        // The current month is incomplete and would depress both KPIs early
+        // in the month. Keep it on the chart, but calculate the headline
+        // cash-flow and savings-rate figures from completed months only.
+        const completedMonths = actualMonths.slice(0, -1);
+        const averageDivisor = Math.max(1, completedMonths.length);
+        const averageMonthlyIncome = completedMonths.reduce((sum, month) => sum + month.income, 0) / averageDivisor;
+        const averageMonthlyExpenses = completedMonths.reduce((sum, month) => sum + month.expenses, 0) / averageDivisor;
         const averageMonthlySurplus = averageMonthlyIncome - averageMonthlyExpenses;
 
         // --- kpis (all values are based on the selected trailing window)
@@ -343,14 +369,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             label: "Monthly Cash Flow",
             value: formatCurrency(averageMonthlySurplus, { sign: true }),
             raw: averageMonthlySurplus,
-            hint: "Average monthly income less expenses over the last 12 months",
+            hint: "Average monthly income less expenses across completed months only",
           },
           {
             id: "savings-rate",
             label: "Savings Rate",
             value: savingsRate == null ? "—" : `${savingsRate.toFixed(1)}%`,
             raw: savingsRate ?? 0,
-            hint: "Average income retained after expenses over the last 12 months",
+            hint: "Average income retained after expenses across completed months only",
           },
         ];
 

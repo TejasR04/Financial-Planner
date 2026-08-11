@@ -26,11 +26,11 @@ class IncomeSourceResponse(IncomeSourceCreate):
 
 
 class LiabilityDetails(BaseModel):
-    principal: Decimal = Field(ge=0)
-    interest_rate: Decimal = Field(ge=0, le=1)
-    term_months: int = Field(gt=0, le=1200)
-    minimum_payment: Decimal = Field(ge=0)
-    origination_date: date
+    principal: Decimal | None = Field(default=None, ge=0)
+    interest_rate: Decimal | None = Field(default=None, ge=0, le=1)
+    term_months: int | None = Field(default=None, gt=0, le=1200)
+    minimum_payment: Decimal | None = Field(default=None, ge=0)
+    origination_date: date | None = None
 
 
 class LiabilityResponse(LiabilityDetails):

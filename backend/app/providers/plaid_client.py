@@ -31,8 +31,10 @@ from plaid.model.item_get_request import ItemGetRequest
 from plaid.model.item_public_token_exchange_request import ItemPublicTokenExchangeRequest
 from plaid.model.link_token_create_request import LinkTokenCreateRequest
 from plaid.model.link_token_create_request_user import LinkTokenCreateRequestUser
+from plaid.model.link_token_transactions import LinkTokenTransactions
 from plaid.model.products import Products
 from plaid.model.transactions_sync_request import TransactionsSyncRequest
+from plaid.model.transactions_sync_request_options import TransactionsSyncRequestOptions
 from plaid.model.investments_holdings_get_request import InvestmentsHoldingsGetRequest
 
 from app.core.exceptions import ProviderError
@@ -42,6 +44,8 @@ _ENVIRONMENTS = {
     "development": "https://development.plaid.com",
     "production": "https://production.plaid.com",
 }
+
+TRANSACTION_HISTORY_DAYS = 180
 
 
 @dataclass(slots=True)
@@ -143,10 +147,13 @@ class PlaidClient:
             # Request investment access alongside Transactions so brokerage
             # and retirement Items can supply their holdings and allocation.
             request_args["products"] = [Products("transactions"), Products("investments")]
+            request_args["transactions"] = LinkTokenTransactions(days_requested=TRANSACTION_HISTORY_DAYS)
         else:
-            # Credential-repair update mode keeps the access token and does
-            # not need to request a new product consent.
+            # Update mode retains the existing Item while asking for the
+            # Investments consent that older Transactions-only links lack.
+            # Plaid requires additions in `additional_consented_products`.
             request_args["access_token"] = update_access_token
+            request_args["additional_consented_products"] = [Products("investments")]
         request = LinkTokenCreateRequest(**request_args)
         try:
             response = await asyncio.to_thread(self._client.link_token_create, request)
@@ -220,7 +227,14 @@ class PlaidClient:
             # Omit cursor entirely for an initial sync; passing None raises a
             # local ApiTypeError before any request reaches Plaid.
             if current_cursor is None:
-                request = TransactionsSyncRequest(access_token=access_token, count=500)
+                request = TransactionsSyncRequest(
+                    access_token=access_token,
+                    count=500,
+                    options=TransactionsSyncRequestOptions(
+                        days_requested=TRANSACTION_HISTORY_DAYS,
+                        include_personal_finance_category=True,
+                    ),
+                )
             else:
                 request = TransactionsSyncRequest(
                     access_token=access_token,
@@ -272,7 +286,16 @@ class PlaidClient:
 
 
 def _to_raw_transaction(transaction) -> RawPlaidTransaction:
-    category = transaction.personal_finance_category.primary if transaction.personal_finance_category else None
+    personal_finance_category = transaction.personal_finance_category
+    # The primary value collapses every loan payment into ``LOAN_PAYMENTS``.
+    # Keep Plaid's detailed value so credit-card payments can be distinguished
+    # from real debt expenses such as mortgage and student-loan payments.
+    category = (
+        getattr(personal_finance_category, "detailed", None)
+        or getattr(personal_finance_category, "primary", None)
+        if personal_finance_category
+        else None
+    )
     return RawPlaidTransaction(
         external_transaction_id=transaction.transaction_id,
         external_account_id=transaction.account_id,

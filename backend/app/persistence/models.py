@@ -178,6 +178,8 @@ class TransactionModel(Base):
     budget_category_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("budget_categories.id", ondelete="SET NULL"), nullable=True, index=True
     )
+    ignored_from_budget: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
 
 class BudgetCategoryModel(Base):
@@ -203,9 +205,10 @@ class MerchantBudgetRuleModel(Base):
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     user_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("users.id"), index=True)
-    budget_category_id: Mapped[uuid.UUID] = mapped_column(
-        PGUUID(as_uuid=True), ForeignKey("budget_categories.id", ondelete="CASCADE"), index=True
+    budget_category_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("budget_categories.id", ondelete="CASCADE"), nullable=True, index=True
     )
+    transaction_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # Lower-cased normalized substring, e.g. "netflix".
     merchant_pattern: Mapped[str] = mapped_column(String(255))
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
@@ -228,13 +231,47 @@ class LiabilityModel(Base):
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     account_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("accounts.id"), unique=True)
-    principal: Mapped[Decimal] = mapped_column(Numeric(18, 2))
-    interest_rate: Mapped[Decimal] = mapped_column(Numeric(6, 4))
-    term_months: Mapped[int] = mapped_column(Integer)
-    minimum_payment: Mapped[Decimal] = mapped_column(Numeric(18, 2))
-    origination_date: Mapped[date] = mapped_column(Date)
+    principal: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    interest_rate: Mapped[Decimal | None] = mapped_column(Numeric(6, 4), nullable=True)
+    term_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    minimum_payment: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    origination_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     account: Mapped["AccountModel"] = relationship(back_populates="liability")
+
+
+class LoanBalanceRuleModel(Base):
+    __tablename__ = "loan_balance_rules"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    mode: Mapped[str] = mapped_column(String(20))
+    amount: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    frequency: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    next_run_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    merchant_pattern: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+class LoanBalanceAdjustmentModel(Base):
+    __tablename__ = "loan_balance_adjustments"
+    __table_args__ = (
+        UniqueConstraint("rule_id", "event_key", name="uq_loan_balance_adjustments_rule_event"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    rule_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("loan_balance_rules.id", ondelete="CASCADE"), index=True
+    )
+    transaction_id: Mapped[uuid.UUID | None] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("transactions.id", ondelete="SET NULL"), nullable=True
+    )
+    event_key: Mapped[str] = mapped_column(String(255))
+    amount_applied: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    applied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
 class ScenarioModel(Base):

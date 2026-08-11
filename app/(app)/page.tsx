@@ -57,6 +57,19 @@ export default function OverviewPage() {
     exportTransactionsCsv(exportRows, `meridian-transactions-last-${periodMonths}-months.csv`);
   };
 
+  const openCashflowTransactions = (point: CashflowPoint, direction: "inflow" | "outflow") => {
+    if (cashflowMode !== "actuals" || !point.monthKey) return;
+    const [year, month] = point.monthKey.split("-").map(Number);
+    const lastDay = new Date(year, month, 0).getDate();
+    const params = new URLSearchParams({
+      since: `${point.monthKey}-01`,
+      until: `${point.monthKey}-${String(lastDay).padStart(2, "0")}`,
+      direction,
+      cash_flow_only: "true",
+    });
+    router.push(`/transactions?${params.toString()}`);
+  };
+
   return (
     <PageContainer>
       <PageHeader
@@ -172,7 +185,7 @@ export default function OverviewPage() {
               </div>
             }
           />
-          <CashflowChart data={cashflowMode === "actuals" ? visibleCashflow : outlook ?? []} />
+          <CashflowChart data={cashflowMode === "actuals" ? visibleCashflow : outlook ?? []} onSelect={cashflowMode === "actuals" ? openCashflowTransactions : undefined} />
         </Panel>
 
       </div>

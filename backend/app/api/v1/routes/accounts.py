@@ -15,6 +15,7 @@ from app.persistence.repositories.user_repository import UserRepository
 from app.schemas.account import (
     AccountCreateRequest,
     AccountListResponse,
+    AccountRenameRequest,
     AccountResponse,
     AccountUpdateRequest,
     InstitutionResponse,
@@ -30,6 +31,7 @@ from app.schemas.financial_health import (
     RebalanceSuggestionResponse,
 )
 from app.services.portfolio_allocation_service import PortfolioAllocationService
+from app.services.loan_balance_automation_service import LoanBalanceAutomationService
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 allocation_service = PortfolioAllocationService()
@@ -85,6 +87,9 @@ async def list_accounts(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> AccountListResponse:
+    applied = await LoanBalanceAutomationService(db).apply(current_user.id)
+    if applied:
+        await db.commit()
     accounts = await AccountRepository(db).list_for_user(current_user.id, type)
     institutions = {institution.id: institution for institution in await InstitutionRepository(db).list_for_user(current_user.id)}
     assets = sum((a.balance for a in accounts if not a.is_liability), Decimal("0"))
@@ -201,6 +206,25 @@ async def update_account(
         await InvestmentValueSnapshotRepository(db).record_for_accounts([updated])
     await db.commit()
     return _to_response(updated, {})
+
+
+@router.patch("/{account_id}/name", response_model=AccountResponse)
+async def rename_account(
+    account_id: UUID,
+    body: AccountRenameRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AccountResponse:
+    """Set a user-owned display name without changing provider-owned data."""
+    updated = await AccountRepository(db).rename_for_user(
+        current_user.id, account_id, body.name
+    )
+    institutions = {
+        institution.id: institution
+        for institution in await InstitutionRepository(db).list_for_user(current_user.id)
+    }
+    await db.commit()
+    return _to_response(updated, institutions)
 
 
 @router.post("/{account_id}/sync", response_model=PlaidRefreshInstitutionResponse)

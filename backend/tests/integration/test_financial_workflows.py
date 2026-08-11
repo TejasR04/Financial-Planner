@@ -80,6 +80,7 @@ async def test_budget_assignment_is_reflected_in_monthly_summary(client: AsyncCl
         json={"budget_category_id": groceries["id"]},
     )
     assert assignment.status_code == 200
+    assert assignment.json()["budget_category_name"] == "Groceries"
 
     summary = await client.get(f"/api/v1/budgets/summary?month={date.today().replace(day=1).isoformat()}", headers=headers)
     assert summary.status_code == 200

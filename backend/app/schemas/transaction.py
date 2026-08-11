@@ -20,6 +20,7 @@ class TransactionResponse(BaseModel):
     status: TransactionStatus
     budget_category_id: UUID | None = None
     budget_category_name: str | None = None
+    ignored_from_budget: bool = False
     account_name: str | None = None
     account_archived: bool = False
 
@@ -47,6 +48,10 @@ class TransactionUpdateRequest(BaseModel):
     category: str | None = None
     amount: Decimal | None = None
     type: TransactionType | None = None
+
+
+class TransactionClassificationRequest(BaseModel):
+    type: TransactionType
 
 
 class CSVImportRequest(BaseModel):

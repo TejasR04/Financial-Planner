@@ -108,8 +108,8 @@ class BudgetService:
                 budgeted=category.monthly_limit,
                 spent=totals[category.id]["spent"],
                 pending=totals[category.id]["pending"],
-                remaining=category.monthly_limit - totals[category.id]["spent"],
-                forecast=(totals[category.id]["spent"] / elapsed_days * days_in_month).quantize(Decimal("0.01")),
+                remaining=category.monthly_limit - totals[category.id]["spent"] - totals[category.id]["pending"],
+                forecast=((totals[category.id]["spent"] + totals[category.id]["pending"]) / elapsed_days * days_in_month).quantize(Decimal("0.01")),
             )
             for category in active_categories
         ]

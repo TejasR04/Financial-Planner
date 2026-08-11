@@ -8,6 +8,7 @@ import { DialogShell } from "@/components/ui/dialog-shell";
 import { api, ApiError } from "@/lib/api-client";
 import type { Scenario } from "@/lib/data";
 import { useCurrentAge, useCurrentRetirementBalance, useDataRefresh } from "@/lib/data-provider";
+import { sanitizeUnsignedNumberInput } from "@/lib/numeric-input";
 
 const inputClass =
   "h-9 w-full rounded-md border border-border bg-background px-2.5 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-3 focus:ring-ring/20";
@@ -178,17 +179,18 @@ export function NewScenarioDialog({ open, onClose, scenario = null }: Props) {
               <label className="mb-1 block text-[12px] font-medium text-foreground">Retirement age</label>
               <input
                 className={inputClass}
-                type="number"
-                min={1}
+                type="text"
+                inputMode="numeric"
+                pattern="[0-9]*"
                 value={retirementAge}
-                onChange={(e) => setRetirementAge(e.target.value)}
+                onChange={(e) => setRetirementAge(sanitizeUnsignedNumberInput(e.target.value, false))}
               />
             </div>
             <div>
               <label className="mb-1 block text-[12px] font-medium text-foreground">
                 Expected real return
               </label>
-              <div className="relative"><input className={`${inputClass} pr-7`} type="number" inputMode="decimal" min={0} max={20} step="0.1" value={expectedReturn} onChange={(e) => setExpectedReturn(e.target.value)} /><span className="pointer-events-none absolute right-2.5 top-2 text-[13px] text-muted-foreground">%</span></div>
+              <div className="relative"><input className={`${inputClass} pr-7`} type="text" inputMode="decimal" pattern="[0-9]*[.]?[0-9]*" value={expectedReturn} onChange={(e) => setExpectedReturn(sanitizeUnsignedNumberInput(e.target.value))} /><span className="pointer-events-none absolute right-2.5 top-2 text-[13px] text-muted-foreground">%</span></div>
               <p className="mt-1 text-[11px] text-muted-foreground">Annual %, e.g. 6.5</p>
             </div>
           </div>
@@ -199,11 +201,11 @@ export function NewScenarioDialog({ open, onClose, scenario = null }: Props) {
             </label>
             <input
               className={inputClass}
-              type="number"
-              min={0}
-              step="0.01"
+              type="text"
+              inputMode="decimal"
+              pattern="[0-9]*[.]?[0-9]*"
               value={monthlyContribution}
-              onChange={(e) => setMonthlyContribution(e.target.value)}
+              onChange={(e) => setMonthlyContribution(sanitizeUnsignedNumberInput(e.target.value))}
               placeholder="0"
             />
             <p className="mt-1 text-[11px] text-muted-foreground">
@@ -229,11 +231,11 @@ export function NewScenarioDialog({ open, onClose, scenario = null }: Props) {
                 </label>
                 <input
                   className={inputClass}
-                  type="number"
-                  min={0}
-                  step="1"
+                  type="text"
+                  inputMode="decimal"
+                  pattern="[0-9]*[.]?[0-9]*"
                   value={desiredIncome}
-                  onChange={(e) => setDesiredIncome(e.target.value)}
+                  onChange={(e) => setDesiredIncome(sanitizeUnsignedNumberInput(e.target.value))}
                   placeholder="e.g. 5000"
                 />
                 <p className="mt-1 text-[11px] text-muted-foreground">

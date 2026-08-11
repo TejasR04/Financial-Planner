@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import date
-from decimal import Decimal
+from datetime import date, datetime, timezone
+from decimal import Decimal, InvalidOperation
 from uuid import UUID, uuid4
 
 from sqlalchemy import delete, func, select
@@ -21,11 +21,16 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         user_id: UUID,
         account_id: UUID | None = None,
         category: str | None = None,
+        budget_category_id: UUID | None = None,
+        direction: str | None = None,
+        search: str | None = None,
+        merchant: str | None = None,
         since: date | None = None,
         until: date | None = None,
         limit: int = 50,
         offset: int = 0,
         include_archived: bool = False,
+        cash_flow_only: bool = False,
     ) -> tuple[list[Transaction], int]:
         query = (
             select(TransactionModel, AccountModel.name, AccountModel.archived_at, BudgetCategoryModel.name)
@@ -48,6 +53,42 @@ class TransactionRepository(BaseRepository[TransactionModel]):
                 normalized_category.contains(normalized_query, autoescape=True)
                 | func.lower(BudgetCategoryModel.name).contains(normalized_query, autoescape=True)
             )
+        if budget_category_id is not None:
+            query = query.where(TransactionModel.budget_category_id == budget_category_id)
+        search_value = search if search is not None else merchant
+        if search_value is not None and search_value.strip():
+            normalized_search = " ".join(search_value.lower().split())
+            search_filter = func.lower(TransactionModel.merchant).contains(normalized_search, autoescape=True)
+            try:
+                candidate_amount = Decimal(normalized_search.replace("$", "").replace(",", ""))
+                searched_amount = abs(candidate_amount) if candidate_amount.is_finite() else None
+            except InvalidOperation:
+                searched_amount = None
+            if searched_amount is not None:
+                search_filter = search_filter | (func.abs(TransactionModel.amount) == searched_amount)
+            query = query.where(search_filter)
+        if direction == "inflow":
+            query = query.where(TransactionModel.amount > 0)
+        elif direction == "outflow":
+            query = query.where(TransactionModel.amount < 0)
+        if cash_flow_only:
+            upper_category = func.upper(TransactionModel.category)
+            upper_merchant = func.upper(TransactionModel.merchant)
+            recognized_card_payment = (
+                (upper_category == "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT")
+                | upper_merchant.contains("PAYMENT - BILT")
+                | (
+                    (upper_category == "LOAN_PAYMENTS")
+                    & (
+                        upper_merchant.contains("CREDIT CRD")
+                        | upper_merchant.contains("CREDIT CARD")
+                        | upper_merchant.contains("AUTOPAY PAYMENT")
+                        | upper_merchant.contains("AUTOMATIC PAYMENT")
+                        | upper_merchant.contains("PAYMENT - THANK")
+                    )
+                )
+            )
+            query = query.where(TransactionModel.type != "transfer", ~recognized_card_payment)
         if since is not None:
             query = query.where(TransactionModel.posted_at >= since)
         if until is not None:
@@ -201,7 +242,7 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         return _to_domain(row)
 
     async def update_budget_category(
-        self, user_id: UUID, transaction_id: UUID, budget_category_id: UUID | None
+        self, user_id: UUID, transaction_id: UUID, budget_category_id: UUID | None, ignored_from_budget: bool | None = None
     ) -> Transaction:
         result = await self.session.execute(
             select(TransactionModel)
@@ -214,6 +255,40 @@ class TransactionRepository(BaseRepository[TransactionModel]):
 
             raise NotFoundError("Transaction", str(transaction_id))
         row.budget_category_id = budget_category_id
+        if ignored_from_budget is not None:
+            row.ignored_from_budget = ignored_from_budget
+        row.reviewed_at = datetime.now(timezone.utc)
+        await self.session.flush()
+        return _to_domain(row)
+
+    async def mark_reviewed(self, user_id: UUID, transaction_id: UUID) -> None:
+        result = await self.session.execute(
+            select(TransactionModel)
+            .join(AccountModel, AccountModel.id == TransactionModel.account_id)
+            .where(TransactionModel.id == transaction_id, AccountModel.user_id == user_id)
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            raise NotFoundError("Transaction", str(transaction_id))
+        row.reviewed_at = datetime.now(timezone.utc)
+        await self.session.flush()
+
+    async def set_user_classification(
+        self, user_id: UUID, transaction_id: UUID, transaction_type: TransactionType
+    ) -> Transaction:
+        result = await self.session.execute(
+            select(TransactionModel)
+            .join(AccountModel, AccountModel.id == TransactionModel.account_id)
+            .where(TransactionModel.id == transaction_id, AccountModel.user_id == user_id)
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            raise NotFoundError("Transaction", str(transaction_id))
+        row.type = transaction_type.value
+        if transaction_type in {TransactionType.TRANSFER, TransactionType.INCOME}:
+            row.budget_category_id = None
+            row.ignored_from_budget = False
+        row.reviewed_at = datetime.now(timezone.utc)
         await self.session.flush()
         return _to_domain(row)
 
@@ -271,6 +346,7 @@ def _to_domain(
         external_transaction_id=row.external_transaction_id,
         budget_category_id=row.budget_category_id,
         budget_category_name=budget_category_name,
+        ignored_from_budget=getattr(row, "ignored_from_budget", False),
         account_name=account_name,
         account_archived=account_archived,
     )

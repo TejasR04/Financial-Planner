@@ -33,6 +33,8 @@ def test_manual_assignment_wins_over_merchant_rule_and_pending_is_separate():
     assert by_category[groceries_id].spent == Decimal("20")
     assert by_category[subscriptions_id].spent == Decimal("15")
     assert by_category[subscriptions_id].pending == Decimal("15")
+    assert by_category[subscriptions_id].remaining == Decimal("20")
+    assert by_category[subscriptions_id].forecast == Decimal("46.50")
     assert uncategorized_spent == Decimal("10")
     assert uncategorized_pending == Decimal("0")
     assert uncategorized_count == 1

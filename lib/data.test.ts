@@ -4,9 +4,10 @@ import { formatCurrency, formatPercent } from "@/lib/data";
 
 describe("display formatting", () => {
   it("formats currency signs, rounding, and compact units", () => {
-    expect(formatCurrency(1234.56)).toBe("$1,235");
-    expect(formatCurrency(-42, { sign: true })).toBe("-$42");
-    expect(formatCurrency(42, { sign: true })).toBe("+$42");
+    expect(formatCurrency(1234.56)).toBe("$1,234.56");
+    expect(formatCurrency(2.5)).toBe("$2.50");
+    expect(formatCurrency(-42, { sign: true })).toBe("-$42.00");
+    expect(formatCurrency(42, { sign: true })).toBe("+$42.00");
     expect(formatCurrency(1_500, { compact: true })).toBe("$1.5K");
     expect(formatCurrency(2_000_000, { compact: true })).toBe("$2.0M");
     expect(formatCurrency(3_000_000_000, { compact: true })).toBe("$3.0B");

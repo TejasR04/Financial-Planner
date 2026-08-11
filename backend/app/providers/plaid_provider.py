@@ -24,6 +24,7 @@ from app.core.exceptions import ProviderError
 from app.domain.entities import Account, Holding, Institution, Transaction
 from app.domain.enums import AccountStatus, AccountType, AssetClass, TransactionStatus, TransactionType
 from app.persistence.repositories.account_repository import AccountRepository
+from app.persistence.repositories.budget_repository import BudgetRepository
 from app.persistence.repositories.holding_repository import HoldingRepository
 from app.persistence.repositories.institution_repository import InstitutionRepository
 from app.persistence.repositories.investment_value_snapshot_repository import InvestmentValueSnapshotRepository
@@ -103,6 +104,7 @@ class PlaidProvider(FinancialDataProvider):
         self._institutions = InstitutionRepository(session)
         self._accounts = AccountRepository(session)
         self._transactions = TransactionRepository(session)
+        self._budgets = BudgetRepository(session)
         self._holdings = HoldingRepository(session)
         self._investment_history = InvestmentValueSnapshotRepository(session)
 
@@ -232,6 +234,9 @@ class PlaidProvider(FinancialDataProvider):
             created, updated, removed = await self._transactions.apply_plaid_updates(
                 transactions, transaction_patch.removed_external_transaction_ids
             )
+            # Persist applicable user merchant rules for newly synced
+            # expenses, so their custom category is visible everywhere.
+            await self._budgets.apply_merchant_rules_for_user(user_id)
 
             # Investment holdings are optional for a Transactions-linked Item.
             # A bank without Investments support must still sync balances and
@@ -306,7 +311,17 @@ def _to_account_entity(user_id: UUID, institution_id: UUID, raw: RawPlaidAccount
 
 
 def _to_transaction_entity(raw: RawPlaidTransaction, account_id: UUID) -> Transaction:
-    if raw.category.startswith("TRANSFER"):
+    normalized_category = raw.category.upper()
+    normalized_merchant = raw.merchant.upper()
+    is_credit_card_payment = (
+        normalized_category == "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"
+        or "PAYMENT - BILT" in normalized_merchant
+        or (
+            normalized_category == "LOAN_PAYMENTS"
+            and any(marker in normalized_merchant for marker in ("CREDIT CRD", "CREDIT CARD", "AUTOPAY PAYMENT", "AUTOMATIC PAYMENT", "PAYMENT - THANK"))
+        )
+    )
+    if normalized_category.startswith("TRANSFER") or is_credit_card_payment:
         transaction_type = TransactionType.TRANSFER
     elif raw.amount > 0:
         transaction_type = TransactionType.INCOME

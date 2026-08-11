@@ -28,6 +28,24 @@ export class ApiError extends Error {
   }
 }
 
+type ValidationDetail = { loc?: unknown[]; msg?: string };
+
+export function formatApiErrorDetail(detail: unknown, fallback: string): string {
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const messages = detail.flatMap((item: ValidationDetail) => {
+      if (!item || typeof item.msg !== "string") return [];
+      const field = Array.isArray(item.loc)
+        ? item.loc.filter((part) => part !== "body").at(-1)
+        : undefined;
+      const label = typeof field === "string" ? field.replaceAll("_", " ") : "Field";
+      return [`${label}: ${item.msg}`];
+    });
+    if (messages.length) return messages.join("; ");
+  }
+  return fallback;
+}
+
 async function request<T>(
   path: string,
   options: RequestInit = {},
@@ -71,7 +89,7 @@ async function request<T>(
     let detail = res.statusText;
     try {
       const body = await res.json();
-      detail = body?.detail ?? detail;
+      detail = formatApiErrorDetail(body?.detail, detail);
     } catch {
       // response wasn't JSON; fall back to statusText
     }
@@ -135,7 +153,18 @@ export type ApiPlanningProfile = {
 };
 
 export type ApiIncomeSource = { id: string; name: string; annual_amount: string; growth_rate: string; active: boolean };
-export type ApiLiability = { id: string; account_id: string; principal: string; interest_rate: string; term_months: number; minimum_payment: string; origination_date: string };
+export type ApiLiability = { id: string; account_id: string; principal: string | null; interest_rate: string | null; term_months: number | null; minimum_payment: string | null; origination_date: string | null };
+export type ApiLoanBalanceRule = {
+  id: string;
+  account_id: string;
+  mode: "scheduled" | "merchant";
+  amount: string | null;
+  frequency: "once" | "monthly" | null;
+  next_run_date: string | null;
+  merchant_pattern: string | null;
+  active: boolean;
+  created_at: string;
+};
 export type ApiHolding = { id: string; account_id: string; symbol: string; quantity: string; cost_basis: string; market_value: string; asset_class: "equity" | "fixed_income" | "real_estate" | "cash" | "alternatives"; as_of: string };
 export type ApiCashFlowOutlook = { series: { month_index: number; income: string; expenses: string; net: string }[]; average_monthly_surplus: string; projected_savings_rate: string; income_source: string; expense_source: string };
 export type ApiDebtPlan = { strategy: "avalanche" | "snowball"; months_to_debt_free: number; total_interest_paid: string; payoff_order: string[]; paid_off: boolean; warning: string | null };
@@ -206,6 +235,7 @@ export type ApiTransaction = {
   status: "cleared" | "pending";
   budget_category_id: string | null;
   budget_category_name: string | null;
+  ignored_from_budget: boolean;
   account_name: string | null;
   account_archived: boolean;
 };
@@ -221,8 +251,9 @@ export type ApiBudgetCategory = {
 
 export type ApiMerchantBudgetRule = {
   id: string;
-  budget_category_id: string;
-  budget_category_name: string;
+  budget_category_id: string | null;
+  budget_category_name: string | null;
+  transaction_type: "income" | "transfer" | null;
   merchant_pattern: string;
 };
 
@@ -248,6 +279,10 @@ export type ApiUncategorizedBudgetTransaction = {
   provider_category: string;
   amount: string;
   status: "cleared" | "pending";
+  type: ApiTransaction["type"];
+  budget_category_id: string | null;
+  budget_category_name: string | null;
+  ignored_from_budget: boolean;
 };
 
 export type ApiTransactionList = {
@@ -448,6 +483,8 @@ export const api = {
     }) => post<ApiAccount>("/accounts", body),
     update: (accountId: string, body: { name?: string; balance?: string; mask?: string; apy?: string }) =>
       patch<ApiAccount>(`/accounts/${accountId}`, body),
+    rename: (accountId: string, name: string) =>
+      patch<ApiAccount>(`/accounts/${accountId}/name`, { name }),
     delete: (accountId: string) => del(`/accounts/${accountId}`),
     sync: (accountId: string) => post<ApiPlaidRefreshInstitution>(`/accounts/${accountId}/sync`),
     institutions: () => get<ApiInstitution[]>("/accounts/institutions"),
@@ -455,6 +492,10 @@ export const api = {
     allocation: () => get<ApiAllocationAnalysis>("/accounts/allocation"),
     liability: (id: string) => get<ApiLiability | null>(`/accounts/${id}/liability`),
     saveLiability: (id: string, body: Omit<ApiLiability, "id" | "account_id">) => request<ApiLiability>(`/accounts/${id}/liability`, { method: "PUT", body: JSON.stringify(body) }),
+    balanceRules: (id: string) => get<ApiLoanBalanceRule[]>(`/accounts/${id}/balance-rules`),
+    createBalanceRule: (id: string, body: { mode: "scheduled" | "merchant"; amount?: string; frequency?: "once" | "monthly"; next_run_date?: string; merchant_pattern?: string }) =>
+      post<ApiLoanBalanceRule>(`/accounts/${id}/balance-rules`, body),
+    deleteBalanceRule: (accountId: string, ruleId: string) => del<void>(`/accounts/${accountId}/balance-rules/${ruleId}`),
     holdings: (id: string) => get<ApiHolding[]>(`/accounts/${id}/holdings`),
     addHolding: (id: string, body: Omit<ApiHolding, "id" | "account_id">) => post<ApiHolding>(`/accounts/${id}/holdings`, body),
     deleteHolding: (id: string) => del<void>(`/holdings/${id}`),
@@ -482,24 +523,36 @@ export const api = {
       offset?: number;
       accountId?: string;
       category?: string;
+      budgetCategoryId?: string;
+      direction?: "inflow" | "outflow";
+      search?: string;
+      merchant?: string;
       since?: string;
       until?: string;
       includeArchived?: boolean;
+      cashFlowOnly?: boolean;
     }, signal?: AbortSignal) => {
       const qs = new URLSearchParams();
       if (params?.limit) qs.set("limit", String(params.limit));
       if (params?.offset) qs.set("offset", String(params.offset));
       if (params?.accountId) qs.set("account_id", params.accountId);
       if (params?.category) qs.set("category", params.category);
+      if (params?.budgetCategoryId) qs.set("budget_category_id", params.budgetCategoryId);
+      if (params?.direction) qs.set("direction", params.direction);
+      if (params?.search) qs.set("search", params.search);
+      if (params?.merchant) qs.set("merchant", params.merchant);
       if (params?.since) qs.set("since", params.since);
       if (params?.until) qs.set("until", params.until);
       if (params?.includeArchived) qs.set("include_archived", "true");
+      if (params?.cashFlowOnly) qs.set("cash_flow_only", "true");
       const suffix = qs.toString() ? `?${qs}` : "";
       return get<ApiTransactionList>(`/transactions${suffix}`, { signal });
     },
     listAll: async (params?: {
       accountId?: string;
       category?: string;
+      budgetCategoryId?: string;
+      merchant?: string;
       since?: string;
       until?: string;
     }, signal?: AbortSignal) => {
@@ -522,10 +575,14 @@ export const api = {
 
       return data;
     },
-    updateBudgetCategory: (transactionId: string, budgetCategoryId: string | null) =>
+    updateBudgetCategory: (transactionId: string, budgetCategoryId: string | null, ignoredFromBudget?: boolean) =>
       patch<ApiTransaction>(`/transactions/${transactionId}/budget-category`, {
         budget_category_id: budgetCategoryId,
+        ...(ignoredFromBudget === undefined ? {} : { ignored_from_budget: ignoredFromBudget }),
       }),
+    markReviewed: (transactionId: string) => post<void>(`/transactions/${transactionId}/review`),
+    updateClassification: (transactionId: string, type: ApiTransaction["type"]) =>
+      patch<ApiTransaction>(`/transactions/${transactionId}/classification`, { type }),
     create: (body: {
       account_id: string;
       posted_at: string;
@@ -547,13 +604,13 @@ export const api = {
       body: Partial<{ name: string; group_name: string; monthly_limit: string; active: boolean }>,
     ) => patch<ApiBudgetCategory>(`/budgets/categories/${categoryId}`, body),
     merchantRules: () => get<ApiMerchantBudgetRule[]>("/budgets/merchant-rules"),
-    createMerchantRule: (body: { budget_category_id: string; merchant_pattern: string }) =>
+    createMerchantRule: (body: { budget_category_id?: string; transaction_type?: "income" | "transfer"; merchant_pattern: string }) =>
       post<ApiMerchantBudgetRule>("/budgets/merchant-rules", body),
     deleteMerchantRule: (ruleId: string) => del(`/budgets/merchant-rules/${ruleId}`),
     summary: (month: string, signal?: AbortSignal) =>
       get<ApiBudgetSummary>(`/budgets/summary?month=${month}-01`, { signal }),
-    uncategorized: (month: string, signal?: AbortSignal) =>
-      get<ApiUncategorizedBudgetTransaction[]>(`/budgets/uncategorized?month=${month}-01`, { signal }),
+    reviewQueue: (signal?: AbortSignal) =>
+      get<ApiUncategorizedBudgetTransaction[]>("/budgets/review-queue", { signal }),
   },
   scenarios: {
     list: () => get<ApiScenario[]>("/scenarios"),

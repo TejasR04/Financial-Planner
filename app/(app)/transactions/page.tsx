@@ -7,12 +7,20 @@ import { TransactionEditDialog } from "@/components/transaction-edit-dialog";
 import { PageContainer, PageHeader } from "@/components/page-container";
 import { Panel, PanelHeader } from "@/components/panel";
 import { Button } from "@/components/ui/button";
-import { ApiError, api, type ApiTransaction, type ApiTransactionList } from "@/lib/api-client";
+import { DialogShell } from "@/components/ui/dialog-shell";
+import { ApiError, api, type ApiBudgetCategory, type ApiTransaction, type ApiTransactionList } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/data";
 import { useAccountsData, useDataRefresh } from "@/lib/data-provider";
 import { cn } from "@/lib/utils";
 
 const PAGE_SIZE = 50;
+
+type PendingMerchantRule = {
+  transaction: ApiTransaction;
+  categoryId?: string;
+  transactionType?: "income" | "transfer";
+  treatmentName: string;
+};
 
 function formatDate(date: string) {
   return new Date(`${date}T00:00:00`).toLocaleDateString("en-US", {
@@ -26,10 +34,14 @@ export default function TransactionsPage() {
   const accounts = useAccountsData();
   const refreshData = useDataRefresh();
   const [accountId, setAccountId] = useState("");
-  const [category, setCategory] = useState("");
+  const [merchant, setMerchant] = useState("");
+  const [budgetCategoryId, setBudgetCategoryId] = useState("");
+  const [direction, setDirection] = useState<"" | "inflow" | "outflow">("");
+  const [categories, setCategories] = useState<ApiBudgetCategory[]>([]);
   const [since, setSince] = useState("");
   const [until, setUntil] = useState("");
   const [includeArchived, setIncludeArchived] = useState(false);
+  const [cashFlowOnly, setCashFlowOnly] = useState(false);
   const [page, setPage] = useState(0);
   const [result, setResult] = useState<ApiTransactionList | null>(null);
   const [loading, setLoading] = useState(true);
@@ -38,6 +50,9 @@ export default function TransactionsPage() {
   const [entryOpen, setEntryOpen] = useState(false);
   const [reloadTick, setReloadTick] = useState(0);
   const [editing, setEditing] = useState<ApiTransaction | null>(null);
+  const [updatingCategoryId, setUpdatingCategoryId] = useState<string | null>(null);
+  const [filtersReady, setFiltersReady] = useState(false);
+  const [pendingMerchantRule, setPendingMerchantRule] = useState<PendingMerchantRule | null>(null);
 
   const accountNameById = useMemo(
     () => new Map(accounts.map((account) => [account.id, account.name])),
@@ -45,6 +60,25 @@ export default function TransactionsPage() {
   );
 
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    setBudgetCategoryId(params.get("budget_category_id") ?? "");
+    setSince(params.get("since") ?? "");
+    setUntil(params.get("until") ?? "");
+    setDirection((params.get("direction") as "inflow" | "outflow" | null) ?? "");
+    setCashFlowOnly(params.get("cash_flow_only") === "true");
+    setFiltersReady(true);
+  }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    void api.budgets.categories(controller.signal).then(setCategories).catch(() => {
+      if (!controller.signal.aborted) setCategories([]);
+    });
+    return () => controller.abort();
+  }, []);
+
+  useEffect(() => {
+    if (!filtersReady) return;
     let cancelled = false;
     const controller = new AbortController();
     setLoading(true);
@@ -55,10 +89,13 @@ export default function TransactionsPage() {
           limit: PAGE_SIZE,
           offset: page * PAGE_SIZE,
           accountId: accountId || undefined,
-          category: category.trim() || undefined,
+          budgetCategoryId: budgetCategoryId || undefined,
+          direction: direction || undefined,
+          search: merchant.trim() || undefined,
           since: since || undefined,
           until: until || undefined,
           includeArchived,
+          cashFlowOnly,
         }, controller.signal)
         .then((next) => {
           if (!cancelled) setResult(next);
@@ -72,20 +109,82 @@ export default function TransactionsPage() {
         .finally(() => {
           if (!cancelled) setLoading(false);
         });
-    }, category ? 300 : 0);
+    }, merchant ? 300 : 0);
     return () => {
       cancelled = true;
       window.clearTimeout(handle);
       controller.abort();
     };
-  }, [accountId, category, includeArchived, page, reloadTick, since, until]);
+  }, [accountId, budgetCategoryId, cashFlowOnly, direction, filtersReady, includeArchived, merchant, page, reloadTick, since, until]);
 
   const resetFilters = () => {
     setAccountId("");
-    setCategory("");
+    setMerchant("");
+    setBudgetCategoryId("");
+    setDirection("");
     setSince("");
     setUntil("");
+    setIncludeArchived(false);
+    setCashFlowOnly(false);
     setPage(0);
+  };
+  const updateCategory = async (transaction: ApiTransaction, nextCategoryId: string) => {
+    if (nextCategoryId === "__transfer__" || nextCategoryId === "__income__") {
+      const transactionType = nextCategoryId === "__transfer__" ? "transfer" : "income";
+      setPendingMerchantRule({
+        transaction,
+        transactionType,
+        treatmentName: transactionType === "income" ? "Income" : "Transfer",
+      });
+      return;
+    }
+    if (nextCategoryId) {
+      const categoryName = categories.find((category) => category.id === nextCategoryId)?.name;
+      if (categoryName) {
+        setPendingMerchantRule({ transaction, categoryId: nextCategoryId, treatmentName: categoryName });
+        return;
+      }
+    }
+    setUpdatingCategoryId(transaction.id);
+    setError(null);
+    try {
+      await api.transactions.updateBudgetCategory(transaction.id, nextCategoryId || null, false);
+      setReloadTick((current) => current + 1);
+      refreshData();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't update that category.");
+    } finally {
+      setUpdatingCategoryId(null);
+    }
+  };
+  const completeCategoryAssignment = async (createRule: boolean) => {
+    if (!pendingMerchantRule) return;
+    const pending = pendingMerchantRule;
+    setUpdatingCategoryId(pending.transaction.id);
+    setError(null);
+    try {
+      if (pending.transactionType) {
+        await api.transactions.updateClassification(pending.transaction.id, pending.transactionType);
+      } else if (pending.categoryId) {
+        await api.transactions.updateBudgetCategory(pending.transaction.id, pending.categoryId, false);
+      }
+      if (createRule) {
+        await api.budgets.createMerchantRule({
+          ...(pending.categoryId ? { budget_category_id: pending.categoryId } : {}),
+          ...(pending.transactionType ? { transaction_type: pending.transactionType } : {}),
+          merchant_pattern: pending.transaction.merchant,
+        });
+      }
+      setPendingMerchantRule(null);
+      setReloadTick((current) => current + 1);
+      refreshData();
+    } catch (err) {
+      setPendingMerchantRule(null);
+      setError(err instanceof ApiError ? err.message : "Couldn't update that category.");
+      setReloadTick((current) => current + 1);
+    } finally {
+      setUpdatingCategoryId(null);
+    }
   };
   const setFilterPage = (update: () => void) => {
     update();
@@ -105,8 +204,15 @@ export default function TransactionsPage() {
       {editing && <TransactionEditDialog transaction={editing} account={accounts.find((a) => a.id === editing.account_id)} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); setReloadTick((x) => x + 1); refreshData(); }} />}
 
       <Panel>
-        <PanelHeader title="Filters" description="Narrow the ledger by account, category, or date" />
-        <div className="grid grid-cols-1 gap-3 border-t border-border p-4 sm:grid-cols-2 xl:grid-cols-6">
+        <PanelHeader title="Filters" description="Search by merchant or amount, or narrow the ledger by account, budget category, or date" />
+        <div className="grid grid-cols-1 gap-3 border-t border-border p-4 sm:grid-cols-2 xl:grid-cols-8">
+          <input
+            value={merchant}
+            onChange={(event) => setFilterPage(() => setMerchant(event.target.value))}
+            placeholder="Search merchant or amount"
+            className="h-8 rounded-md border border-border bg-background px-2 text-[12px] text-foreground outline-none placeholder:text-muted-foreground focus:border-ring"
+            aria-label="Search transactions by merchant or amount"
+          />
           <select
             value={accountId}
             onChange={(event) => setFilterPage(() => setAccountId(event.target.value))}
@@ -118,13 +224,16 @@ export default function TransactionsPage() {
               <option key={account.id} value={account.id}>{account.name}</option>
             ))}
           </select>
-          <input
-            value={category}
-            onChange={(event) => setFilterPage(() => setCategory(event.target.value))}
-            placeholder="Category (e.g. rent)"
-            className="h-8 rounded-md border border-border bg-background px-2 text-[12px] text-foreground outline-none placeholder:text-muted-foreground focus:border-ring"
+          <select
+            value={budgetCategoryId}
+            onChange={(event) => setFilterPage(() => setBudgetCategoryId(event.target.value))}
+            className="h-8 rounded-md border border-border bg-background px-2 text-[12px] text-foreground outline-none focus:border-ring"
             aria-label="Filter by category"
-          />
+          >
+            <option value="">All budget categories</option>
+            {categories.filter((category) => category.active).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+          </select>
+          <select value={direction} onChange={(event) => setFilterPage(() => setDirection(event.target.value as "" | "inflow" | "outflow"))} className="h-8 rounded-md border border-border bg-background px-2 text-[12px] text-foreground outline-none focus:border-ring" aria-label="Filter by money direction"><option value="">Money in and out</option><option value="inflow">Money in (positive)</option><option value="outflow">Money out (negative)</option></select>
           <label className="flex items-center gap-2 text-[12px] text-muted-foreground">
             From
             <input type="date" value={since} onChange={(event) => setFilterPage(() => setSince(event.target.value))} className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-foreground outline-none focus:border-ring" />
@@ -134,7 +243,7 @@ export default function TransactionsPage() {
             To
             <input type="date" value={until} onChange={(event) => setFilterPage(() => setUntil(event.target.value))} className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-foreground outline-none focus:border-ring" />
           </label>
-          <Button variant="outline" size="sm" onClick={resetFilters} disabled={!accountId && !category && !since && !until}>
+          <Button variant="outline" size="sm" onClick={resetFilters} disabled={!accountId && !merchant && !budgetCategoryId && !direction && !since && !until && !includeArchived}>
             <RotateCcw /> Reset filters
           </Button>
         </div>
@@ -168,7 +277,21 @@ export default function TransactionsPage() {
                       <button className="text-left hover:underline" onClick={() => setEditing(transaction)}>{transaction.merchant}</button>
                       {transaction.status === "pending" && <span className="ml-2 rounded border border-warning/30 bg-warning/10 px-1 py-px text-[10px] font-medium text-warning">pending</span>}
                     </td>
-                    <td className="px-4 py-2.5 text-muted-foreground">{transaction.budget_category_name ?? transaction.category}</td>
+                    <td className="px-4 py-2.5 text-muted-foreground">
+                      <select
+                        value={transaction.budget_category_id ?? (transaction.type === "income" ? "__income__" : transaction.type === "transfer" ? "__transfer__" : "")}
+                        onChange={(event) => void updateCategory(transaction, event.target.value)}
+                        disabled={updatingCategoryId === transaction.id}
+                        aria-label={`Category for ${transaction.merchant}`}
+                        className="h-8 min-w-40 rounded-md border border-border bg-background px-2 text-[12px] text-foreground outline-none focus:border-ring disabled:opacity-60"
+                      >
+                        <option value="">{transaction.category}</option>
+                        <option value="__transfer__">Transfer — exclude from cash flow</option>
+                        <option value="__income__">Income — exclude from budget</option>
+                        {categories.filter((category) => category.active).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
+                      </select>
+                      <label className="mt-1 flex items-center gap-1 text-[11px]"><input type="checkbox" checked={transaction.ignored_from_budget} disabled={updatingCategoryId === transaction.id} onChange={(event) => { setUpdatingCategoryId(transaction.id); void api.transactions.updateBudgetCategory(transaction.id, transaction.budget_category_id, event.target.checked).then(() => { setReloadTick((current) => current + 1); refreshData(); }).catch((err) => setError(err instanceof ApiError ? err.message : "Couldn't update budget handling.")).finally(() => setUpdatingCategoryId(null)); }} />Ignore for budget</label>
+                    </td>
                     <td className="hidden px-4 py-2.5 text-muted-foreground md:table-cell">{transaction.account_name ?? accountNameById.get(transaction.account_id) ?? "Account"}{transaction.account_archived ? " (disconnected)" : ""}</td>
                     <td className="hidden px-4 py-2.5 capitalize text-muted-foreground lg:table-cell">{transaction.type}</td>
                     <td className={cn("whitespace-nowrap px-4 py-2.5 text-right font-mono font-medium tabular-nums", Number(transaction.amount) >= 0 ? "text-positive" : "text-foreground")}>
@@ -202,6 +325,10 @@ export default function TransactionsPage() {
           refreshData();
         }}
       />
+      {pendingMerchantRule && <DialogShell onClose={() => setPendingMerchantRule(null)} closeDisabled={updatingCategoryId === pendingMerchantRule.transaction.id} ariaLabelledBy="transaction-merchant-rule-title" panelClassName="max-w-md">
+        <div className="border-b border-border px-4 py-3"><h2 id="transaction-merchant-rule-title" className="text-sm font-semibold text-foreground">Create a merchant rule?</h2><p className="mt-1 text-xs text-muted-foreground">Also classify and automatically approve past and future transactions from {pendingMerchantRule.transaction.merchant} as {pendingMerchantRule.treatmentName}.</p></div>
+        <div className="flex justify-end gap-2 p-3"><Button type="button" variant="outline" size="sm" onClick={() => void completeCategoryAssignment(false)} disabled={updatingCategoryId === pendingMerchantRule.transaction.id}>Only this transaction</Button><Button type="button" size="sm" onClick={() => void completeCategoryAssignment(true)} disabled={updatingCategoryId === pendingMerchantRule.transaction.id}>{updatingCategoryId === pendingMerchantRule.transaction.id ? "Saving…" : "Create rule"}</Button></div>
+      </DialogShell>}
     </PageContainer>
   );
 }

@@ -25,7 +25,10 @@ export function formatCurrency(
       }
     }
   }
-  return `${prefix}$${abs.toLocaleString("en-US", { maximumFractionDigits: 0 })}`;
+  return `${prefix}$${abs.toLocaleString("en-US", {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  })}`;
 }
 
 export function formatPercent(
@@ -70,6 +73,7 @@ export type AllocationSlice = {
 
 export type CashflowPoint = {
   month: string;
+  monthKey?: string;
   income: number;
   expenses: number;
 };

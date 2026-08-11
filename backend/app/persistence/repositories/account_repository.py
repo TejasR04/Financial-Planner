@@ -126,6 +126,10 @@ class AccountRepository(BaseRepository[AccountModel]):
         """Backward-compatible name for callers that only update manual rows."""
         return await self.update_for_user(user_id, account_id, **fields)
 
+    async def rename_for_user(self, user_id: UUID, account_id: UUID, name: str) -> Account:
+        """Rename an account locally, including accounts managed by a provider."""
+        return await self.update_for_user(user_id, account_id, name=name)
+
     async def archive_for_user(self, user_id: UUID, account_id: UUID) -> None:
         row = await self._row_for_user(user_id, account_id)
         row.archived_at = datetime.now(timezone.utc)

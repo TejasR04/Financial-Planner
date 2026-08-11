@@ -14,6 +14,7 @@ from app.schemas.transaction import (
     CSVImportRequest,
     CSVImportResponse,
     TransactionCreateRequest,
+    TransactionClassificationRequest,
     TransactionListResponse,
     TransactionResponse,
     TransactionUpdateRequest,
@@ -27,17 +28,23 @@ router = APIRouter(prefix="/transactions", tags=["transactions"])
 async def list_transactions(
     account_id: UUID | None = None,
     category: str | None = None,
+    budget_category_id: UUID | None = None,
+    direction: str | None = Query(default=None, pattern="^(inflow|outflow)$"),
+    search: str | None = None,
+    merchant: str | None = None,
     since: date | None = None,
     until: date | None = None,
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     include_archived: bool = False,
+    cash_flow_only: bool = False,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> TransactionListResponse:
     transactions, total = await TransactionRepository(db).list_for_user(
-        current_user.id, account_id=account_id, category=category, since=since, until=until,
-        limit=limit, offset=offset, include_archived=include_archived,
+        current_user.id, account_id=account_id, category=category,
+        budget_category_id=budget_category_id, direction=direction, search=search, merchant=merchant, since=since, until=until,
+        limit=limit, offset=offset, include_archived=include_archived, cash_flow_only=cash_flow_only,
     )
     return TransactionListResponse(
         data=[TransactionResponse.model_validate(t, from_attributes=True) for t in transactions],
@@ -86,6 +93,30 @@ async def update_transaction(
     return TransactionResponse.model_validate(updated, from_attributes=True)
 
 
+@router.post("/{transaction_id}/review", status_code=status.HTTP_204_NO_CONTENT)
+async def review_transaction(
+    transaction_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    await TransactionRepository(db).mark_reviewed(current_user.id, transaction_id)
+    await db.commit()
+
+
+@router.patch("/{transaction_id}/classification", response_model=TransactionResponse)
+async def classify_transaction(
+    transaction_id: UUID,
+    body: TransactionClassificationRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> TransactionResponse:
+    updated = await TransactionRepository(db).set_user_classification(
+        current_user.id, transaction_id, body.type
+    )
+    await db.commit()
+    return TransactionResponse.model_validate(updated, from_attributes=True)
+
+
 @router.patch("/{transaction_id}/budget-category", response_model=TransactionResponse)
 async def update_transaction_budget_category(
     transaction_id: UUID,
@@ -93,11 +124,16 @@ async def update_transaction_budget_category(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> TransactionResponse:
+    category_name = None
     if body.budget_category_id is not None:
-        await BudgetRepository(db).get_category_for_user(current_user.id, body.budget_category_id)
+        category = await BudgetRepository(db).get_category_for_user(
+            current_user.id, body.budget_category_id
+        )
+        category_name = category.name
     updated = await TransactionRepository(db).update_budget_category(
-        current_user.id, transaction_id, body.budget_category_id
+        current_user.id, transaction_id, body.budget_category_id, body.ignored_from_budget
     )
+    updated.budget_category_name = category_name
     await db.commit()
     return TransactionResponse.model_validate(updated, from_attributes=True)
 

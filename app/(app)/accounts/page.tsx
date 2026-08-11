@@ -126,7 +126,7 @@ export default function AccountsPage() {
     <Button variant="ghost" size="icon-xs" aria-label={`Rename ${account.name}`} onClick={() => { setEditingAccount(account); setManualDialogOpen(true); }}><Pencil /></Button>
     <Button variant="ghost" size="icon-xs" aria-label={`Sync ${account.name}`} onClick={() => { const institution = institutions.find((item) => item.id === account.institutionId); if (institution) void syncInstitution(institution); }} disabled={pendingActionId !== null}>
       <RefreshCw className={pendingActionId === account.institutionId ? "animate-spin" : undefined} />
-    </Button><Button variant="ghost" size="icon-xs" aria-label={`Disconnect ${account.name}`} onClick={() => void archiveAccount(account)} disabled={pendingActionId === account.id}><Unlink /></Button></div>
+    </Button><PlaidLinkButton label="Update access" institutionId={account.institutionId} size="xs" variant="ghost" /><Button variant="ghost" size="icon-xs" aria-label={`Disconnect ${account.name}`} onClick={() => void archiveAccount(account)} disabled={pendingActionId === account.id}><Unlink /></Button></div>
   ) : (
     <div className="flex items-center">
       {detailsButton(account)}

@@ -96,9 +96,9 @@ async def build_user_financial_context(
         ],
         "debts": [
             {
-                "principal": _money(liability.principal),
-                "interest_rate": str(liability.interest_rate),
-                "minimum_payment": _money(liability.minimum_payment),
+                "principal": _money(liability.principal) if liability.principal is not None else None,
+                "interest_rate": str(liability.interest_rate) if liability.interest_rate is not None else None,
+                "minimum_payment": _money(liability.minimum_payment) if liability.minimum_payment is not None else None,
                 "term_months": liability.term_months,
             }
             for liability in snapshot.liabilities

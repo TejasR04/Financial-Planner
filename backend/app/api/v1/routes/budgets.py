@@ -62,7 +62,9 @@ async def list_merchant_rules(current_user: User = Depends(get_current_user), db
     return [
         MerchantRuleResponse(
             id=rule.id, budget_category_id=rule.budget_category_id,
-            budget_category_name=category.name, merchant_pattern=rule.merchant_pattern,
+            budget_category_name=category.name if category else None,
+            transaction_type=rule.transaction_type,
+            merchant_pattern=rule.merchant_pattern,
         )
         for rule, category in rows
     ]
@@ -73,12 +75,19 @@ async def create_merchant_rule(
     body: MerchantRuleCreateRequest, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     repo = BudgetRepository(db)
-    rule = await repo.create_rule(current_user.id, body.budget_category_id, body.merchant_pattern)
-    category = await repo.get_category_for_user(current_user.id, rule.budget_category_id)
+    rule = await repo.create_rule(
+        current_user.id, body.budget_category_id, body.merchant_pattern, body.transaction_type
+    )
+    category = (
+        await repo.get_category_for_user(current_user.id, rule.budget_category_id)
+        if rule.budget_category_id else None
+    )
     await db.commit()
     return MerchantRuleResponse(
         id=rule.id, budget_category_id=rule.budget_category_id,
-        budget_category_name=category.name, merchant_pattern=rule.merchant_pattern,
+        budget_category_name=category.name if category else None,
+        transaction_type=rule.transaction_type,
+        merchant_pattern=rule.merchant_pattern,
     )
 
 
@@ -102,7 +111,7 @@ async def budget_summary(
     transactions = await repo.expense_transactions_for_month(current_user.id, selected_month, end)
     rollups, uncategorized_spent, uncategorized_pending, uncategorized_count = service.summarize(
         [BudgetCategoryInput(row.id, row.name, row.group_name, row.monthly_limit, row.active) for row in categories],
-        [MerchantRuleInput(rule.budget_category_id, rule.merchant_pattern) for rule, _ in rules],
+        [MerchantRuleInput(rule.budget_category_id, rule.merchant_pattern) for rule, _ in rules if rule.budget_category_id],
         [BudgetTransactionInput(row.merchant, row.amount, row.status, row.budget_category_id) for row in transactions],
         selected_month,
     )
@@ -127,16 +136,16 @@ async def budget_summary(
     )
 
 
-@router.get("/uncategorized", response_model=list[UncategorizedTransactionResponse])
-async def uncategorized_transactions(
+@router.get("/review-queue", response_model=list[UncategorizedTransactionResponse])
+async def transaction_review_queue(
     month: date | None = None, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     repo = BudgetRepository(db)
     categories = await repo.list_categories(current_user.id)
     rules = await repo.list_rules(current_user.id)
     active_category_ids = {row.id for row in categories if row.active}
-    rule_inputs = [MerchantRuleInput(rule.budget_category_id, rule.merchant_pattern) for rule, _ in rules]
-    rows = await repo.uncategorized_expense_transactions(current_user.id)
+    rule_inputs = [MerchantRuleInput(rule.budget_category_id, rule.merchant_pattern) for rule, _ in rules if rule.budget_category_id]
+    rows = await repo.unreviewed_transactions(current_user.id)
     result = []
     for row in rows:
         classification = service.classify_category_id(
@@ -144,15 +153,18 @@ async def uncategorized_transactions(
             rule_inputs,
             active_category_ids,
         )
-        if classification is None:
-            result.append(
-                UncategorizedTransactionResponse(
-                    id=row.id,
-                    posted_at=row.posted_at,
-                    merchant=row.merchant,
-                    provider_category=row.category,
-                    amount=row.amount,
-                    status=row.status,
-                )
+        result.append(
+            UncategorizedTransactionResponse(
+                id=row.id,
+                posted_at=row.posted_at,
+                merchant=row.merchant,
+                provider_category=row.category,
+                amount=row.amount,
+                status=row.status,
+                type=row.type,
+                budget_category_id=classification,
+                budget_category_name=next((category.name for category in categories if category.id == classification), None),
+                ignored_from_budget=row.ignored_from_budget,
             )
+        )
     return result

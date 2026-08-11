@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from app.domain.enums import AccountStatus, AccountType
 
@@ -40,6 +40,18 @@ class AccountUpdateRequest(BaseModel):
     balance: Decimal | None = None
     mask: str | None = None
     apy: Decimal | None = None
+
+
+class AccountRenameRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=255)
+
+    @field_validator("name")
+    @classmethod
+    def name_cannot_be_blank(cls, value: str) -> str:
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("Account name cannot be blank.")
+        return normalized
 
 
 class InstitutionResponse(BaseModel):

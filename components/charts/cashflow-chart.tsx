@@ -14,7 +14,7 @@ import { useCashflowSeries } from "@/lib/data-provider";
 import type { CashflowPoint } from "@/lib/data";
 import { ChartTooltip } from "./chart-tooltip";
 
-export function CashflowChart({ data }: { data?: CashflowPoint[] }) {
+export function CashflowChart({ data, onSelect }: { data?: CashflowPoint[]; onSelect?: (point: CashflowPoint, direction: "inflow" | "outflow") => void }) {
   const cashflowSeries = useCashflowSeries();
   return (
     <div className="h-[220px] w-full px-2 pb-2 pt-4">
@@ -53,6 +53,8 @@ export function CashflowChart({ data }: { data?: CashflowPoint[] }) {
             fill="var(--chart-1)"
             radius={[2, 2, 0, 0]}
             maxBarSize={22}
+            cursor={onSelect ? "pointer" : undefined}
+            onClick={(entry) => onSelect?.((entry as unknown as { payload: CashflowPoint }).payload, "inflow")}
           />
           <Bar
             dataKey="expenses"
@@ -60,6 +62,8 @@ export function CashflowChart({ data }: { data?: CashflowPoint[] }) {
             fill="var(--chart-4)"
             radius={[2, 2, 0, 0]}
             maxBarSize={22}
+            cursor={onSelect ? "pointer" : undefined}
+            onClick={(entry) => onSelect?.((entry as unknown as { payload: CashflowPoint }).payload, "outflow")}
           />
         </BarChart>
       </ResponsiveContainer>

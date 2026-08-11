@@ -2,7 +2,8 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+from app.domain.enums import TransactionType
 
 
 class BudgetCategoryCreateRequest(BaseModel):
@@ -28,19 +29,29 @@ class BudgetCategoryResponse(BaseModel):
 
 
 class MerchantRuleCreateRequest(BaseModel):
-    budget_category_id: UUID
+    budget_category_id: UUID | None = None
+    transaction_type: TransactionType | None = None
     merchant_pattern: str = Field(min_length=1, max_length=255)
+
+    @model_validator(mode="after")
+    def validate_treatment(self):
+        special = self.transaction_type in {TransactionType.INCOME, TransactionType.TRANSFER}
+        if (self.budget_category_id is None) == (not special):
+            raise ValueError("Choose exactly one budget category, income, or transfer treatment")
+        return self
 
 
 class MerchantRuleResponse(BaseModel):
     id: UUID
-    budget_category_id: UUID
-    budget_category_name: str
+    budget_category_id: UUID | None = None
+    budget_category_name: str | None = None
+    transaction_type: TransactionType | None = None
     merchant_pattern: str
 
 
 class TransactionBudgetAssignmentRequest(BaseModel):
     budget_category_id: UUID | None = None
+    ignored_from_budget: bool | None = None
 
 
 class BudgetCategorySummaryResponse(BaseModel):
@@ -73,3 +84,7 @@ class UncategorizedTransactionResponse(BaseModel):
     provider_category: str
     amount: Decimal
     status: str
+    type: str
+    budget_category_id: UUID | None = None
+    budget_category_name: str | None = None
+    ignored_from_budget: bool = False
