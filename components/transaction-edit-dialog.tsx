@@ -15,6 +15,7 @@ export function TransactionEditDialog({ transaction, account, onClose, onSaved }
   const [error, setError] = useState("");
   const [loadingCategories, setLoadingCategories] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
   useEffect(() => {
     void api.budgets.categories()
       .then(setCategories)
@@ -35,6 +36,19 @@ export function TransactionEditDialog({ transaction, account, onClose, onSaved }
       setSaving(false);
     }
   }
+  async function remove() {
+    setSaving(true);
+    setError("");
+    try {
+      await api.transactions.delete(transaction.id);
+      onSaved();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unable to delete transaction.");
+      setConfirmDelete(false);
+    } finally {
+      setSaving(false);
+    }
+  }
   const set = (key: keyof typeof values, value: string) => setValues({ ...values, [key]: value });
   return (
     <DialogShell onClose={onClose} ariaLabelledBy="transaction-edit-title" panelClassName="max-w-lg rounded-lg bg-card p-4">
@@ -50,9 +64,10 @@ export function TransactionEditDialog({ transaction, account, onClose, onSaved }
         </select></label>
       </div>
       {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
-      <div className="mt-4 flex justify-end gap-2">
-        <Button variant="outline" size="sm" onClick={onClose} disabled={saving}>Cancel</Button>
-        <Button size="sm" onClick={() => void save()} disabled={saving || loadingCategories}>{saving ? "Saving…" : "Save"}</Button>
+      <div className="mt-4 flex items-center justify-between gap-2">
+        {confirmDelete ? <div className="flex items-center gap-2"><span className="text-xs text-destructive">Delete this transaction everywhere in Meridian?</span><Button variant="destructive" size="sm" onClick={() => void remove()} disabled={saving}>{saving ? "Deleting…" : "Confirm delete"}</Button><Button variant="ghost" size="sm" onClick={() => setConfirmDelete(false)} disabled={saving}>Keep</Button></div> : <Button variant="ghost" size="sm" className="text-destructive" onClick={() => setConfirmDelete(true)} disabled={saving}>Delete transaction</Button>}
+        <div className="flex gap-2"><Button variant="outline" size="sm" onClick={onClose} disabled={saving}>Cancel</Button>
+        <Button size="sm" onClick={() => void save()} disabled={saving || loadingCategories}>{saving ? "Saving…" : "Save"}</Button></div>
       </div>
     </DialogShell>
   );

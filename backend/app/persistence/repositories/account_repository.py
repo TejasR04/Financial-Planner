@@ -177,7 +177,7 @@ class AccountRepository(BaseRepository[AccountModel]):
     async def disconnected_imported_data_summary(self, user_id: UUID) -> tuple[int, int]:
         ids = select(AccountModel.id).where(AccountModel.user_id == user_id, AccountModel.archived_at.is_not(None), AccountModel.external_account_id.is_not(None))
         accounts = await self.session.scalar(select(func.count()).select_from(ids.subquery()))
-        transactions = await self.session.scalar(select(func.count()).select_from(TransactionModel).where(TransactionModel.account_id.in_(ids)))
+        transactions = await self.session.scalar(select(func.count()).select_from(TransactionModel).where(TransactionModel.account_id.in_(ids), TransactionModel.deleted_at.is_(None)))
         return accounts or 0, transactions or 0
 
     async def permanently_delete_disconnected_imported_data(self, user_id: UUID) -> tuple[int, int]:

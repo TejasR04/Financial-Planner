@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from datetime import date, datetime, timezone
 from decimal import Decimal, InvalidOperation
+import re
 from uuid import UUID, uuid4
 
 from sqlalchemy import delete, func, select
@@ -36,7 +37,7 @@ class TransactionRepository(BaseRepository[TransactionModel]):
             select(TransactionModel, AccountModel.name, AccountModel.archived_at, BudgetCategoryModel.name)
             .join(AccountModel, AccountModel.id == TransactionModel.account_id)
             .outerjoin(BudgetCategoryModel, BudgetCategoryModel.id == TransactionModel.budget_category_id)
-            .where(AccountModel.user_id == user_id)
+            .where(AccountModel.user_id == user_id, TransactionModel.deleted_at.is_(None))
         )
         if not include_archived:
             query = query.where(AccountModel.archived_at.is_(None))
@@ -144,6 +145,45 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         await self.session.flush()
         return [_to_domain(row) for row in rows]
 
+    async def bulk_create_deduplicated(self, transactions: list[Transaction]) -> tuple[list[Transaction], int]:
+        """Insert CSV rows unless a likely copy already exists."""
+        if not transactions:
+            return [], 0
+        account_ids = {transaction.account_id for transaction in transactions}
+        first_date = min(transaction.posted_at for transaction in transactions)
+        last_date = max(transaction.posted_at for transaction in transactions)
+        existing = list((await self.session.execute(
+            select(TransactionModel).where(
+                TransactionModel.account_id.in_(account_ids),
+                TransactionModel.posted_at >= first_date,
+                TransactionModel.posted_at <= last_date,
+                TransactionModel.deleted_at.is_(None),
+            )
+        )).scalars().all())
+
+        accepted: list[Transaction] = []
+        skipped = 0
+        for transaction in transactions:
+            duplicate_existing = any(
+                row.account_id == transaction.account_id
+                and row.posted_at == transaction.posted_at
+                and row.amount == transaction.amount
+                and merchants_likely_match(row.merchant, transaction.merchant)
+                for row in existing
+            )
+            duplicate_in_file = any(
+                row.account_id == transaction.account_id
+                and row.posted_at == transaction.posted_at
+                and row.amount == transaction.amount
+                and merchants_likely_match(row.merchant, transaction.merchant)
+                for row in accepted
+            )
+            if duplicate_existing or duplicate_in_file:
+                skipped += 1
+            else:
+                accepted.append(transaction)
+        return await self.bulk_create(accepted), skipped
+
     async def apply_plaid_updates(
         self,
         transactions: list[Transaction],
@@ -206,7 +246,10 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         if removed_external_transaction_ids:
             result = await self.session.execute(
                 delete(TransactionModel)
-                .where(TransactionModel.external_transaction_id.in_(removed_external_transaction_ids))
+                .where(
+                    TransactionModel.external_transaction_id.in_(removed_external_transaction_ids),
+                    TransactionModel.deleted_at.is_(None),
+                )
                 .returning(TransactionModel.id)
             )
             removed = len(result.scalars().all())
@@ -226,6 +269,7 @@ class TransactionRepository(BaseRepository[TransactionModel]):
             .where(
                 TransactionModel.id == transaction_id,
                 AccountModel.user_id == user_id,
+                TransactionModel.deleted_at.is_(None),
             )
         )
         row = result.scalar_one_or_none()
@@ -247,7 +291,7 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         result = await self.session.execute(
             select(TransactionModel)
             .join(AccountModel, AccountModel.id == TransactionModel.account_id)
-            .where(TransactionModel.id == transaction_id, AccountModel.user_id == user_id)
+            .where(TransactionModel.id == transaction_id, AccountModel.user_id == user_id, TransactionModel.deleted_at.is_(None))
         )
         row = result.scalar_one_or_none()
         if row is None:
@@ -265,7 +309,7 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         result = await self.session.execute(
             select(TransactionModel)
             .join(AccountModel, AccountModel.id == TransactionModel.account_id)
-            .where(TransactionModel.id == transaction_id, AccountModel.user_id == user_id)
+            .where(TransactionModel.id == transaction_id, AccountModel.user_id == user_id, TransactionModel.deleted_at.is_(None))
         )
         row = result.scalar_one_or_none()
         if row is None:
@@ -279,7 +323,7 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         result = await self.session.execute(
             select(TransactionModel)
             .join(AccountModel, AccountModel.id == TransactionModel.account_id)
-            .where(TransactionModel.id == transaction_id, AccountModel.user_id == user_id)
+            .where(TransactionModel.id == transaction_id, AccountModel.user_id == user_id, TransactionModel.deleted_at.is_(None))
         )
         row = result.scalar_one_or_none()
         if row is None:
@@ -292,6 +336,22 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         await self.session.flush()
         return _to_domain(row)
 
+    async def delete_for_user(self, user_id: UUID, transaction_id: UUID) -> None:
+        result = await self.session.execute(
+            select(TransactionModel)
+            .join(AccountModel, AccountModel.id == TransactionModel.account_id)
+            .where(
+                TransactionModel.id == transaction_id,
+                AccountModel.user_id == user_id,
+                TransactionModel.deleted_at.is_(None),
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            raise NotFoundError("Transaction", str(transaction_id))
+        row.deleted_at = datetime.now(timezone.utc)
+        await self.session.flush()
+
     async def list_since_for_income_expense(self, user_id: UUID, since: date) -> list[Transaction]:
         """All income/expense transactions since a date, unfiltered by
         account — used by services that need real transaction history
@@ -302,6 +362,7 @@ class TransactionRepository(BaseRepository[TransactionModel]):
             .where(
                 AccountModel.user_id == user_id,
                 TransactionModel.posted_at >= since,
+                TransactionModel.deleted_at.is_(None),
             )
             .order_by(TransactionModel.posted_at.desc(), TransactionModel.id.desc())
         )
@@ -322,10 +383,37 @@ class TransactionRepository(BaseRepository[TransactionModel]):
             .where(
                 AccountModel.user_id == user_id,
                 TransactionModel.posted_at >= since,
+                TransactionModel.deleted_at.is_(None),
             )
             .group_by(TransactionModel.type)
         )
         return {TransactionType(type_): Decimal(total) for type_, total in result.all()}
+
+
+_MERCHANT_NOISE = {"pos", "purchase", "debit", "card", "visa", "checkcard", "sq", "square"}
+
+
+def _normalized_merchant(value: str) -> str:
+    tokens = re.findall(r"[a-z0-9]+", value.lower())
+    meaningful = [token for token in tokens if token not in _MERCHANT_NOISE and not (token.isdigit() and len(token) >= 4)]
+    return " ".join(meaningful)
+
+
+def merchants_likely_match(left: str, right: str) -> bool:
+    left_normalized = _normalized_merchant(left)
+    right_normalized = _normalized_merchant(right)
+    if not left_normalized or not right_normalized:
+        return False
+    if left_normalized == right_normalized:
+        return True
+    left_tokens = set(left_normalized.split())
+    right_tokens = set(right_normalized.split())
+    shared = left_tokens & right_tokens
+    smaller_size = min(len(left_tokens), len(right_tokens))
+    # A single-word name must match exactly ("Uber" is not "Uber Eats").
+    # Multi-word names match when most words from the shorter variant appear
+    # in the longer one ("Dept Education" matches "Dept Education Loan").
+    return smaller_size >= 2 and len(shared) >= 2 and len(shared) / smaller_size >= (2 / 3)
 
 
 def _to_domain(

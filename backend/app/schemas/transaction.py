@@ -62,4 +62,5 @@ class CSVImportRequest(BaseModel):
 
 class CSVImportResponse(BaseModel):
     imported_count: int
+    skipped_duplicate_count: int = 0
     data: list[TransactionResponse]

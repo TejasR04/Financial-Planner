@@ -107,6 +107,7 @@ class LoanBalanceAutomationService:
                 AccountModel.user_id == user_id,
                 TransactionModel.account_id != account.id,
                 TransactionModel.status == "cleared",
+                TransactionModel.deleted_at.is_(None),
                 TransactionModel.posted_at >= rule.created_at.date(),
                 TransactionModel.merchant.ilike(f"%{pattern}%"),
             )

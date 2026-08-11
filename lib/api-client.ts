@@ -517,6 +517,7 @@ export const api = {
     refresh: () => post<ApiPlaidRefreshResponse>("/plaid/refresh"),
   },
   transactions: {
+    delete: (id: string) => del<void>(`/transactions/${id}`),
     update: (id: string, body: Partial<Pick<ApiTransaction, "posted_at" | "merchant" | "category" | "amount" | "type">>) => patch<ApiTransaction>(`/transactions/${id}`, body),
     list: (params?: {
       limit?: number;
@@ -593,7 +594,7 @@ export const api = {
       status?: ApiTransaction["status"];
     }) => post<ApiTransaction>("/transactions", body),
     importCsv: (body: { account_id: string; csv_text: string; since?: string }) =>
-      post<{ imported_count: number; data: ApiTransaction[] }>("/transactions/import/csv", body),
+      post<{ imported_count: number; skipped_duplicate_count: number; data: ApiTransaction[] }>("/transactions/import/csv", body),
   },
   budgets: {
     categories: (signal?: AbortSignal) => get<ApiBudgetCategory[]>("/budgets/categories", { signal }),

@@ -93,6 +93,16 @@ async def update_transaction(
     return TransactionResponse.model_validate(updated, from_attributes=True)
 
 
+@router.delete("/{transaction_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_transaction(
+    transaction_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> None:
+    await TransactionRepository(db).delete_for_user(current_user.id, transaction_id)
+    await db.commit()
+
+
 @router.post("/{transaction_id}/review", status_code=status.HTTP_204_NO_CONTENT)
 async def review_transaction(
     transaction_id: UUID,
@@ -155,9 +165,10 @@ async def import_csv(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
-    created = await TransactionRepository(db).bulk_create(normalized)
+    created, skipped = await TransactionRepository(db).bulk_create_deduplicated(normalized)
     await db.commit()
     return CSVImportResponse(
         imported_count=len(created),
+        skipped_duplicate_count=skipped,
         data=[TransactionResponse.model_validate(t, from_attributes=True) for t in created],
     )

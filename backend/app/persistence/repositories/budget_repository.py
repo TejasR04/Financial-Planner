@@ -139,6 +139,7 @@ class BudgetRepository(BaseRepository[BudgetCategoryModel]):
                 continue
             normalized_merchant = func.replace(func.lower(TransactionModel.merchant), "_", " ")
             conditions = [
+                TransactionModel.deleted_at.is_(None),
                 TransactionModel.account_id.in_(
                     select(AccountModel.id).where(AccountModel.user_id == user_id)
                 ),
@@ -192,6 +193,7 @@ class BudgetRepository(BaseRepository[BudgetCategoryModel]):
                 TransactionModel.posted_at >= start,
                 TransactionModel.posted_at <= end,
                 TransactionModel.ignored_from_budget.is_(False),
+                TransactionModel.deleted_at.is_(None),
                 (TransactionModel.type == "expense") | (TransactionModel.budget_category_id.is_not(None)),
             )
         )
@@ -207,6 +209,7 @@ class BudgetRepository(BaseRepository[BudgetCategoryModel]):
                 AccountModel.user_id == user_id,
                 AccountModel.archived_at.is_(None),
                 TransactionModel.reviewed_at.is_(None),
+                TransactionModel.deleted_at.is_(None),
             )
             .order_by(TransactionModel.posted_at.desc(), TransactionModel.id.desc())
         )

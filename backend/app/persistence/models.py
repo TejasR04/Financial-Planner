@@ -180,6 +180,7 @@ class TransactionModel(Base):
     )
     ignored_from_budget: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
 
 class BudgetCategoryModel(Base):
