@@ -173,6 +173,10 @@ class TransactionModel(Base):
     type: Mapped[str] = mapped_column(String(20))
     status: Mapped[str] = mapped_column(String(20), default="cleared")
     external_transaction_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Stable identity for rows created through CSV import. It lets later
+    # provider syncs reconcile with the imported row without confusing it
+    # with a manually entered transaction.
+    import_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
     # A user-owned budget assignment. The provider's `category` remains
     # untouched so the original financial-data classification is retained.
     budget_category_id: Mapped[uuid.UUID | None] = mapped_column(

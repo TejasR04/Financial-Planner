@@ -60,7 +60,7 @@ export function TransactionEditDialog({ transaction, account, onClose, onSaved }
         <label className="col-span-2 text-xs font-medium text-muted-foreground">Your budget category<select aria-label="Your budget category" className={`${input} mt-1`} disabled={loadingCategories} value={budgetCategoryId} onChange={(event) => setBudgetCategoryId(event.target.value)}><option value="">Use provider category ({transaction.category})</option>{categories.filter((category) => category.active).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
         <label className="text-xs font-medium text-muted-foreground">Amount<input aria-label="Amount" className={`${input} mt-1`} type="number" inputMode="decimal" disabled={Boolean(account?.institutionId)} value={values.amount} onChange={(event) => set("amount", event.target.value)} /></label>
         <label className="text-xs font-medium text-muted-foreground">Type<select aria-label="Transaction type" className={`${input} mt-1`} disabled={Boolean(account?.institutionId)} value={values.type} onChange={(event) => set("type", event.target.value)}>
-          {["expense", "income", "transfer", "contribution"].map((type) => <option key={type}>{type}</option>)}
+          {["expense", "income", "transfer", "credit_card_payment", "contribution"].map((type) => <option key={type} value={type}>{type === "credit_card_payment" ? "Credit card payment" : type}</option>)}
         </select></label>
       </div>
       {error && <p className="mt-2 text-xs text-destructive">{error}</p>}

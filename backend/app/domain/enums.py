@@ -33,6 +33,7 @@ class TransactionType(str, Enum):
     INCOME = "income"
     EXPENSE = "expense"
     TRANSFER = "transfer"
+    CREDIT_CARD_PAYMENT = "credit_card_payment"
     CONTRIBUTION = "contribution"
 
 

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import io
+from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from uuid import UUID, uuid4
@@ -11,7 +12,18 @@ from app.domain.enums import TransactionStatus, TransactionType
 from app.providers.base import FinancialDataProvider
 
 EXPECTED_COLUMNS = {"date", "merchant", "category", "amount"}
-GENERIC_FLOW_CATEGORIES = {"withdrawal", "money in", "interest payment", "deposit", "transfer"}
+GENERIC_FLOW_CATEGORIES = {
+    "credit", "debit", "withdrawal", "money in", "interest payment", "deposit", "transfer"
+}
+SUPPORTED_EXPLICIT_TYPES = {transaction_type.value for transaction_type in TransactionType}
+MAX_IMPORT_ROWS = 10_000
+
+
+@dataclass(slots=True)
+class ParsedCSVRow:
+    row_number: int
+    transaction: Transaction
+    warnings: list[str]
 
 
 class CSVImportProvider(FinancialDataProvider):
@@ -32,6 +44,9 @@ class CSVImportProvider(FinancialDataProvider):
         raise NotImplementedError("CSVImportProvider only normalizes transactions")
 
     async def get_transactions(self, user_id: UUID, since: date) -> list[Transaction]:
+        return [row.transaction for row in self.parse_rows(since)]
+
+    def parse_rows(self, since: date) -> list[ParsedCSVRow]:
         csv_text = self.csv_text.lstrip("\ufeff")
         try:
             dialect = csv.Sniffer().sniff(csv_text[:4096], delimiters=",\t;|")
@@ -43,8 +58,10 @@ class CSVImportProvider(FinancialDataProvider):
         if missing:
             raise ValueError(f"CSV is missing required columns: {sorted(missing)}")
 
-        transactions: list[Transaction] = []
+        transactions: list[ParsedCSVRow] = []
         for line_number, raw_row in enumerate(reader, start=2):
+            if line_number > MAX_IMPORT_ROWS + 1:
+                raise ValueError(f"CSV contains more than {MAX_IMPORT_ROWS:,} data rows. Split it into smaller files.")
             row = {(key or "").strip().lower(): (value or "").strip() for key, value in raw_row.items()}
             if not any(row.values()):
                 continue
@@ -55,27 +72,54 @@ class CSVImportProvider(FinancialDataProvider):
                 raise ValueError(f"Row {line_number}: {exc}") from exc
             if posted_at < since:
                 continue
+            merchant = row["merchant"].strip()
+            if not merchant:
+                raise ValueError(f"Row {line_number}: Merchant is required")
+            if len(merchant) > 255:
+                raise ValueError(f"Row {line_number}: Merchant must be 255 characters or fewer")
             category = row["category"]
+            if len(category) > 100:
+                raise ValueError(f"Row {line_number}: Category must be 100 characters or fewer")
             normalized_category = " ".join(category.lower().replace("_", " ").split())
-            if normalized_category == "withdrawal":
+            warnings: list[str] = []
+            if normalized_category in {"withdrawal", "debit"}:
                 amount = -abs(amount)
-            elif normalized_category in {"money in", "interest payment", "deposit"}:
+            elif normalized_category in {"credit", "money in", "interest payment", "deposit"}:
                 amount = abs(amount)
-            transaction_type = (
-                TransactionType.TRANSFER
-                if normalized_category == "transfer"
-                else TransactionType.INCOME if amount > 0 else TransactionType.EXPENSE
-            )
+            if amount == 0:
+                raise ValueError(f"Row {line_number}: Amount cannot be zero")
+            explicit_type = row.get("type", "").strip().lower().replace(" ", "_")
+            if explicit_type in SUPPORTED_EXPLICIT_TYPES:
+                try:
+                    transaction_type = TransactionType(explicit_type)
+                except ValueError as exc:
+                    raise ValueError(f"Row {line_number}: Unrecognized type: {row.get('type')!r}") from exc
+                expected_positive = transaction_type in {TransactionType.INCOME, TransactionType.CONTRIBUTION}
+                amount = abs(amount) if expected_positive else -abs(amount) if transaction_type == TransactionType.EXPENSE else amount
+            elif normalized_category == "transfer":
+                transaction_type = TransactionType.TRANSFER
+            elif "credit card payment" in normalized_category:
+                transaction_type = TransactionType.CREDIT_CARD_PAYMENT
+            else:
+                transaction_type = TransactionType.INCOME if amount > 0 else TransactionType.EXPENSE
+                if normalized_category not in GENERIC_FLOW_CATEGORIES:
+                    warnings.append("Type was inferred from the amount sign; review before importing.")
+                if explicit_type:
+                    warnings.append(f"Bank type {row.get('type')!r} was treated as source metadata and not used as an app category.")
             transactions.append(
-                Transaction(
-                    id=uuid4(),
-                    account_id=self.account_id,
-                    posted_at=posted_at,
-                    merchant=row["merchant"],
-                    category="uncategorized" if normalized_category in GENERIC_FLOW_CATEGORIES else category,
-                    amount=amount,
-                    type=transaction_type,
-                    status=TransactionStatus.CLEARED,
+                ParsedCSVRow(
+                    row_number=line_number,
+                    warnings=warnings,
+                    transaction=Transaction(
+                        id=uuid4(),
+                        account_id=self.account_id,
+                        posted_at=posted_at,
+                        merchant=merchant,
+                        category="uncategorized" if normalized_category in GENERIC_FLOW_CATEGORIES else (category or "uncategorized"),
+                        amount=amount,
+                        type=transaction_type,
+                        status=TransactionStatus.CLEARED,
+                    ),
                 )
             )
         return transactions

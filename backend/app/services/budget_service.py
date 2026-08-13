@@ -7,11 +7,9 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
+from app.domain.merchant_rules import merchant_matches_rule
+
 ZERO = Decimal("0")
-
-
-def _normalize_merchant(value: str) -> str:
-    return " ".join(value.lower().replace("_", " ").split())
 
 
 @dataclass(slots=True, frozen=True)
@@ -58,8 +56,7 @@ class BudgetService:
     ) -> UUID | None:
         if transaction.budget_category_id in active_category_ids:
             return transaction.budget_category_id
-        merchant = _normalize_merchant(transaction.merchant)
-        matching_rule = next((rule for rule in rules if rule.merchant_pattern in merchant), None)
+        matching_rule = next((rule for rule in rules if merchant_matches_rule(transaction.merchant, rule.merchant_pattern)), None)
         if matching_rule and matching_rule.budget_category_id in active_category_ids:
             return matching_rule.budget_category_id
         return None

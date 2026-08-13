@@ -121,7 +121,7 @@ export type Transaction = {
   category: string;
   account: string;
   amount: number;
-  type: "income" | "expense" | "transfer" | "contribution";
+  type: "income" | "expense" | "transfer" | "credit_card_payment" | "contribution";
   status: "cleared" | "pending";
 };
 

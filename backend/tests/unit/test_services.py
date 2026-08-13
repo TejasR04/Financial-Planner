@@ -58,13 +58,31 @@ def test_retirement_projection_feasibility_flag():
     assert result.shortfall_or_surplus < Decimal("0")
 
 
+def test_retirement_projection_uses_entered_return_as_real_rate():
+    assumptions = PlanningAssumptions(
+        current_age=22,
+        retirement_age=62,
+        expected_return=Decimal("0.065"),
+        inflation_rate=Decimal("0.028"),
+    )
+
+    result = RetirementProjectionService().project(
+        current_retirement_balance=Decimal("0"),
+        annual_contribution=Decimal("22200"),
+        assumptions=assumptions,
+    )
+
+    # $1,850 deposited monthly for 40 years at a 6.5% real annual return.
+    assert result.projected_balance_at_retirement > Decimal("4000000")
+
+
 def test_retirement_feasibility_requires_funding_the_full_horizon():
     service = RetirementProjectionService()
     assumptions = PlanningAssumptions(
         current_age=64,
         retirement_age=65,
         life_expectancy_age=95,
-        expected_return=Decimal("0.03"),
+        expected_return=Decimal("0"),
         inflation_rate=Decimal("0.03"),
         withdrawal_rate=Decimal("0.04"),
     )

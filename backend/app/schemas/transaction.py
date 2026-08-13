@@ -2,7 +2,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.domain.enums import TransactionStatus, TransactionType
 
@@ -54,10 +54,38 @@ class TransactionClassificationRequest(BaseModel):
     type: TransactionType
 
 
+class CSVImportRowOverride(BaseModel):
+    row_number: int = Field(ge=2)
+    include: bool = True
+    posted_at: date | None = None
+    merchant: str | None = Field(default=None, min_length=1, max_length=255)
+    category: str | None = Field(default=None, max_length=100)
+    amount: Decimal | None = None
+    type: TransactionType | None = None
+
+
 class CSVImportRequest(BaseModel):
     account_id: UUID
-    csv_text: str
+    csv_text: str = Field(min_length=1, max_length=5_000_000)
     since: date | None = None
+    overrides: list[CSVImportRowOverride] = Field(default_factory=list, max_length=10_000)
+
+
+class CSVImportPreviewRow(BaseModel):
+    row_number: int
+    posted_at: date
+    merchant: str
+    category: str
+    amount: Decimal
+    type: TransactionType
+    likely_duplicate: bool
+    warnings: list[str] = Field(default_factory=list)
+
+
+class CSVImportPreviewResponse(BaseModel):
+    rows: list[CSVImportPreviewRow]
+    importable_count: int
+    duplicate_count: int
 
 
 class CSVImportResponse(BaseModel):

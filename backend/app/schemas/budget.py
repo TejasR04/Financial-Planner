@@ -35,9 +35,11 @@ class MerchantRuleCreateRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_treatment(self):
-        special = self.transaction_type in {TransactionType.INCOME, TransactionType.TRANSFER}
+        special = self.transaction_type in {
+            TransactionType.INCOME, TransactionType.TRANSFER, TransactionType.CREDIT_CARD_PAYMENT
+        }
         if (self.budget_category_id is None) == (not special):
-            raise ValueError("Choose exactly one budget category, income, or transfer treatment")
+            raise ValueError("Choose exactly one budget category, income, transfer, or credit card payment treatment")
         return self
 
 

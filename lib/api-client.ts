@@ -231,7 +231,7 @@ export type ApiTransaction = {
   merchant: string;
   category: string;
   amount: string;
-  type: "income" | "expense" | "transfer" | "contribution";
+  type: "income" | "expense" | "transfer" | "credit_card_payment" | "contribution";
   status: "cleared" | "pending";
   budget_category_id: string | null;
   budget_category_name: string | null;
@@ -253,7 +253,7 @@ export type ApiMerchantBudgetRule = {
   id: string;
   budget_category_id: string | null;
   budget_category_name: string | null;
-  transaction_type: "income" | "transfer" | null;
+  transaction_type: "income" | "transfer" | "credit_card_payment" | null;
   merchant_pattern: string;
 };
 
@@ -333,8 +333,28 @@ export type ApiScenarioRun = {
   created_at: string;
 };
 
+export type ApiCsvImportRow = {
+  row_number: number;
+  posted_at: string;
+  merchant: string;
+  category: string;
+  amount: string;
+  type: ApiTransaction["type"];
+  likely_duplicate: boolean;
+  warnings: string[];
+};
+
+export type ApiCsvImportPreview = {
+  rows: ApiCsvImportRow[];
+  importable_count: number;
+  duplicate_count: number;
+};
+
+export type ApiCsvImportOverride = Omit<ApiCsvImportRow, "likely_duplicate" | "warnings"> & { include: boolean };
+
 export type ApiScenarioPreview = {
   net_worth_at_target_age: string;
+  retirement_balance_at_target_age?: string;
   monthly_sustainable_withdrawal: string | null;
   success_rate: string | null;
   trajectory: { year: number; age: number; assets: string; liabilities: string; net: string }[];
@@ -593,7 +613,9 @@ export const api = {
       type: ApiTransaction["type"];
       status?: ApiTransaction["status"];
     }) => post<ApiTransaction>("/transactions", body),
-    importCsv: (body: { account_id: string; csv_text: string; since?: string }) =>
+    previewCsv: (body: { account_id: string; csv_text: string; since?: string; overrides?: ApiCsvImportOverride[] }) =>
+      post<ApiCsvImportPreview>("/transactions/import/csv/preview", body),
+    importCsv: (body: { account_id: string; csv_text: string; since?: string; overrides?: ApiCsvImportOverride[] }) =>
       post<{ imported_count: number; skipped_duplicate_count: number; data: ApiTransaction[] }>("/transactions/import/csv", body),
   },
   budgets: {
@@ -604,8 +626,9 @@ export const api = {
       categoryId: string,
       body: Partial<{ name: string; group_name: string; monthly_limit: string; active: boolean }>,
     ) => patch<ApiBudgetCategory>(`/budgets/categories/${categoryId}`, body),
+    deleteCategory: (categoryId: string) => del<void>(`/budgets/categories/${categoryId}`),
     merchantRules: () => get<ApiMerchantBudgetRule[]>("/budgets/merchant-rules"),
-    createMerchantRule: (body: { budget_category_id?: string; transaction_type?: "income" | "transfer"; merchant_pattern: string }) =>
+    createMerchantRule: (body: { budget_category_id?: string; transaction_type?: "income" | "transfer" | "credit_card_payment"; merchant_pattern: string }) =>
       post<ApiMerchantBudgetRule>("/budgets/merchant-rules", body),
     deleteMerchantRule: (ruleId: string) => del(`/budgets/merchant-rules/${ruleId}`),
     summary: (month: string, signal?: AbortSignal) =>

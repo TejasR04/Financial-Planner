@@ -134,7 +134,7 @@ def test_income_target_stays_in_todays_dollars_through_retirement():
     )
 
 
-def test_inflation_reduces_real_retirement_balance_when_nominal_return_is_unchanged():
+def test_inflation_does_not_reduce_balance_when_expected_return_is_already_real():
     service = ScenarioService()
     common = dict(
         current_age=40,
@@ -158,7 +158,7 @@ def test_inflation_reduces_real_retirement_balance_when_nominal_return_is_unchan
 
     assert (
         high.retirement_projection.projected_balance_at_retirement
-        < low.retirement_projection.projected_balance_at_retirement
+        == low.retirement_projection.projected_balance_at_retirement
     )
 
 

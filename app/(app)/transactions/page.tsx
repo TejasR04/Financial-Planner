@@ -18,7 +18,7 @@ const PAGE_SIZE = 50;
 type PendingMerchantRule = {
   transaction: ApiTransaction;
   categoryId?: string;
-  transactionType?: "income" | "transfer";
+  transactionType?: "income" | "transfer" | "credit_card_payment";
   treatmentName: string;
 };
 
@@ -129,12 +129,12 @@ export default function TransactionsPage() {
     setPage(0);
   };
   const updateCategory = async (transaction: ApiTransaction, nextCategoryId: string) => {
-    if (nextCategoryId === "__transfer__" || nextCategoryId === "__income__") {
-      const transactionType = nextCategoryId === "__transfer__" ? "transfer" : "income";
+    if (["__transfer__", "__income__", "__credit_card_payment__"].includes(nextCategoryId)) {
+      const transactionType = nextCategoryId.slice(2, -2) as "transfer" | "income" | "credit_card_payment";
       setPendingMerchantRule({
         transaction,
         transactionType,
-        treatmentName: transactionType === "income" ? "Income" : "Transfer",
+        treatmentName: transactionType === "income" ? "Income" : transactionType === "transfer" ? "Transfer" : "Credit card payment",
       });
       return;
     }
@@ -279,7 +279,7 @@ export default function TransactionsPage() {
                     </td>
                     <td className="px-4 py-2.5 text-muted-foreground">
                       <select
-                        value={transaction.budget_category_id ?? (transaction.type === "income" ? "__income__" : transaction.type === "transfer" ? "__transfer__" : "")}
+                        value={transaction.budget_category_id ?? (transaction.type === "income" ? "__income__" : transaction.type === "transfer" ? "__transfer__" : transaction.type === "credit_card_payment" ? "__credit_card_payment__" : "")}
                         onChange={(event) => void updateCategory(transaction, event.target.value)}
                         disabled={updatingCategoryId === transaction.id}
                         aria-label={`Category for ${transaction.merchant}`}
@@ -288,6 +288,7 @@ export default function TransactionsPage() {
                         <option value="">{transaction.category}</option>
                         <option value="__transfer__">Transfer — exclude from cash flow</option>
                         <option value="__income__">Income — exclude from budget</option>
+                        <option value="__credit_card_payment__">Credit card payment — exclude from budget and cash flow</option>
                         {categories.filter((category) => category.active).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
                       </select>
                       <label className="mt-1 flex items-center gap-1 text-[11px]"><input type="checkbox" checked={transaction.ignored_from_budget} disabled={updatingCategoryId === transaction.id} onChange={(event) => { setUpdatingCategoryId(transaction.id); void api.transactions.updateBudgetCategory(transaction.id, transaction.budget_category_id, event.target.checked).then(() => { setReloadTick((current) => current + 1); refreshData(); }).catch((err) => setError(err instanceof ApiError ? err.message : "Couldn't update budget handling.")).finally(() => setUpdatingCategoryId(null)); }} />Ignore for budget</label>

@@ -142,7 +142,7 @@ def test_transfer_category_is_not_misclassified_as_income():
     assert transaction.status == TransactionStatus.PENDING
 
 
-def test_credit_card_payment_is_a_transfer_not_income():
+def test_credit_card_payment_has_distinct_non_cash_flow_type():
     transaction = _to_transaction_entity(
         RawPlaidTransaction(
             external_transaction_id="transaction-3",
@@ -155,10 +155,10 @@ def test_credit_card_payment_is_a_transfer_not_income():
         ),
         uuid4(),
     )
-    assert transaction.type == TransactionType.TRANSFER
+    assert transaction.type == TransactionType.CREDIT_CARD_PAYMENT
 
 
-def test_bilt_card_payment_is_a_transfer_even_when_provider_calls_it_income():
+def test_bilt_card_payment_has_distinct_type_even_when_provider_calls_it_income():
     transaction = _to_transaction_entity(
         RawPlaidTransaction(
             external_transaction_id="transaction-4",
@@ -171,7 +171,7 @@ def test_bilt_card_payment_is_a_transfer_even_when_provider_calls_it_income():
         ),
         uuid4(),
     )
-    assert transaction.type == TransactionType.TRANSFER
+    assert transaction.type == TransactionType.CREDIT_CARD_PAYMENT
 
 
 def test_etf_holding_maps_to_equity():

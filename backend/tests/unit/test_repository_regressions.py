@@ -10,6 +10,7 @@ from sqlalchemy.dialects import postgresql
 from app.domain.entities import Account, Transaction
 from app.domain.enums import AccountType, TransactionStatus, TransactionType
 from app.persistence.repositories.account_repository import AccountRepository
+from app.persistence.repositories.budget_repository import BudgetRepository
 from app.persistence.repositories.holding_repository import HoldingRepository
 from app.persistence.repositories.investment_value_snapshot_repository import (
     InvestmentValueSnapshotRepository,
@@ -86,6 +87,18 @@ async def test_complete_history_query_has_no_hidden_limit():
 
 
 @pytest.mark.asyncio
+async def test_monthly_budget_excludes_transactions_from_archived_accounts():
+    session = SimpleNamespace(execute=AsyncMock(return_value=_empty_result()))
+
+    assert await BudgetRepository(session).expense_transactions_for_month(
+        uuid4(), date(2026, 8, 1), date(2026, 8, 31)
+    ) == []
+
+    statement = session.execute.await_args.args[0]
+    assert "accounts.archived_at IS NULL" in _sql(statement)
+
+
+@pytest.mark.asyncio
 async def test_paginated_transaction_order_has_stable_id_tiebreaker():
     count_result = SimpleNamespace(scalar_one=lambda: 0)
     rows_result = _empty_result()
@@ -130,7 +143,7 @@ async def test_transaction_totals_are_aggregated_in_sql():
 
 
 @pytest.mark.asyncio
-async def test_plaid_update_prefetches_all_existing_transactions_once():
+async def test_plaid_update_prefetches_existing_and_import_candidates_once():
     existing = SimpleNamespace(
         external_transaction_id="existing",
         account_id=uuid4(),
@@ -162,7 +175,40 @@ async def test_plaid_update_prefetches_all_existing_transactions_once():
     counts = await TransactionRepository(session).apply_plaid_updates(transactions, [])
 
     assert counts == (1, 1, 0)
-    assert session.execute.await_count == 1
+    assert session.execute.await_count == 2
+
+
+@pytest.mark.asyncio
+async def test_plaid_update_reconciles_a_nearby_csv_import():
+    account_id = uuid4()
+    imported = SimpleNamespace(
+        external_transaction_id=None,
+        import_fingerprint="fingerprint",
+        deleted_at=None,
+        account_id=account_id,
+        posted_at=date(2026, 8, 1),
+        merchant="US Dept Education",
+        category="uncategorized",
+        amount=Decimal("-200.00"),
+        type=TransactionType.EXPENSE.value,
+        status=TransactionStatus.CLEARED.value,
+    )
+    empty = SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: []))
+    candidates = SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [imported]))
+    session = SimpleNamespace(
+        execute=AsyncMock(side_effect=[empty, candidates]), add=Mock(), flush=AsyncMock()
+    )
+    synced = Transaction(
+        id=uuid4(), account_id=account_id, posted_at=date(2026, 8, 3),
+        merchant="Dept Education - Loan", category="loan_payments",
+        amount=Decimal("-200.00"), type=TransactionType.EXPENSE,
+        status=TransactionStatus.CLEARED, external_transaction_id="plaid-123",
+    )
+
+    assert await TransactionRepository(session).apply_plaid_updates([synced], []) == (0, 1, 0)
+    assert imported.external_transaction_id == "plaid-123"
+    assert imported.posted_at == date(2026, 8, 3)
+    session.add.assert_not_called()
 
 
 @pytest.mark.asyncio

@@ -8,12 +8,9 @@ from sqlalchemy.exc import IntegrityError
 
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
 from app.domain.enums import TransactionType
+from app.domain.merchant_rules import normalize_merchant_rule
 from app.persistence.models import BudgetCategoryModel, MerchantBudgetRuleModel, TransactionModel
 from app.persistence.repositories.base import BaseRepository
-
-
-def normalize_merchant(value: str) -> str:
-    return " ".join(value.lower().replace("_", " ").split())
 
 
 class BudgetRepository(BaseRepository[BudgetCategoryModel]):
@@ -102,18 +99,14 @@ class BudgetRepository(BaseRepository[BudgetCategoryModel]):
     ) -> MerchantBudgetRuleModel:
         if category_id is not None:
             await self.get_category_for_user(user_id, category_id)
-        elif transaction_type not in {TransactionType.INCOME, TransactionType.TRANSFER}:
-            raise ValidationError("Merchant rules require a budget category, income, or transfer treatment")
-        normalized = normalize_merchant(merchant_pattern)
+        elif transaction_type not in {
+            TransactionType.INCOME, TransactionType.TRANSFER, TransactionType.CREDIT_CARD_PAYMENT
+        }:
+            raise ValidationError("Merchant rules require a budget category, income, transfer, or credit card payment treatment")
+        normalized = normalize_merchant_rule(merchant_pattern)
         if not normalized:
             raise ValidationError("Merchant pattern cannot be blank")
-        existing = await self.session.execute(
-            select(MerchantBudgetRuleModel.id).where(
-                MerchantBudgetRuleModel.user_id == user_id,
-                MerchantBudgetRuleModel.merchant_pattern == normalized,
-            )
-        )
-        if existing.scalar_one_or_none() is not None:
+        if any(normalize_merchant_rule(rule.merchant_pattern) == normalized for rule, _ in await self.list_rules(user_id)):
             raise ConflictError("A merchant rule with that pattern already exists")
         row = MerchantBudgetRuleModel(
             id=uuid4(), user_id=user_id, budget_category_id=category_id,
@@ -138,12 +131,15 @@ class BudgetRepository(BaseRepository[BudgetCategoryModel]):
             if category is not None and not category.active:
                 continue
             normalized_merchant = func.replace(func.lower(TransactionModel.merchant), "_", " ")
+            stable_pattern = normalize_merchant_rule(rule.merchant_pattern)
+            if not stable_pattern:
+                continue
             conditions = [
                 TransactionModel.deleted_at.is_(None),
                 TransactionModel.account_id.in_(
                     select(AccountModel.id).where(AccountModel.user_id == user_id)
                 ),
-                normalized_merchant.contains(rule.merchant_pattern, autoescape=True),
+                *(normalized_merchant.contains(word, autoescape=True) for word in stable_pattern.split()),
             ]
             # Creating a rule intentionally applies it to past transactions.
             # Routine syncs only classify brand-new, unreviewed rows so a
@@ -182,6 +178,11 @@ class BudgetRepository(BaseRepository[BudgetCategoryModel]):
         await self.session.delete(row)
         await self.session.flush()
 
+    async def delete_category(self, user_id: UUID, category_id: UUID) -> None:
+        row = await self.get_category_for_user(user_id, category_id)
+        await self.session.delete(row)
+        await self.session.flush()
+
     async def expense_transactions_for_month(self, user_id: UUID, start: date, end: date) -> list[TransactionModel]:
         from app.persistence.models import AccountModel
 
@@ -190,6 +191,7 @@ class BudgetRepository(BaseRepository[BudgetCategoryModel]):
             .join(AccountModel, AccountModel.id == TransactionModel.account_id)
             .where(
                 AccountModel.user_id == user_id,
+                AccountModel.archived_at.is_(None),
                 TransactionModel.posted_at >= start,
                 TransactionModel.posted_at <= end,
                 TransactionModel.ignored_from_budget.is_(False),

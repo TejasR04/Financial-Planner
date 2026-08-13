@@ -93,6 +93,7 @@ class ScenarioPreviewResponse(BaseModel):
     """
 
     net_worth_at_target_age: Decimal
+    retirement_balance_at_target_age: Decimal
     monthly_sustainable_withdrawal: Decimal | None
     success_rate: Decimal | None
     trajectory: list[dict]

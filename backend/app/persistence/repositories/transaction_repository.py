@@ -1,11 +1,13 @@
 from __future__ import annotations
 
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal, InvalidOperation
+import hashlib
 import re
 from uuid import UUID, uuid4
 
 from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.core.exceptions import NotFoundError, ValidationError
 from app.domain.entities import Transaction
@@ -89,7 +91,10 @@ class TransactionRepository(BaseRepository[TransactionModel]):
                     )
                 )
             )
-            query = query.where(TransactionModel.type != "transfer", ~recognized_card_payment)
+            query = query.where(
+                TransactionModel.type.not_in(["transfer", "credit_card_payment"]),
+                ~recognized_card_payment,
+            )
         if since is not None:
             query = query.where(TransactionModel.posted_at >= since)
         if until is not None:
@@ -150,8 +155,8 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         if not transactions:
             return [], 0
         account_ids = {transaction.account_id for transaction in transactions}
-        first_date = min(transaction.posted_at for transaction in transactions)
-        last_date = max(transaction.posted_at for transaction in transactions)
+        first_date = min(transaction.posted_at for transaction in transactions) - timedelta(days=IMPORT_DATE_TOLERANCE_DAYS)
+        last_date = max(transaction.posted_at for transaction in transactions) + timedelta(days=IMPORT_DATE_TOLERANCE_DAYS)
         existing = list((await self.session.execute(
             select(TransactionModel).where(
                 TransactionModel.account_id.in_(account_ids),
@@ -161,28 +166,89 @@ class TransactionRepository(BaseRepository[TransactionModel]):
             )
         )).scalars().all())
 
+        existing_by_account_amount: dict[tuple[UUID, Decimal], list[TransactionModel]] = {}
+        for row in existing:
+            existing_by_account_amount.setdefault((row.account_id, row.amount), []).append(row)
+
         accepted: list[Transaction] = []
+        accepted_by_account_amount: dict[tuple[UUID, Decimal], list[Transaction]] = {}
         skipped = 0
         for transaction in transactions:
+            key = (transaction.account_id, transaction.amount)
             duplicate_existing = any(
-                row.account_id == transaction.account_id
-                and row.posted_at == transaction.posted_at
-                and row.amount == transaction.amount
+                abs((row.posted_at - transaction.posted_at).days) <= IMPORT_DATE_TOLERANCE_DAYS
                 and merchants_likely_match(row.merchant, transaction.merchant)
-                for row in existing
+                for row in existing_by_account_amount.get(key, [])
             )
             duplicate_in_file = any(
-                row.account_id == transaction.account_id
-                and row.posted_at == transaction.posted_at
-                and row.amount == transaction.amount
+                abs((row.posted_at - transaction.posted_at).days) <= IMPORT_DATE_TOLERANCE_DAYS
                 and merchants_likely_match(row.merchant, transaction.merchant)
-                for row in accepted
+                for row in accepted_by_account_amount.get(key, [])
             )
             if duplicate_existing or duplicate_in_file:
                 skipped += 1
             else:
                 accepted.append(transaction)
-        return await self.bulk_create(accepted), skipped
+                accepted_by_account_amount.setdefault(key, []).append(transaction)
+        if not accepted:
+            return [], skipped
+        values = [
+            {
+                "id": transaction.id or uuid4(),
+                "account_id": transaction.account_id,
+                "posted_at": transaction.posted_at,
+                "merchant": transaction.merchant,
+                "category": transaction.category,
+                "amount": transaction.amount,
+                "type": transaction.type.value,
+                "status": transaction.status.value,
+                "external_transaction_id": transaction.external_transaction_id,
+                "import_fingerprint": import_fingerprint(transaction),
+            }
+            for transaction in accepted
+        ]
+        result = await self.session.execute(
+            pg_insert(TransactionModel)
+            .values(values)
+            .on_conflict_do_nothing()
+            .returning(TransactionModel)
+        )
+        rows = list(result.scalars().all())
+        await self.session.flush()
+        return [_to_domain(row) for row in rows], skipped + len(accepted) - len(rows)
+
+    async def import_duplicate_flags(self, transactions: list[Transaction]) -> list[bool]:
+        """Return likely-duplicate decisions without changing the database."""
+        if not transactions:
+            return []
+        account_ids = {transaction.account_id for transaction in transactions}
+        first_date = min(row.posted_at for row in transactions) - timedelta(days=IMPORT_DATE_TOLERANCE_DAYS)
+        last_date = max(row.posted_at for row in transactions) + timedelta(days=IMPORT_DATE_TOLERANCE_DAYS)
+        existing = list((await self.session.execute(
+            select(TransactionModel).where(
+                TransactionModel.account_id.in_(account_ids),
+                TransactionModel.posted_at >= first_date,
+                TransactionModel.posted_at <= last_date,
+                TransactionModel.deleted_at.is_(None),
+            )
+        )).scalars().all())
+        existing_by_account_amount: dict[tuple[UUID, Decimal], list[TransactionModel | Transaction]] = {}
+        for row in existing:
+            existing_by_account_amount.setdefault((row.account_id, row.amount), []).append(row)
+        seen: list[Transaction] = []
+        flags: list[bool] = []
+        for transaction in transactions:
+            key = (transaction.account_id, transaction.amount)
+            duplicate = any(
+                abs((row.posted_at - transaction.posted_at).days) <= IMPORT_DATE_TOLERANCE_DAYS
+                and merchants_likely_match(row.merchant, transaction.merchant)
+                for row in existing_by_account_amount.get(key, [])
+            )
+            flags.append(duplicate)
+            if not duplicate:
+                seen.append(transaction)
+                existing_by_account_amount.setdefault(key, []).append(transaction)
+        return flags
 
     async def apply_plaid_updates(
         self,
@@ -215,10 +281,47 @@ class TransactionRepository(BaseRepository[TransactionModel]):
                 if row.external_transaction_id is not None
             }
 
+        # A CSV import can precede the institution sync. Reuse a uniquely
+        # matching imported row (amount, merchant, and nearby posting date)
+        # and attach Plaid's stable ID instead of creating a duplicate.
+        import_candidates: list[TransactionModel] = []
+        if transactions_by_external_id:
+            incoming = list(transactions_by_external_id.values())
+            result = await self.session.execute(
+                select(TransactionModel).where(
+                    TransactionModel.account_id.in_({row.account_id for row in incoming}),
+                    TransactionModel.external_transaction_id.is_(None),
+                    TransactionModel.import_fingerprint.is_not(None),
+                    TransactionModel.deleted_at.is_(None),
+                    TransactionModel.posted_at >= min(row.posted_at for row in incoming) - timedelta(days=IMPORT_DATE_TOLERANCE_DAYS),
+                    TransactionModel.posted_at <= max(row.posted_at for row in incoming) + timedelta(days=IMPORT_DATE_TOLERANCE_DAYS),
+                )
+            )
+            import_candidates = list(result.scalars().all())
+
         created = updated = 0
         for external_id, transaction in transactions_by_external_id.items():
             row = existing_by_external_id.get(external_id)
             if row is None:
+                matches = [
+                    candidate for candidate in import_candidates
+                    if candidate.account_id == transaction.account_id
+                    and candidate.amount == transaction.amount
+                    and abs((candidate.posted_at - transaction.posted_at).days) <= IMPORT_DATE_TOLERANCE_DAYS
+                    and merchants_likely_match(candidate.merchant, transaction.merchant)
+                ]
+                if len(matches) == 1:
+                    row = matches[0]
+                    import_candidates.remove(row)
+                    row.posted_at = transaction.posted_at
+                    row.merchant = transaction.merchant
+                    row.category = transaction.category
+                    row.amount = transaction.amount
+                    row.type = transaction.type.value
+                    row.status = transaction.status.value
+                    row.external_transaction_id = external_id
+                    updated += 1
+                    continue
                 row = TransactionModel(
                     id=transaction.id or uuid4(),
                     account_id=transaction.account_id,
@@ -329,7 +432,9 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         if row is None:
             raise NotFoundError("Transaction", str(transaction_id))
         row.type = transaction_type.value
-        if transaction_type in {TransactionType.TRANSFER, TransactionType.INCOME}:
+        if transaction_type in {
+            TransactionType.TRANSFER, TransactionType.INCOME, TransactionType.CREDIT_CARD_PAYMENT
+        }:
             row.budget_category_id = None
             row.ignored_from_budget = False
         row.reviewed_at = datetime.now(timezone.utc)
@@ -390,7 +495,11 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         return {TransactionType(type_): Decimal(total) for type_, total in result.all()}
 
 
-_MERCHANT_NOISE = {"pos", "purchase", "debit", "card", "visa", "checkcard", "sq", "square"}
+_MERCHANT_NOISE = {
+    "ach", "card", "checkcard", "credit", "debit", "id", "payment", "paymentrec",
+    "pos", "ppd", "purchase", "recurring", "sq", "square", "visa",
+}
+IMPORT_DATE_TOLERANCE_DAYS = 3
 
 
 def _normalized_merchant(value: str) -> str:
@@ -414,6 +523,16 @@ def merchants_likely_match(left: str, right: str) -> bool:
     # Multi-word names match when most words from the shorter variant appear
     # in the longer one ("Dept Education" matches "Dept Education Loan").
     return smaller_size >= 2 and len(shared) >= 2 and len(shared) / smaller_size >= (2 / 3)
+
+
+def import_fingerprint(transaction: Transaction) -> str:
+    identity = "|".join((
+        str(transaction.account_id),
+        transaction.posted_at.isoformat(),
+        format(transaction.amount, "f"),
+        _normalized_merchant(transaction.merchant),
+    ))
+    return hashlib.sha256(identity.encode("utf-8")).hexdigest()
 
 
 def _to_domain(

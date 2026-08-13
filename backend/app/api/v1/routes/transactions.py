@@ -12,6 +12,8 @@ from app.persistence.repositories.budget_repository import BudgetRepository
 from app.providers.csv_import_provider import CSVImportProvider
 from app.schemas.transaction import (
     CSVImportRequest,
+    CSVImportPreviewResponse,
+    CSVImportPreviewRow,
     CSVImportResponse,
     TransactionCreateRequest,
     TransactionClassificationRequest,
@@ -22,6 +24,39 @@ from app.schemas.transaction import (
 from app.schemas.budget import TransactionBudgetAssignmentRequest
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
+
+
+def _normalized_import_rows(body: CSVImportRequest):
+    provider = CSVImportProvider(account_id=body.account_id, csv_text=body.csv_text)
+    parsed = provider.parse_rows(since=body.since or date(1970, 1, 1))
+    overrides = {override.row_number: override for override in body.overrides}
+    known_rows = {row.row_number for row in parsed}
+    unknown_rows = set(overrides) - known_rows
+    if unknown_rows:
+        raise ValueError(f"Overrides reference rows that are not in the file: {sorted(unknown_rows)}")
+    selected = []
+    for row in parsed:
+        override = overrides.get(row.row_number)
+        if override is not None and not override.include:
+            continue
+        transaction = row.transaction
+        if override is not None:
+            for field in ("posted_at", "merchant", "category", "amount", "type"):
+                value = getattr(override, field)
+                if value is not None:
+                    setattr(transaction, field, value)
+            if override.type is not None:
+                row.warnings = [warning for warning in row.warnings if not warning.startswith("Type was inferred")]
+                if override.type.value == "expense":
+                    transaction.amount = -abs(transaction.amount)
+                elif override.type.value in {"income", "contribution"}:
+                    transaction.amount = abs(transaction.amount)
+        if not transaction.merchant.strip():
+            raise ValueError(f"Row {row.row_number}: Merchant is required")
+        if transaction.amount == 0:
+            raise ValueError(f"Row {row.row_number}: Amount cannot be zero")
+        selected.append(row)
+    return selected
 
 
 @router.get("", response_model=TransactionListResponse)
@@ -148,6 +183,40 @@ async def update_transaction_budget_category(
     return TransactionResponse.model_validate(updated, from_attributes=True)
 
 
+@router.post("/import/csv/preview", response_model=CSVImportPreviewResponse)
+async def preview_csv_import(
+    body: CSVImportRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> CSVImportPreviewResponse:
+    await AccountRepository(db).get_for_user(current_user.id, body.account_id)
+    try:
+        parsed = _normalized_import_rows(body)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    duplicate_flags = await TransactionRepository(db).import_duplicate_flags(
+        [row.transaction for row in parsed]
+    )
+    rows = [
+        CSVImportPreviewRow(
+            row_number=row.row_number,
+            posted_at=row.transaction.posted_at,
+            merchant=row.transaction.merchant,
+            category=row.transaction.category,
+            amount=row.transaction.amount,
+            type=row.transaction.type,
+            likely_duplicate=duplicate,
+            warnings=row.warnings,
+        )
+        for row, duplicate in zip(parsed, duplicate_flags, strict=True)
+    ]
+    return CSVImportPreviewResponse(
+        rows=rows,
+        importable_count=sum(not row.likely_duplicate for row in rows),
+        duplicate_count=sum(row.likely_duplicate for row in rows),
+    )
+
+
 @router.post("/import/csv", response_model=CSVImportResponse, status_code=status.HTTP_201_CREATED)
 async def import_csv(
     body: CSVImportRequest,
@@ -159,13 +228,14 @@ async def import_csv(
     uses — the provider never touches the DB directly.
     """
     await AccountRepository(db).get_for_user(current_user.id, body.account_id)
-    provider = CSVImportProvider(account_id=body.account_id, csv_text=body.csv_text)
     try:
-        normalized = await provider.get_transactions(current_user.id, since=body.since or date(1970, 1, 1))
+        parsed = _normalized_import_rows(body)
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
-    created, skipped = await TransactionRepository(db).bulk_create_deduplicated(normalized)
+    created, skipped = await TransactionRepository(db).bulk_create_deduplicated(
+        [row.transaction for row in parsed]
+    )
     await db.commit()
     return CSVImportResponse(
         imported_count=len(created),

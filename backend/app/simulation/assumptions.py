@@ -18,7 +18,7 @@ class PlanningAssumptions:
     life_expectancy_age: int = 95
     savings_rate: Decimal = Decimal("0.20")          # fraction of gross income saved
     monthly_contribution: Decimal = Decimal("0")       # flat override, if set takes precedence
-    expected_return: Decimal = Decimal("0.065")          # nominal annual return, pre-inflation
+    expected_return: Decimal = Decimal("0.065")          # real annual return, after inflation
     inflation_rate: Decimal = Decimal("0.028")
     withdrawal_rate: Decimal = Decimal("0.04")             # in retirement
     employer_match_rate: Decimal = Decimal("0")               # fraction of salary matched
@@ -53,6 +53,11 @@ class PlanningAssumptions:
 
     @property
     def real_return(self) -> Decimal:
-        """Inflation-adjusted (real) rate of return, via the Fisher equation."""
-        one = Decimal("1")
-        return (one + self.expected_return) / (one + self.inflation_rate) - one
+        """Return the user-entered inflation-adjusted annual return.
+
+        Scenario and assumptions forms explicitly label ``expected_return``
+        as a real return. Inflation is used only when converting real model
+        outputs to optional future-dollar displays; subtracting it here a
+        second time materially understates retirement balances.
+        """
+        return self.expected_return

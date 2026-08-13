@@ -121,10 +121,12 @@ async def _plaid_auto_sync_loop() -> None:
                     # Other workers poll and take over automatically if this
                     # connection or process disappears.
                     while True:
-                        await asyncio.sleep(interval_seconds)
                         # Detect a lost lease connection immediately before work.
                         await lease_connection.execute(text("SELECT 1"))
                         await _sync_all_linked_institutions()
+                        # Sleep after the refresh so a restart cannot postpone
+                        # autosync indefinitely by resetting the interval.
+                        await asyncio.sleep(interval_seconds)
                 finally:
                     try:
                         await _release_plaid_auto_sync_lease(lease_connection)

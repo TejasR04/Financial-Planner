@@ -258,6 +258,7 @@ async def preview_scenario(
     ]
     return ScenarioPreviewResponse(
         net_worth_at_target_age=result.net_worth_projection.projected_net_worth_at_horizon,
+        retirement_balance_at_target_age=result.retirement_projection.projected_balance_at_retirement,
         monthly_sustainable_withdrawal=result.retirement_projection.monthly_sustainable_withdrawal,
         success_rate=(round(result.monte_carlo.success_rate, 4) if result.monte_carlo else None),
         trajectory=trajectory,

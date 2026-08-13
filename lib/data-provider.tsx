@@ -92,7 +92,7 @@ function buildCashflowSeries(transactions: ApiTransaction[], start: Date, end: D
     const isCreditCardPayment = category === "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"
       || merchant.includes("PAYMENT - BILT")
       || (category === "LOAN_PAYMENTS" && ["CREDIT CRD", "CREDIT CARD", "AUTOPAY PAYMENT", "AUTOMATIC PAYMENT", "PAYMENT - THANK"].some((marker) => merchant.includes(marker)));
-    if (transaction.type === "transfer" || isCreditCardPayment) continue;
+    if (transaction.type === "transfer" || transaction.type === "credit_card_payment" || isCreditCardPayment) continue;
 
     const posted = new Date(`${transaction.posted_at}T00:00:00`);
     const bucket = buckets.get(monthKey(posted));
@@ -315,7 +315,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           postedAt: t.posted_at,
           date: formatShortDate(t.posted_at),
           merchant: t.merchant,
-          category: t.budget_category_name ?? t.category,
+          category: t.budget_category_name ?? (t.type === "credit_card_payment" ? "Credit card payment" : t.category),
           account: t.account_name ?? accountNameById.get(t.account_id) ?? "Account",
           amount: parseFloat(t.amount),
           type: t.type,
@@ -602,7 +602,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           }
           return {
             ...scenario,
-            netWorthAt65: parseFloat(preview.net_worth_at_target_age),
+            // The projections card and chart are both explicitly about
+            // retirement accounts. Total projected net worth includes other
+            // assets and liabilities and must not be shown under that label.
+            netWorthAt65: parseFloat(
+              preview.retirement_balance_at_target_age
+                ?? preview.retirement_trajectory.find((point) => point.age === scenario.retirementAge)?.balance
+                ?? preview.net_worth_at_target_age,
+            ),
             monthlyIncomeAtLifeExpectancy: preview.monthly_sustainable_withdrawal
               ? parseFloat(preview.monthly_sustainable_withdrawal)
               : null,

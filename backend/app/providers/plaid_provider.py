@@ -321,7 +321,9 @@ def _to_transaction_entity(raw: RawPlaidTransaction, account_id: UUID) -> Transa
             and any(marker in normalized_merchant for marker in ("CREDIT CRD", "CREDIT CARD", "AUTOPAY PAYMENT", "AUTOMATIC PAYMENT", "PAYMENT - THANK"))
         )
     )
-    if normalized_category.startswith("TRANSFER") or is_credit_card_payment:
+    if is_credit_card_payment:
+        transaction_type = TransactionType.CREDIT_CARD_PAYMENT
+    elif normalized_category.startswith("TRANSFER"):
         transaction_type = TransactionType.TRANSFER
     elif raw.amount > 0:
         transaction_type = TransactionType.INCOME

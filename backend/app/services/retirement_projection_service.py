@@ -40,10 +40,9 @@ class RetirementProjection:
 class RetirementProjectionService:
     """Projects retirement finances entirely in today's purchasing power.
 
-    ``PlanningAssumptions.expected_return`` is nominal, so this service uses
-    its Fisher-adjusted real return. Balances, contributions, income targets,
-    withdrawals, and every amount returned by this service therefore share
-    one dollar basis.
+    ``PlanningAssumptions.expected_return`` is entered as a real return.
+    Balances, contributions, income targets, withdrawals, and every amount
+    returned by this service therefore share one today's-dollar basis.
     """
 
     def project(

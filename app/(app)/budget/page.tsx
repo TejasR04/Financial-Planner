@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ChevronLeft, ChevronRight, Plus, Tag } from "lucide-react";
+import { Check, ChevronLeft, ChevronRight, Plus, Tag, Trash2 } from "lucide-react";
 import {
   Cell,
   Pie,
@@ -130,6 +130,17 @@ export default function BudgetPage() {
     }
   };
 
+  const deleteCategory = async (category: ApiBudgetCategory) => {
+    if (!window.confirm(`Delete ${category.name}? Assigned transactions will become uncategorized and its merchant rules will be removed.`)) return;
+    setError(null);
+    try {
+      await api.budgets.deleteCategory(category.id);
+      await reload();
+    } catch (err) {
+      setError(err instanceof ApiError ? err.message : "Couldn't delete the category.");
+    }
+  };
+
   const requestAssignment = (transaction: ApiUncategorizedBudgetTransaction, categoryId: string) => {
     if (!categoryId) return;
     const categoryNameForId = activeCategories.find((category) => category.id === categoryId)?.name;
@@ -239,9 +250,9 @@ export default function BudgetPage() {
                     <button type="button" onClick={() => viewCategoryTransactions(item.budget_category_id)} className="font-medium text-foreground hover:underline" aria-label={`View ${item.name} transactions`}>{item.name}</button>
                     <p className="mt-0.5 text-[11px] text-muted-foreground">{item.group_name}{pending !== 0 ? ` · ${formatCurrency(pending)} pending` : ""}</p>
                   </div>
-                  <label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">Budget
+                  <div className="flex items-center gap-1"><label className="flex items-center gap-1.5 text-[11px] text-muted-foreground">Budget
                     <input type="number" min="0" step="0.01" defaultValue={budgeted.toFixed(2)} onBlur={(event) => updateLimit(item.budget_category_id, event.target.value)} className="h-7 w-24 rounded border border-border bg-background px-1.5 text-right font-mono text-[12px] tabular-nums text-foreground outline-none focus:border-ring" aria-label={`Monthly budget for ${item.name}`} />
-                  </label>
+                  </label><Button type="button" variant="ghost" size="icon-xs" className="text-destructive" aria-label={`Delete ${item.name}`} onClick={() => { const category = categories.find((row) => row.id === item.budget_category_id); if (category) void deleteCategory(category); }}><Trash2 /></Button></div>
                 </div>
                 <div className="mt-3 flex items-baseline justify-between gap-3 text-[12px]">
                   <span className="font-mono font-medium tabular-nums text-foreground">{formatCurrency(used)} / {formatCurrency(budgeted)}</span>

@@ -1,4 +1,5 @@
 import sys
+import asyncio
 from types import ModuleType
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -36,3 +37,34 @@ async def test_auto_sync_lease_is_explicitly_released():
     assert await main._try_acquire_plaid_auto_sync_lease(session) is True
     await main._release_plaid_auto_sync_lease(session)
     assert "pg_advisory_unlock" in str(session.execute.await_args.args[0])
+
+
+@pytest.mark.asyncio
+async def test_auto_sync_refreshes_immediately_after_acquiring_lease(monkeypatch):
+    lease_connection = AsyncMock()
+    raw_connection = AsyncMock()
+    raw_connection.execution_options.return_value = lease_connection
+    connection_context = AsyncMock()
+    connection_context.__aenter__.return_value = raw_connection
+    connection_context.__aexit__.return_value = None
+
+    engine = SimpleNamespace(connect=lambda: connection_context)
+    refreshed = asyncio.Event()
+
+    async def sync_all():
+        refreshed.set()
+
+    async def stop_after_first_sleep(_seconds):
+        raise asyncio.CancelledError
+
+    monkeypatch.setattr(main, "engine", engine)
+    monkeypatch.setattr(main, "_try_acquire_plaid_auto_sync_lease", AsyncMock(return_value=True))
+    monkeypatch.setattr(main, "_release_plaid_auto_sync_lease", AsyncMock())
+    monkeypatch.setattr(main, "_sync_all_linked_institutions", sync_all)
+    monkeypatch.setattr(main.asyncio, "sleep", stop_after_first_sleep)
+
+    with pytest.raises(asyncio.CancelledError):
+        await main._plaid_auto_sync_loop()
+
+    assert refreshed.is_set()
+    lease_connection.execute.assert_awaited_once()
