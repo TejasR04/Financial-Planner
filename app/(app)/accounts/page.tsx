@@ -2,7 +2,7 @@
 
 import { useCallback, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { Pencil, Plus, RefreshCw, SlidersHorizontal, Unlink } from "lucide-react";
+import { Archive, Pencil, Plus, RefreshCw, SlidersHorizontal, Unlink } from "lucide-react";
 import { FinancialDetailsDialog } from "@/components/financial-details-dialog";
 import { DebtPlanDialog } from "@/components/debt-plan-dialog";
 import { PageContainer, PageHeader } from "@/components/page-container";
@@ -107,10 +107,13 @@ export default function AccountsPage() {
 
   const archiveAccount = async (account: Account) => {
     const action = account.institutionId ? "Disconnect" : "Archive";
-    if (!window.confirm(`${action} ${account.name}?${account.institutionId ? " This only removes this account; the rest of the institution stays linked." : ""}`)) return;
+    const explanation = account.institutionId
+      ? " This removes the account from your active plan while preserving its history; the rest of the institution stays linked."
+      : " This hides the account from your active plan while preserving its history.";
+    if (!window.confirm(`${action} ${account.name}?${explanation}`)) return;
     setPendingActionId(account.id);
     try {
-      await api.accounts.delete(account.id);
+      await api.accounts.archive(account.id);
       refreshData();
     } catch (error) {
       setSyncFeedback({ tone: "error", message: error instanceof ApiError ? error.message : `Couldn't ${action.toLowerCase()} ${account.name}.` });
@@ -131,7 +134,7 @@ export default function AccountsPage() {
     <div className="flex items-center">
       {detailsButton(account)}
       <Button variant="ghost" size="icon-xs" aria-label={`Edit ${account.name}`} onClick={() => { setEditingAccount(account); setManualDialogOpen(true); }}><Pencil /></Button>
-      <Button variant="ghost" size="icon-xs" aria-label={`Archive ${account.name}`} onClick={() => void archiveAccount(account)} disabled={pendingActionId === account.id}><Unlink /></Button>
+      <Button variant="ghost" size="icon-xs" aria-label={`Archive ${account.name}`} onClick={() => void archiveAccount(account)} disabled={pendingActionId === account.id}><Archive /></Button>
     </div>
   );
 

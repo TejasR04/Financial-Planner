@@ -66,3 +66,44 @@ describe("transactions.list", () => {
     expect(url.searchParams.has("category")).toBe(false);
   });
 });
+
+describe("accounts archive recovery", () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("uses explicit archive, archived-list, and restore endpoints", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/archived")) {
+        return new Response(JSON.stringify([]), { status: 200, headers: { "Content-Type": "application/json" } });
+      }
+      if (init?.method === "POST") {
+        return new Response(null, { status: 204 });
+      }
+      return new Response(null, { status: 204 });
+    });
+
+    await api.accounts.archived();
+    await api.accounts.restore("account-id");
+    await api.accounts.archive("account-id");
+
+    expect(new URL(String(fetchMock.mock.calls[0]?.[0])).pathname).toBe("/api/v1/accounts/archived");
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: "POST" });
+    expect(new URL(String(fetchMock.mock.calls[1]?.[0])).pathname).toBe("/api/v1/accounts/account-id/restore");
+    expect(fetchMock.mock.calls[2]?.[1]).toMatchObject({ method: "DELETE" });
+    expect(new URL(String(fetchMock.mock.calls[2]?.[0])).pathname).toBe("/api/v1/accounts/account-id");
+  });
+
+  it("supports the disconnected imported data summary and purge", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (_input, init) => {
+      const body = init?.method === "DELETE"
+        ? { account_count: 2, transaction_count: 12, deleted: true }
+        : { account_count: 2, transaction_count: 12 };
+      return new Response(JSON.stringify(body), { status: 200, headers: { "Content-Type": "application/json" } });
+    });
+
+    await expect(api.accounts.disconnectedImportedDataSummary()).resolves.toMatchObject({ account_count: 2 });
+    await expect(api.accounts.permanentlyDeleteDisconnectedImportedData()).resolves.toMatchObject({ deleted: true });
+    expect(fetchMock.mock.calls[0]?.[1]?.method).toBeUndefined();
+    expect(fetchMock.mock.calls[1]?.[1]).toMatchObject({ method: "DELETE" });
+  });
+});

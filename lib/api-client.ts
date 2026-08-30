@@ -185,6 +185,20 @@ export type ApiAccount = {
   updated_at: string | null;
 };
 
+/** Account rows returned by the archived-account recovery endpoint. */
+export type ApiArchivedAccount = ApiAccount & {
+  archived_at: string;
+};
+
+export type ApiDisconnectedDataSummary = {
+  account_count: number;
+  transaction_count: number;
+};
+
+export type ApiDisconnectedDataDeleteResponse = ApiDisconnectedDataSummary & {
+  deleted: boolean;
+};
+
 export type ApiInstitution = {
   id: string;
   name: string;
@@ -505,7 +519,14 @@ export const api = {
       patch<ApiAccount>(`/accounts/${accountId}`, body),
     rename: (accountId: string, name: string) =>
       patch<ApiAccount>(`/accounts/${accountId}/name`, { name }),
-    delete: (accountId: string) => del(`/accounts/${accountId}`),
+    /** Archive an account; the backend retains its history for recovery. */
+    archive: (accountId: string) => del<void>(`/accounts/${accountId}`),
+    archived: () => get<ApiArchivedAccount[]>("/accounts/archived"),
+    restore: (accountId: string) => post<ApiAccount>(`/accounts/${accountId}/restore`),
+    disconnectedImportedDataSummary: () =>
+      get<ApiDisconnectedDataSummary>("/accounts/disconnected-imported-data"),
+    permanentlyDeleteDisconnectedImportedData: () =>
+      del<ApiDisconnectedDataDeleteResponse>("/accounts/disconnected-imported-data"),
     sync: (accountId: string) => post<ApiPlaidRefreshInstitution>(`/accounts/${accountId}/sync`),
     institutions: () => get<ApiInstitution[]>("/accounts/institutions"),
     unlinkInstitution: (institutionId: string) => del(`/accounts/institutions/${institutionId}`),

@@ -2,17 +2,18 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check } from "lucide-react";
+import { AlertTriangle, ArchiveRestore, Check, Trash2 } from "lucide-react";
 import { Panel, PanelHeader } from "@/components/panel";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import { api, ApiError, ApiIncomeSource } from "@/lib/api-client";
+import { api, ApiArchivedAccount, ApiError, ApiIncomeSource, ApiDisconnectedDataSummary } from "@/lib/api-client";
 import { useAccountsData, useDataRefresh, useInstitutionsData, useUserAccount } from "@/lib/data-provider";
 
 const sections = [
   { id: "profile", label: "Profile" },
   { id: "planning", label: "Planning" },
   { id: "institutions", label: "Institutions" },
+  { id: "archived", label: "Archived accounts" },
   { id: "notifications", label: "Notifications" },
 ];
 
@@ -179,6 +180,101 @@ export function SettingsForms() {
       setIncomeAmount("");
     } catch (error) {
       setMutationError(error instanceof ApiError ? error.message : "Couldn't add that income source.");
+    }
+  }
+
+  // --- Archived accounts tab -------------------------------------------
+  const [archivedAccounts, setArchivedAccounts] = useState<ApiArchivedAccount[]>([]);
+  const [archivedLoading, setArchivedLoading] = useState(false);
+  const [archivedError, setArchivedError] = useState<string | null>(null);
+  const [archivedActionId, setArchivedActionId] = useState<string | null>(null);
+  const [disconnectedData, setDisconnectedData] = useState<ApiDisconnectedDataSummary | null>(null);
+  const [disconnectedDataError, setDisconnectedDataError] = useState<string | null>(null);
+  const [permanentDeleteOpen, setPermanentDeleteOpen] = useState(false);
+  const [permanentDeletePhrase, setPermanentDeletePhrase] = useState("");
+  const [permanentDeleting, setPermanentDeleting] = useState(false);
+  const [permanentDeleteFeedback, setPermanentDeleteFeedback] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (tab !== "archived") return;
+
+    let cancelled = false;
+    setArchivedLoading(true);
+    setArchivedError(null);
+    setDisconnectedDataError(null);
+    setPermanentDeleteFeedback(null);
+
+    void api.accounts.archived()
+      .then((rows) => {
+        if (!cancelled) setArchivedAccounts(rows);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setArchivedError(error instanceof ApiError ? error.message : "Couldn't load archived accounts.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setArchivedLoading(false);
+      });
+
+    // This endpoint intentionally covers only disconnected provider imports.
+    // Manual archived accounts remain recoverable but are not eligible for
+    // the irreversible data purge.
+    void api.accounts.disconnectedImportedDataSummary()
+      .then((summary) => {
+        if (!cancelled) setDisconnectedData(summary);
+      })
+      .catch((error) => {
+        if (!cancelled) {
+          setDisconnectedDataError(error instanceof ApiError ? error.message : "Permanent deletion is unavailable right now.");
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [tab]);
+
+  async function restoreArchivedAccount(account: ApiArchivedAccount) {
+    setArchivedActionId(account.id);
+    setArchivedError(null);
+    try {
+      await api.accounts.restore(account.id);
+      setArchivedAccounts((rows) => rows.filter((row) => row.id !== account.id));
+      setDisconnectedData((summary) => {
+        if (!summary || !isDisconnectedImportedAccount(account)) return summary;
+        return { ...summary, account_count: Math.max(0, summary.account_count - 1) };
+      });
+      refresh();
+    } catch (error) {
+      setArchivedError(error instanceof ApiError ? error.message : `Couldn't restore ${account.name}.`);
+    } finally {
+      setArchivedActionId(null);
+    }
+  }
+
+  async function permanentlyDeleteDisconnectedData() {
+    if (permanentDeletePhrase !== "DELETE") return;
+    setPermanentDeleting(true);
+    setDisconnectedDataError(null);
+    setPermanentDeleteFeedback(null);
+    try {
+      const result = await api.accounts.permanentlyDeleteDisconnectedImportedData();
+      setPermanentDeleteOpen(false);
+      setPermanentDeletePhrase("");
+      setDisconnectedData({ account_count: 0, transaction_count: 0 });
+      setPermanentDeleteFeedback(
+        `Permanently deleted ${result.account_count} archived account${result.account_count === 1 ? "" : "s"} and ${result.transaction_count} transaction${result.transaction_count === 1 ? "" : "s"}.`,
+      );
+      // The purge may remove several archived rows, and only the backend
+      // knows which rows were imported. Reload instead of guessing locally.
+      const rows = await api.accounts.archived();
+      setArchivedAccounts(rows);
+      refresh();
+    } catch (error) {
+      setDisconnectedDataError(error instanceof ApiError ? error.message : "Couldn't permanently delete the disconnected data.");
+    } finally {
+      setPermanentDeleting(false);
     }
   }
 
@@ -390,6 +486,122 @@ export function SettingsForms() {
           </Panel>
         )}
 
+        {tab === "archived" && (
+          <div className="space-y-4">
+            <Panel>
+              <PanelHeader
+                title="Archived accounts"
+                description="Hidden from your plan, with their historical activity preserved"
+              />
+              {archivedError && (
+                <p role="alert" className="border-b border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                  {archivedError}
+                </p>
+              )}
+              {archivedLoading ? (
+                <p className="px-4 py-8 text-center text-[13px] text-muted-foreground">Loading archived accounts…</p>
+              ) : archivedAccounts.length === 0 ? (
+                <div className="px-4 py-8 text-center">
+                  <ArchiveRestore className="mx-auto size-5 text-muted-foreground" />
+                  <p className="mt-2 text-[13px] text-muted-foreground">No archived accounts.</p>
+                  <p className="mt-1 text-[11px] text-muted-foreground">Accounts you archive or disconnect will appear here for recovery.</p>
+                </div>
+              ) : (
+                <ul className="divide-y divide-border">
+                  {archivedAccounts.map((account) => {
+                    const linked = isLinkedAccount(account);
+                    const detachedImported = isDisconnectedImportedAccount(account);
+                    return (
+                      <li key={account.id} className="flex flex-wrap items-center justify-between gap-3 px-4 py-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-[13px] font-medium text-foreground">
+                            {account.name}
+                            {account.mask ? <span className="ml-1.5 font-mono text-[11px] text-muted-foreground">••{account.mask}</span> : null}
+                          </p>
+                          <p className="mt-0.5 text-[11px] text-muted-foreground">
+                            {linked ? (account.institution ?? "Linked institution") : detachedImported ? "Disconnected provider" : "Manual account"} · {account.type[0].toUpperCase() + account.type.slice(1)} · Archived {formatArchivedDate(account.archived_at)}
+                          </p>
+                        </div>
+                        <Button
+                          variant="outline"
+                          size="xs"
+                          onClick={() => void restoreArchivedAccount(account)}
+                          disabled={archivedActionId !== null || permanentDeleting || detachedImported}
+                          title={detachedImported ? "Reconnect the provider before restoring this account." : undefined}
+                        >
+                          <ArchiveRestore />
+                          {detachedImported ? "Reconnect required" : archivedActionId === account.id ? "Restoring…" : "Restore"}
+                        </Button>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </Panel>
+
+            {disconnectedDataError && (
+              <p role="alert" className="rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-[12px] text-destructive">
+                {disconnectedDataError}
+              </p>
+            )}
+            {permanentDeleteFeedback && (
+              <p role="status" className="rounded-md border border-positive/30 bg-positive/5 px-3 py-2 text-[12px] text-positive">
+                {permanentDeleteFeedback}
+              </p>
+            )}
+
+            {disconnectedData && (
+              <Panel>
+                <PanelHeader
+                  title="Permanently delete imported data"
+                  description="Available only for archived accounts disconnected from a provider"
+                />
+                <div className="space-y-3 px-4 py-4">
+                  {disconnectedData.account_count === 0 ? (
+                    <p className="text-[12px] text-muted-foreground">No disconnected imported account data is waiting to be deleted.</p>
+                  ) : (
+                    <>
+                      <p className="text-[12px] leading-5 text-muted-foreground">
+                        This will permanently remove <span className="font-medium text-foreground">{disconnectedData.account_count} account{disconnectedData.account_count === 1 ? "" : "s"}</span> and <span className="font-medium text-foreground">{disconnectedData.transaction_count} transaction{disconnectedData.transaction_count === 1 ? "" : "s"}</span> from Meridian. Manual archived accounts are not affected. This cannot be undone.
+                      </p>
+                      {permanentDeleteOpen ? (
+                        <div className="space-y-3 rounded-md border border-destructive/30 bg-destructive/5 p-3">
+                          <div className="flex gap-2">
+                            <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
+                            <p className="text-[12px] leading-5 text-destructive">This permanently destroys imported financial history. Type <span className="font-mono font-semibold">DELETE</span> to continue.</p>
+                          </div>
+                          <label className="block text-[11px] font-medium text-foreground" htmlFor="permanent-delete-confirmation">Confirmation</label>
+                          <input
+                            id="permanent-delete-confirmation"
+                            className={inputClass}
+                            value={permanentDeletePhrase}
+                            onChange={(event) => setPermanentDeletePhrase(event.target.value)}
+                            placeholder="Type DELETE"
+                            autoComplete="off"
+                            spellCheck={false}
+                          />
+                          <div className="flex justify-end gap-2">
+                            <Button variant="ghost" size="sm" onClick={() => { setPermanentDeleteOpen(false); setPermanentDeletePhrase(""); }} disabled={permanentDeleting}>Cancel</Button>
+                            <Button variant="destructive" size="sm" onClick={() => void permanentlyDeleteDisconnectedData()} disabled={permanentDeletePhrase !== "DELETE" || permanentDeleting}>
+                              <Trash2 />
+                              {permanentDeleting ? "Deleting…" : "Permanently delete data"}
+                            </Button>
+                          </div>
+                        </div>
+                      ) : (
+                        <Button variant="destructive" size="sm" onClick={() => setPermanentDeleteOpen(true)} disabled={permanentDeleting}>
+                          <Trash2 />
+                          Permanently delete data
+                        </Button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </Panel>
+            )}
+          </div>
+        )}
+
         {tab === "notifications" && (
           <Panel>
             <PanelHeader
@@ -427,6 +639,23 @@ export function SettingsForms() {
       </div>
     </div>
   );
+}
+
+function formatArchivedDate(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "recently";
+  return date.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+}
+
+function isLinkedAccount(account: ApiArchivedAccount) {
+  return Boolean(account.institution_id || account.institution);
+}
+
+function isDisconnectedImportedAccount(account: ApiArchivedAccount) {
+  // A detached Plaid row can retain the connected status after the institution
+  // relationship is removed. It must be reconnected before it can be restored;
+  // the permanent purge endpoint is the supported cleanup path for this row.
+  return !isLinkedAccount(account) && account.status === "connected";
 }
 
 // Local-only preference (no backend model exists for notification settings
