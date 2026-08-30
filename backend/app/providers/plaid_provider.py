@@ -210,14 +210,16 @@ class PlaidProvider(FinancialDataProvider):
                     status="healthy",
                 )
 
-            saved_accounts = [
+            upserted_accounts = [
                 await self._accounts.upsert_from_plaid(
                     user_id,
                     _to_account_entity(user_id, institution.id, raw_account),
                 )
                 for raw_account in raw_accounts
             ]
-            saved_accounts = [account for account in saved_accounts if account is not None]
+            saved_accounts = [
+                account for account in upserted_accounts if account is not None
+            ]
             # `upsert_from_plaid` intentionally returns None for a user-hidden
             # account so it stays out of active planning views. Fetch the
             # retained rows separately so investment/retirement snapshots do
