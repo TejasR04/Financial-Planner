@@ -218,7 +218,25 @@ class PlaidProvider(FinancialDataProvider):
                 for raw_account in raw_accounts
             ]
             saved_accounts = [account for account in saved_accounts if account is not None]
-            await self._investment_history.record_for_accounts(saved_accounts)
+            # `upsert_from_plaid` intentionally returns None for a user-hidden
+            # account so it stays out of active planning views. Fetch the
+            # retained rows separately so investment/retirement snapshots do
+            # not develop a gap while that account is hidden.
+            list_for_sync = getattr(self._accounts, "list_for_institution_for_sync", None)
+            if list_for_sync is None:
+                # Keep lightweight provider unit doubles written before this
+                # lifecycle method backwards-compatible.
+                history_accounts = saved_accounts
+            else:
+                current_external_ids = {
+                    account.external_account_id for account in raw_accounts
+                }
+                history_accounts = [
+                    account
+                    for account in await list_for_sync(user_id, institution.id)
+                    if account.external_account_id in current_external_ids
+                ]
+            await self._investment_history.record_for_accounts(history_accounts)
             await self._accounts.archive_missing_from_plaid(
                 user_id,
                 institution.id,
@@ -284,7 +302,10 @@ class PlaidProvider(FinancialDataProvider):
         return await self._holdings.list_for_account(account_id)
 
     async def _account_id_map(self, user_id: UUID, institution_id: UUID) -> dict[str, UUID]:
-        accounts = await self._accounts.list_for_user(user_id)
+        # Include archived accounts that still belong to this live Item. A
+        # user-hidden linked account must continue receiving historical
+        # transaction/holding updates so restoring it does not create a gap.
+        accounts = await self._accounts.list_for_institution_for_sync(user_id, institution_id)
         return {
             account.external_account_id: account.id
             for account in accounts

@@ -61,7 +61,9 @@ async def exchange_public_token(
 
     account_repo = AccountRepository(db)
     saved_accounts = [
-        await account_repo.upsert_from_plaid(current_user.id, account) for account in result.accounts
+        saved
+        for account in result.accounts
+        if (saved := await account_repo.upsert_from_plaid(current_user.id, account)) is not None
     ]
     await db.commit()
 

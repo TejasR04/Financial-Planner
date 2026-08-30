@@ -25,6 +25,35 @@ class AccountRepository(BaseRepository[AccountModel]):
         result = await self.session.execute(query.order_by(AccountModel.name))
         return [_to_domain(row) for row in result.scalars().all()]
 
+    async def list_archived_for_user(self, user_id: UUID) -> list[Account]:
+        """Return the user's retained account history, newest archives first."""
+        result = await self.session.execute(
+            select(AccountModel)
+            .where(
+                AccountModel.user_id == user_id,
+                AccountModel.archived_at.is_not(None),
+            )
+            .order_by(AccountModel.archived_at.desc(), AccountModel.name)
+        )
+        return [_to_domain(row) for row in result.scalars().all()]
+
+    async def list_for_institution_for_sync(self, user_id: UUID, institution_id: UUID) -> list[Account]:
+        """Return all retained accounts for a live Plaid Item.
+
+        Sync bookkeeping must include user-hidden rows: their transactions
+        and holdings still belong to the same external account and must keep
+        importing while the row remains archived from current planning views.
+        """
+        result = await self.session.execute(
+            select(AccountModel)
+            .where(
+                AccountModel.user_id == user_id,
+                AccountModel.institution_id == institution_id,
+                AccountModel.external_account_id.is_not(None),
+            )
+        )
+        return [_to_domain(row) for row in result.scalars().all()]
+
     async def get_by_id(self, account_id: UUID) -> Account:
         row = await self._get_or_raise("Account", account_id)
         return _to_domain(row)
@@ -79,10 +108,19 @@ class AccountRepository(BaseRepository[AccountModel]):
             existing = result.scalar_one_or_none()
 
         if existing is not None:
-            # An account explicitly disconnected by the user is archived and
-            # detached from its Item. Keep it out of future Item refreshes;
-            # otherwise the next sync would immediately add it back.
-            if existing.archived_at is not None and existing.institution_id is None:
+            # Full institution unlinking intentionally detaches the retained
+            # rows. If the user links that same Plaid account again, its
+            # stable external ID lets us reattach the old row and preserve
+            # every transaction/holding instead of creating a duplicate.
+            reattach_disconnected = (
+                existing.archived_at is not None
+                and existing.institution_id is None
+                and existing.external_account_id is not None
+            )
+            # A user archive is intentionally sticky. Keep the institution
+            # relationship so the account can be restored, but do not let a
+            # later Item refresh silently reactivate it.
+            if getattr(existing, "user_archived_at", None) is not None and not reattach_disconnected:
                 return None
             existing.name = account.name
             existing.type = account.type.value
@@ -92,6 +130,9 @@ class AccountRepository(BaseRepository[AccountModel]):
             existing.status = account.status.value
             existing.institution_id = account.institution_id
             existing.archived_at = None
+            if reattach_disconnected:
+                existing.user_archived_at = None
+            existing.provider_archived_at = None
             # A successful Plaid read is meaningful even when the balance is
             # unchanged. The UI uses updated_at as its last-sync timestamp,
             # so force a write rather than relying on SQLAlchemy dirty
@@ -132,8 +173,55 @@ class AccountRepository(BaseRepository[AccountModel]):
 
     async def archive_for_user(self, user_id: UUID, account_id: UUID) -> None:
         row = await self._row_for_user(user_id, account_id)
-        row.archived_at = datetime.now(timezone.utc)
+        archived_at = datetime.now(timezone.utc)
+        row.archived_at = archived_at
+        row.user_archived_at = archived_at
         await self.session.flush()
+
+    async def archive_linked_account(self, user_id: UUID, account_id: UUID) -> None:
+        """Archive one linked account while retaining its Plaid Item link.
+
+        Keeping ``institution_id`` is what makes restoration possible. The
+        ``user_archived_at`` marker keeps Plaid sync from bringing the account
+        back until the user explicitly restores it.
+        """
+        row = await self._row_for_user(user_id, account_id)
+        if row.institution_id is None:
+            raise ValidationError("Only linked accounts can be archived this way.")
+        archived_at = datetime.now(timezone.utc)
+        row.archived_at = archived_at
+        row.user_archived_at = archived_at
+        await self.session.flush()
+
+    async def restore_for_user(self, user_id: UUID, account_id: UUID) -> Account:
+        """Restore a retained account owned by ``user_id``.
+
+        A previously unlinked Plaid account has no institution relationship to
+        restore against. It must be reconnected through Plaid Link instead of
+        being guessed back into an arbitrary Item.
+        """
+        result = await self.session.execute(
+            select(AccountModel).where(
+                AccountModel.id == account_id,
+                AccountModel.user_id == user_id,
+                AccountModel.archived_at.is_not(None),
+            )
+        )
+        row = result.scalar_one_or_none()
+        if row is None:
+            from app.core.exceptions import NotFoundError
+
+            raise NotFoundError("Archived account", str(account_id))
+        if row.institution_id is None and row.external_account_id is not None:
+            raise ValidationError(
+                "This Plaid account was disconnected with its institution. Reconnect the institution to add it again."
+            )
+
+        row.archived_at = None
+        row.user_archived_at = None
+        row.provider_archived_at = None
+        await self.session.flush()
+        return _to_domain(row)
 
     async def archive_missing_from_plaid(
         self, user_id: UUID, institution_id: UUID, external_account_ids: list[str]
@@ -146,7 +234,13 @@ class AccountRepository(BaseRepository[AccountModel]):
         )
         if external_account_ids:
             query = query.where(AccountModel.external_account_id.not_in(external_account_ids))
-        await self.session.execute(query.values(archived_at=datetime.now(timezone.utc)))
+        archived_at = datetime.now(timezone.utc)
+        await self.session.execute(
+            query.values(
+                archived_at=archived_at,
+                provider_archived_at=archived_at,
+            )
+        )
         await self.session.flush()
 
     async def archive_and_detach_institution(self, user_id: UUID, institution_id: UUID) -> None:
@@ -167,21 +261,46 @@ class AccountRepository(BaseRepository[AccountModel]):
         await self.session.flush()
 
     async def archive_and_detach_linked_account(self, user_id: UUID, account_id: UUID) -> None:
-        row = await self._row_for_user(user_id, account_id)
-        if row.institution_id is None:
-            raise ValidationError("Only linked accounts can be disconnected this way.")
-        row.archived_at = datetime.now(timezone.utc)
-        row.institution_id = None
-        await self.session.flush()
+        """Backward-compatible name for the account-level archive operation.
+
+        Individual disconnects retain the institution relationship. Only a
+        full institution unlink detaches accounts and requires reconnection.
+        """
+        await self.archive_linked_account(user_id, account_id)
 
     async def disconnected_imported_data_summary(self, user_id: UUID) -> tuple[int, int]:
-        ids = select(AccountModel.id).where(AccountModel.user_id == user_id, AccountModel.archived_at.is_not(None), AccountModel.external_account_id.is_not(None))
+        ids = select(AccountModel.id).where(
+            AccountModel.user_id == user_id,
+            AccountModel.archived_at.is_not(None),
+            AccountModel.external_account_id.is_not(None),
+            AccountModel.institution_id.is_(None),
+        )
         accounts = await self.session.scalar(select(func.count()).select_from(ids.subquery()))
-        transactions = await self.session.scalar(select(func.count()).select_from(TransactionModel).where(TransactionModel.account_id.in_(ids), TransactionModel.deleted_at.is_(None)))
+        # The purge removes the entire retained ledger, including rows that
+        # were previously soft-deleted. Report the same physical row count the
+        # irreversible operation will actually remove.
+        transactions = await self.session.scalar(
+            select(func.count())
+            .select_from(TransactionModel)
+            .where(TransactionModel.account_id.in_(ids))
+        )
         return accounts or 0, transactions or 0
 
     async def permanently_delete_disconnected_imported_data(self, user_id: UUID) -> tuple[int, int]:
-        ids = list((await self.session.execute(select(AccountModel.id).where(AccountModel.user_id == user_id, AccountModel.archived_at.is_not(None), AccountModel.external_account_id.is_not(None)))).scalars().all())
+        ids = list(
+            (
+                await self.session.execute(
+                    select(AccountModel.id).where(
+                        AccountModel.user_id == user_id,
+                        AccountModel.archived_at.is_not(None),
+                        AccountModel.external_account_id.is_not(None),
+                        AccountModel.institution_id.is_(None),
+                    )
+                )
+            )
+            .scalars()
+            .all()
+        )
         if not ids:
             return 0, 0
         deleted_transactions = await self.session.execute(delete(TransactionModel).where(TransactionModel.account_id.in_(ids)).returning(TransactionModel.id))
@@ -238,4 +357,6 @@ def _to_domain(row: AccountModel) -> Account:
         updated_at=row.updated_at,
         external_account_id=row.external_account_id,
         archived_at=row.archived_at,
+        user_archived_at=getattr(row, "user_archived_at", None),
+        provider_archived_at=getattr(row, "provider_archived_at", None),
     )

@@ -50,6 +50,19 @@ async def permanently_delete_disconnected_imported_data(current_user: User = Dep
     return DisconnectedDataDeleteResponse(account_count=account_count, transaction_count=transaction_count)
 
 
+@router.get("/archived", response_model=list[AccountResponse])
+async def list_archived_accounts(
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> list[AccountResponse]:
+    """List retained account history without including archived balances in plans."""
+    accounts = await AccountRepository(db).list_archived_for_user(current_user.id)
+    institutions = {
+        institution.id: institution
+        for institution in await InstitutionRepository(db).list_for_user(current_user.id)
+    }
+    return [_to_response(account, institutions) for account in accounts]
+
+
 def _to_response(account: Account, institutions: dict[UUID, Institution]) -> AccountResponse:
     response = AccountResponse.model_validate(account, from_attributes=True)
     if account.institution_id is not None:
@@ -241,6 +254,28 @@ async def sync_account_institution(
     return _refresh_response(result)
 
 
+@router.post("/{account_id}/restore", response_model=AccountResponse)
+async def restore_account(
+    account_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AccountResponse:
+    """Restore an archived account owned by the authenticated user.
+
+    A retained Plaid account keeps its institution relationship and can be
+    restored directly. An account from a fully unlinked institution returns a
+    validation error instructing the caller to reconnect through Plaid Link.
+    """
+    repository = AccountRepository(db)
+    account = await repository.restore_for_user(current_user.id, account_id)
+    institutions = {
+        institution.id: institution
+        for institution in await InstitutionRepository(db).list_for_user(current_user.id)
+    }
+    await db.commit()
+    return _to_response(account, institutions)
+
+
 @router.delete("/{account_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_account(
     account_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
@@ -248,7 +283,7 @@ async def delete_account(
     account = await AccountRepository(db).get_for_user(current_user.id, account_id)
     repository = AccountRepository(db)
     if account.institution_id is not None:
-        await repository.archive_and_detach_linked_account(current_user.id, account_id)
+        await repository.archive_linked_account(current_user.id, account_id)
     else:
         await repository.archive_for_user(current_user.id, account_id)
     await db.commit()

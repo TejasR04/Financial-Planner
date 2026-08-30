@@ -24,6 +24,7 @@ class AccountResponse(BaseModel):
     institution_status: str | None = None
     institution_last_synced_at: datetime | None = None
     updated_at: datetime | None = None
+    archived_at: datetime | None = None
 
 
 class AccountCreateRequest(BaseModel):

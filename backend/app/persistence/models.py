@@ -125,6 +125,11 @@ class AccountModel(Base):
     external_account_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, onupdate=_now)
     archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    # `archived_at` is the effective lifecycle state used by existing queries.
+    # Keep the sources separate so a user archive survives a provider refresh
+    # and a provider-retired account can be restored without losing intent.
+    user_archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
+    provider_archived_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True, index=True)
 
     user: Mapped["UserModel"] = relationship(back_populates="accounts")
     holdings: Mapped[list["HoldingModel"]] = relationship(back_populates="account")

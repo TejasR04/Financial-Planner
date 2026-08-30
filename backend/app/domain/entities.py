@@ -81,6 +81,8 @@ class Account:
     updated_at: datetime | None = None
     external_account_id: str | None = None
     archived_at: datetime | None = None
+    user_archived_at: datetime | None = None
+    provider_archived_at: datetime | None = None
 
     @property
     def is_liability(self) -> bool:
