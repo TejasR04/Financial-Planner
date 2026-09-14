@@ -6,3 +6,8 @@ venv/
 .pytest_cache/
 *.egg-info/
 .DS_Store
+# Database dumps contain credentials-adjacent financial data and must never be
+# committed. Keep migration backups outside source control.
+backups/
+*.dump
+*.sql

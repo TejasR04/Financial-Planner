@@ -13,6 +13,9 @@ class Settings(BaseSettings):
     api_v1_prefix: str = "/api/v1"
 
     database_url: str = "postgresql+asyncpg://meridian:meridian@localhost:5432/meridian"
+    database_pool_size: int = 5
+    database_max_overflow: int = 5
+    database_pool_recycle_seconds: int = 300
 
     jwt_secret_key: str = "change-me-in-.env"
     jwt_algorithm: str = "HS256"
@@ -48,8 +51,16 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_runtime_safety(self) -> "Settings":
-        if self.refresh_cookie_samesite not in {"lax", "strict"}:
-            raise ValueError("REFRESH_COOKIE_SAMESITE must be lax or strict")
+        if self.database_pool_size < 1:
+            raise ValueError("DATABASE_POOL_SIZE must be at least 1")
+        if self.database_max_overflow < 0:
+            raise ValueError("DATABASE_MAX_OVERFLOW must be zero or greater")
+        if self.database_pool_recycle_seconds < 0:
+            raise ValueError("DATABASE_POOL_RECYCLE_SECONDS must be zero or greater")
+        if self.refresh_cookie_samesite not in {"lax", "strict", "none"}:
+            raise ValueError("REFRESH_COOKIE_SAMESITE must be lax, strict, or none")
+        if self.refresh_cookie_samesite == "none" and not self.refresh_cookie_secure:
+            raise ValueError("REFRESH_COOKIE_SECURE must be true when REFRESH_COOKIE_SAMESITE is none")
         if bool(self.plaid_client_id) != bool(self.plaid_secret):
             raise ValueError("PLAID_CLIENT_ID and PLAID_SECRET must be configured together")
         if self.environment.lower() == "production":

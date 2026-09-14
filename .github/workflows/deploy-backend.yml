@@ -1,0 +1,72 @@
+name: Deploy backend
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "backend/**"
+      - ".github/workflows/deploy-backend.yml"
+
+concurrency:
+  group: cloud-run-production
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Deploy FastAPI to Cloud Run
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v3
+        with:
+          service: meridian-api
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          region: us-east1
+          source: backend
+          env_vars_update_strategy: overwrite
+          secrets_update_strategy: overwrite
+          env_vars: |-
+            ENVIRONMENT=production
+            FRONTEND_URL=${{ vars.FRONTEND_URL }}
+            CORS_ALLOW_ORIGINS=["${{ vars.FRONTEND_URL }}"]
+            REFRESH_COOKIE_SECURE=true
+            REFRESH_COOKIE_SAMESITE=none
+            PLAID_ENV=${{ vars.PLAID_ENV }}
+            PLAID_AUTO_SYNC_ENABLED=false
+            DATABASE_POOL_SIZE=3
+            DATABASE_MAX_OVERFLOW=2
+            DATABASE_POOL_RECYCLE_SECONDS=300
+          secrets: |-
+            DATABASE_URL=database-url:latest
+            JWT_SECRET_KEY=jwt-secret-key:latest
+            PLAID_CLIENT_ID=plaid-client-id:latest
+            PLAID_SECRET=plaid-secret:latest
+            PLAID_TOKEN_ENCRYPTION_KEY=plaid-token-encryption-key:latest
+            GEMINI_API_KEY=gemini-api-key:latest
+          flags: >-
+            --port=8000
+            --memory=512Mi
+            --cpu=1
+            --min-instances=0
+            --max-instances=2
+            --concurrency=40
+            --timeout=300
+
+      - name: Show service URL
+        run: echo "${{ steps.deploy.outputs.url }}"
+
