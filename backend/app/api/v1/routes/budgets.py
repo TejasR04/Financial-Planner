@@ -115,6 +115,8 @@ async def budget_summary(
     selected_month = (month or date.today()).replace(day=1)
     end = selected_month.replace(day=monthrange(selected_month.year, selected_month.month)[1])
     repo = BudgetRepository(db)
+    await repo.apply_category_defaults_for_user(current_user.id)
+    await db.commit()
     categories = await repo.list_categories(current_user.id)
     rules = await repo.list_rules(current_user.id)
     transactions = await repo.expense_transactions_for_month(current_user.id, selected_month, end)
@@ -150,6 +152,8 @@ async def transaction_review_queue(
     month: date | None = None, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
     repo = BudgetRepository(db)
+    await repo.apply_category_defaults_for_user(current_user.id)
+    await db.commit()
     categories = await repo.list_categories(current_user.id)
     rules = await repo.list_rules(current_user.id)
     active_category_ids = {row.id for row in categories if row.active}

@@ -59,6 +59,30 @@ def _normalized_import_rows(body: CSVImportRequest):
     return selected
 
 
+@router.get("/merchants", response_model=list[str])
+async def search_merchants(
+    search: str = "",
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    from sqlalchemy import select, func
+    from app.persistence.models import AccountModel, TransactionModel
+
+    query = (
+        select(TransactionModel.merchant).distinct()
+        .join(AccountModel, AccountModel.id == TransactionModel.account_id)
+        .where(
+            AccountModel.user_id == current_user.id,
+            AccountModel.archived_at.is_(None),
+            TransactionModel.deleted_at.is_(None),
+            TransactionModel.amount < 0,
+            func.lower(TransactionModel.merchant).contains(search.strip().lower(), autoescape=True),
+        )
+        .order_by(TransactionModel.merchant).limit(30)
+    )
+    return list((await db.scalars(query)).all())
+
+
 @router.get("", response_model=TransactionListResponse)
 async def list_transactions(
     account_id: UUID | None = None,
@@ -76,6 +100,8 @@ async def list_transactions(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> TransactionListResponse:
+    await BudgetRepository(db).apply_category_defaults_for_user(current_user.id)
+    await db.commit()
     transactions, total = await TransactionRepository(db).list_for_user(
         current_user.id, account_id=account_id, category=category,
         budget_category_id=budget_category_id, direction=direction, search=search, merchant=merchant, since=since, until=until,

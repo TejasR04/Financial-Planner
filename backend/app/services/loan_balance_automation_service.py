@@ -8,6 +8,7 @@ from uuid import UUID
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.domain.merchant_rules import merchant_matches_rule
 from app.core.exceptions import NotFoundError, ValidationError
 from app.persistence.models import (
     AccountModel,
@@ -71,6 +72,7 @@ class LoanBalanceAutomationService:
         )
         if account_id is not None:
             query = query.where(AccountModel.id == account_id)
+        query = query.order_by(AccountModel.id, LoanBalanceRuleModel.id).with_for_update(of=AccountModel)
         pairs = (await self.session.execute(query)).all()
         applied = 0
         for rule, account in pairs:
@@ -107,14 +109,17 @@ class LoanBalanceAutomationService:
                 AccountModel.user_id == user_id,
                 TransactionModel.account_id != account.id,
                 TransactionModel.status == "cleared",
+                AccountModel.archived_at.is_(None),
+                TransactionModel.amount < 0,
                 TransactionModel.deleted_at.is_(None),
-                TransactionModel.posted_at >= rule.created_at.date(),
-                TransactionModel.merchant.ilike(f"%{pattern}%"),
+                TransactionModel.posted_at > rule.created_at.date(),
             )
             .order_by(TransactionModel.posted_at, TransactionModel.id)
         )
         count = 0
         for transaction in result.scalars().all():
+            if not merchant_matches_rule(transaction.merchant, pattern, collapse_transfers=False):
+                continue
             if account.balance >= 0:
                 rule.active = False
                 break

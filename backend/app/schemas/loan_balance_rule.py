@@ -3,6 +3,8 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
+from app.domain.merchant_rules import normalize_merchant_rule
+
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
@@ -20,7 +22,7 @@ class LoanBalanceRuleCreate(BaseModel):
                 raise ValueError("Scheduled payments require an amount, frequency, and first payment date.")
             self.merchant_pattern = None
         else:
-            pattern = (self.merchant_pattern or "").strip().lower()
+            pattern = normalize_merchant_rule(self.merchant_pattern or "", collapse_transfers=False)
             if len(pattern) < 2:
                 raise ValueError("Enter at least two characters from the merchant name.")
             self.merchant_pattern = pattern

@@ -13,11 +13,11 @@ _DATE_TOKEN = re.compile(r"\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b")
 _DYNAMIC_TOKEN = re.compile(r"\b(?=[a-z0-9-]{8,}\b)(?=[a-z0-9-]*\d)[a-z0-9-]+\b", re.IGNORECASE)
 
 
-def normalize_merchant_rule(value: str) -> str:
+def normalize_merchant_rule(value: str, *, collapse_transfers: bool = True) -> str:
     normalized = " ".join(value.lower().replace("_", " ").split())
     # Account suffixes and transaction numbers change on every bank transfer;
     # direction/account labels should not create separate rules either.
-    if normalized.startswith("online transfer"):
+    if collapse_transfers and normalized.startswith("online transfer"):
         return "online transfer"
     normalized = _REFERENCE_LABEL.sub("", normalized)
     normalized = _MASKED_ACCOUNT.sub("", normalized)
@@ -28,7 +28,7 @@ def normalize_merchant_rule(value: str) -> str:
     return " ".join(normalized.strip(" .-").split())
 
 
-def merchant_matches_rule(merchant: str, rule_pattern: str) -> bool:
+def merchant_matches_rule(merchant: str, rule_pattern: str, *, collapse_transfers: bool = True) -> bool:
     merchant_words = set(re.findall(r"[a-z0-9]+", merchant.lower().replace("_", " ")))
-    rule_words = re.findall(r"[a-z0-9]+", normalize_merchant_rule(rule_pattern))
+    rule_words = re.findall(r"[a-z0-9]+", normalize_merchant_rule(rule_pattern, collapse_transfers=collapse_transfers))
     return bool(rule_words) and all(word in merchant_words for word in rule_words)

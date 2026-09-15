@@ -285,7 +285,7 @@ export default function TransactionsPage() {
                         aria-label={`Category for ${transaction.merchant}`}
                         className="h-8 min-w-40 rounded-md border border-border bg-background px-2 text-[12px] text-foreground outline-none focus:border-ring disabled:opacity-60"
                       >
-                        <option value="">{transaction.category}</option>
+                        <option value="">Choose your category</option>
                         <option value="__transfer__">Transfer — exclude from cash flow</option>
                         <option value="__income__">Income — exclude from budget</option>
                         <option value="__credit_card_payment__">Credit card payment — exclude from budget and cash flow</option>

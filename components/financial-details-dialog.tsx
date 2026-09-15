@@ -21,9 +21,31 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
   const [ruleDate, setRuleDate] = useState("");
   const [merchantPattern, setMerchantPattern] = useState("");
 
+  const [merchantOptions, setMerchantOptions] = useState<string[]>([]);
+  const [selectedMerchant, setSelectedMerchant] = useState("");
+  const [merchantLoading, setMerchantLoading] = useState(false);
+  const [merchantError, setMerchantError] = useState("");
+  const [savingRule, setSavingRule] = useState(false);
+
+  useEffect(() => {
+    if (!account || account.institutionId || !debt || ruleMode !== "merchant" || selectedMerchant) return;
+    const controller = new AbortController();
+    setMerchantLoading(true);
+    setMerchantError("");
+    const timer = setTimeout(() => {
+      api.transactions.merchants(merchantPattern, controller.signal).then(setMerchantOptions)
+        .catch(() => { if (!controller.signal.aborted) setMerchantError("Couldn't load merchants. Try searching again."); })
+        .finally(() => { if (!controller.signal.aborted) setMerchantLoading(false); });
+    }, 250);
+    return () => { clearTimeout(timer); controller.abort(); };
+  }, [account, debt, ruleMode, merchantPattern, selectedMerchant]);
+
   useEffect(() => {
     if (!account) return;
     setError("");
+    setRules([]);
+    setMerchantPattern("");
+    setSelectedMerchant("");
     if (debt) {
       api.accounts.liability(account.id).then((row) => setValues(row ? {
         principal: row.principal ?? "",
@@ -72,17 +94,22 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
   }
 
   async function addRule() {
+    if (savingRule) return;
+    setSavingRule(true);
     try {
       setError("");
       const row = await api.accounts.createBalanceRule(account!.id, ruleMode === "scheduled"
         ? { mode: "scheduled", amount: ruleAmount, frequency: ruleFrequency, next_run_date: ruleDate }
-        : { mode: "merchant", merchant_pattern: merchantPattern });
+        : { mode: "merchant", merchant_pattern: selectedMerchant });
       setRules([...rules, row]);
       setRuleAmount("");
       setRuleDate("");
       setMerchantPattern("");
+      setSelectedMerchant("");
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to add automatic payment.");
+    } finally {
+      setSavingRule(false);
     }
   }
 
@@ -103,16 +130,20 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
           <p className="mt-1 text-xs text-muted-foreground">Reduce this balance on a schedule or when a cleared payment transaction matches a merchant.</p>
           {rules.map((rule) => (
             <div key={rule.id} className="mt-2 flex items-center justify-between rounded-md border border-border px-3 py-2 text-xs">
-              <span>{rule.mode === "merchant" ? `Merchant contains “${rule.merchant_pattern}” · use transaction amount` : `${rule.frequency === "monthly" ? "Monthly" : "One time"} · $${Number(rule.amount).toFixed(2)} · next ${rule.next_run_date}`}{!rule.active ? " · completed" : ""}</span>
+              <span>{rule.mode === "merchant" ? `Merchant matches “${rule.merchant_pattern}” · use transaction amount` : `${rule.frequency === "monthly" ? "Monthly" : "One time"} · $${Number(rule.amount).toFixed(2)} · next ${rule.next_run_date}`}{!rule.active ? " · completed" : ""}</span>
               <button type="button" className="text-destructive" onClick={async () => { await api.accounts.deleteBalanceRule(account.id, rule.id); setRules(rules.filter((item) => item.id !== rule.id)); }}>Remove</button>
             </div>
           ))}
           <div className="mt-3 grid grid-cols-2 gap-2">
             <select className={input} value={ruleMode} onChange={(event) => setRuleMode(event.target.value as "scheduled" | "merchant")}><option value="scheduled">Scheduled payment</option><option value="merchant">Merchant-linked payment</option></select>
-            {ruleMode === "scheduled" ? <select className={input} value={ruleFrequency} onChange={(event) => setRuleFrequency(event.target.value as "once" | "monthly")}><option value="monthly">Monthly</option><option value="once">One time</option></select> : <input className={input} value={merchantPattern} onChange={(event) => setMerchantPattern(event.target.value)} placeholder="Merchant name contains…" />}
+            {ruleMode === "scheduled" ? <select className={input} value={ruleFrequency} onChange={(event) => setRuleFrequency(event.target.value as "once" | "monthly")}><option value="monthly">Monthly</option><option value="once">One time</option></select> : <input className={input} value={merchantPattern} onChange={(event) => { setMerchantPattern(event.target.value); setSelectedMerchant(""); }} aria-label="Search payment merchants" placeholder="Search your transaction merchants…" />}
             {ruleMode === "scheduled" && <><input className={input} type="number" inputMode="decimal" min="0.01" step="0.01" value={ruleAmount} onChange={(event) => setRuleAmount(event.target.value)} placeholder="Payment amount" /><input className={input} type="date" value={ruleDate} onChange={(event) => setRuleDate(event.target.value)} /></>}
           </div>
-          <Button className="mt-2" variant="outline" size="sm" type="button" onClick={() => void addRule()} disabled={ruleMode === "scheduled" ? !ruleAmount || !ruleDate : merchantPattern.trim().length < 2}>Add automatic payment</Button>
+          {ruleMode === "merchant" && <div className="mt-2 text-xs">
+            <p className="text-muted-foreground">Select a merchant from your outgoing transactions. Cleared payments dated after today will reduce this balance by the full payment amount, once per transaction. Interest is not separated.</p>
+            {selectedMerchant ? <p className="mt-2">Selected: {selectedMerchant}</p> : merchantLoading ? <p className="mt-2">Searching…</p> : merchantError ? <p role="alert" className="mt-2 text-destructive">{merchantError}</p> : <ul className="mt-2 max-h-36 overflow-auto rounded border border-border">{merchantOptions.map((merchant) => <li key={merchant}><button type="button" className="w-full px-2 py-2 text-left hover:bg-muted" onClick={() => { setSelectedMerchant(merchant); setMerchantPattern(merchant); }}>{merchant}</button></li>)}{!merchantOptions.length && <li className="p-2 text-muted-foreground">No matching payment merchants.</li>}</ul>}
+          </div>}
+          <Button className="mt-2" variant="outline" size="sm" type="button" onClick={() => void addRule()} disabled={savingRule || (ruleMode === "scheduled" ? !ruleAmount || !ruleDate : !selectedMerchant)}>Add automatic payment</Button>
         </section>
       )}
       {!debt && holdings.map((holding) => (

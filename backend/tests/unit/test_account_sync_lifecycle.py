@@ -110,7 +110,7 @@ async def test_refresh_archives_removed_accounts_and_tolerates_missing_holdings(
         archive_missing_from_plaid=AsyncMock(),
     )
     provider._transactions = SimpleNamespace(apply_plaid_updates=AsyncMock(return_value=(0, 0, 0)))
-    provider._budgets = SimpleNamespace(apply_merchant_rules_for_user=AsyncMock(return_value=0))
+    provider._budgets = SimpleNamespace(apply_merchant_rules_for_user=AsyncMock(return_value=0), apply_category_defaults_for_user=AsyncMock(return_value=0))
     provider._holdings = SimpleNamespace(replace_for_accounts=AsyncMock())
     provider._investment_history = SimpleNamespace(record_for_accounts=AsyncMock())
     provider._client = SimpleNamespace(
@@ -123,6 +123,7 @@ async def test_refresh_archives_removed_accounts_and_tolerates_missing_holdings(
     provider._account_id_map = AsyncMock(return_value={"plaid-account-1": uuid4()})
 
     result = await provider._refresh_institution(user_id, institution)
+    provider._budgets.apply_category_defaults_for_user.assert_awaited_once_with(user_id)
 
     assert result.status == "healthy"
     assert result.holdings_synced == 0

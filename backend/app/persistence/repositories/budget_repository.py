@@ -147,7 +147,7 @@ class BudgetRepository(BaseRepository[BudgetCategoryModel]):
             if not include_reviewed:
                 conditions.append(TransactionModel.reviewed_at.is_(None))
             if rule.budget_category_id is not None:
-                conditions.append(TransactionModel.budget_category_id.is_(None))
+                conditions.append(TransactionModel.budget_category_id.is_(None) | TransactionModel.reviewed_at.is_(None))
                 values = {
                     "budget_category_id": rule.budget_category_id,
                     "reviewed_at": datetime.now(timezone.utc),
@@ -167,6 +167,31 @@ class BudgetRepository(BaseRepository[BudgetCategoryModel]):
             updated_count += result.rowcount or 0
         await self.session.flush()
         return updated_count
+
+    async def apply_category_defaults_for_user(self, user_id: UUID) -> int:
+        from app.domain.category_mapping import match_existing_category
+        from app.persistence.models import AccountModel
+
+        # Explicit merchant choices take precedence over provider defaults.
+        await self.apply_merchant_rules_for_user(user_id)
+        categories = [(row.id, row.name) for row in await self.list_categories(user_id) if row.active]
+        if not categories:
+            return 0
+        rows = (await self.session.execute(
+            select(TransactionModel).join(AccountModel, AccountModel.id == TransactionModel.account_id)
+            .where(AccountModel.user_id == user_id, AccountModel.archived_at.is_(None),
+                   TransactionModel.deleted_at.is_(None), TransactionModel.type == "expense",
+                   TransactionModel.budget_category_id.is_(None), TransactionModel.reviewed_at.is_(None),
+                   TransactionModel.ignored_from_budget.is_(False))
+        )).scalars().all()
+        count = 0
+        for row in rows:
+            category_id = match_existing_category(row.category, categories)
+            if category_id is not None:
+                row.budget_category_id = category_id
+                count += 1
+        await self.session.flush()
+        return count
 
     async def delete_rule(self, user_id: UUID, rule_id: UUID) -> None:
         result = await self.session.execute(

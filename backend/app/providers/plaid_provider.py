@@ -256,7 +256,7 @@ class PlaidProvider(FinancialDataProvider):
             )
             # Persist applicable user merchant rules for newly synced
             # expenses, so their custom category is visible everywhere.
-            await self._budgets.apply_merchant_rules_for_user(user_id)
+            await self._budgets.apply_category_defaults_for_user(user_id)
 
             # Investment holdings are optional for a Transactions-linked Item.
             # A bank without Investments support must still sync balances and

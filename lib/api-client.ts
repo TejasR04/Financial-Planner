@@ -558,6 +558,7 @@ export const api = {
     refresh: () => post<ApiPlaidRefreshResponse>("/plaid/refresh"),
   },
   transactions: {
+    merchants: (search: string, signal?: AbortSignal) => get<string[]>(`/transactions/merchants?${new URLSearchParams({ search })}`, { signal }),
     delete: (id: string) => del<void>(`/transactions/${id}`),
     update: (id: string, body: Partial<Pick<ApiTransaction, "posted_at" | "merchant" | "category" | "amount" | "type">>) => patch<ApiTransaction>(`/transactions/${id}`, body),
     list: (params?: {

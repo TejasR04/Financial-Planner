@@ -315,7 +315,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           postedAt: t.posted_at,
           date: formatShortDate(t.posted_at),
           merchant: t.merchant,
-          category: t.budget_category_name ?? (t.type === "credit_card_payment" ? "Credit card payment" : t.category),
+          category: t.budget_category_name ?? (t.type === "credit_card_payment" ? "Credit card payment" : t.type === "income" ? "Income" : t.type === "transfer" ? "Transfer" : "Uncategorized"),
           account: t.account_name ?? accountNameById.get(t.account_id) ?? "Account",
           amount: parseFloat(t.amount),
           type: t.type,
