@@ -30,6 +30,7 @@ class TransactionListResponse(BaseModel):
     total: int
     limit: int
     offset: int
+    totals: dict[str, Decimal] | None = None
 
 
 class TransactionCreateRequest(BaseModel):

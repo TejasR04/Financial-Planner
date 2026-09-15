@@ -305,6 +305,7 @@ export type ApiUncategorizedBudgetTransaction = {
 };
 
 export type ApiTransactionList = {
+  totals?: { inflow: string; outflow: string; net: string } | null;
   data: ApiTransaction[];
   total: number;
   limit: number;
@@ -580,6 +581,7 @@ export const api = {
       includeArchived?: boolean;
         cashFlowOnly?: boolean;
         type?: ApiTransaction["type"];
+        includeTotals?: boolean;
     }, signal?: AbortSignal) => {
       const qs = new URLSearchParams();
       if (params?.limit) qs.set("limit", String(params.limit));
@@ -595,6 +597,7 @@ export const api = {
       if (params?.includeArchived) qs.set("include_archived", "true");
       if (params?.cashFlowOnly) qs.set("cash_flow_only", "true");
       if (params?.type) qs.set("type", params.type);
+      if (params?.includeTotals) qs.set("include_totals", "true");
       const suffix = qs.toString() ? `?${qs}` : "";
       return get<ApiTransactionList>(`/transactions${suffix}`, { signal });
     },

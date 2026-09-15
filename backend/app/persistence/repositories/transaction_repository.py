@@ -6,11 +6,12 @@ import hashlib
 import re
 from uuid import UUID, uuid4
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import case, delete, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.core.exceptions import NotFoundError, ValidationError
 from app.domain.entities import Transaction
+from app.domain.cash_flow import is_card_payment
 from app.domain.enums import TransactionStatus, TransactionType
 from app.persistence.models import AccountModel, BudgetCategoryModel, TransactionModel
 from app.persistence.repositories.base import BaseRepository
@@ -19,7 +20,7 @@ from app.persistence.repositories.base import BaseRepository
 class TransactionRepository(BaseRepository[TransactionModel]):
     model = TransactionModel
 
-    async def list_for_user(
+    def _filtered_query(
         self,
         user_id: UUID,
         account_id: UUID | None = None,
@@ -30,12 +31,10 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         merchant: str | None = None,
         since: date | None = None,
         until: date | None = None,
-        limit: int = 50,
-        offset: int = 0,
         include_archived: bool = False,
         cash_flow_only: bool = False,
         transaction_type: str | None = None,
-    ) -> tuple[list[Transaction], int]:
+    ):
         query = (
             select(TransactionModel, AccountModel.name, AccountModel.archived_at, BudgetCategoryModel.name)
             .join(AccountModel, AccountModel.id == TransactionModel.account_id)
@@ -95,7 +94,7 @@ class TransactionRepository(BaseRepository[TransactionModel]):
                 )
             )
             query = query.where(
-                TransactionModel.type.not_in(["transfer", "credit_card_payment"]),
+                TransactionModel.type.in_(["income", "expense"]),
                 ~recognized_card_payment,
             )
         if since is not None:
@@ -103,6 +102,29 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         if until is not None:
             query = query.where(TransactionModel.posted_at <= until)
 
+        return query
+
+    async def list_for_user(
+        self,
+        user_id: UUID,
+        account_id: UUID | None = None,
+        category: str | None = None,
+        budget_category_id: UUID | None = None,
+        direction: str | None = None,
+        search: str | None = None,
+        merchant: str | None = None,
+        since: date | None = None,
+        until: date | None = None,
+        limit: int = 50,
+        offset: int = 0,
+        include_archived: bool = False,
+        cash_flow_only: bool = False,
+        transaction_type: str | None = None,
+    ) -> tuple[list[Transaction], int]:
+        query = self._filtered_query(user_id, account_id=account_id, category=category,
+            budget_category_id=budget_category_id, direction=direction, search=search, merchant=merchant,
+            since=since, until=until, include_archived=include_archived, cash_flow_only=cash_flow_only,
+            transaction_type=transaction_type)
         count_result = await self.session.execute(
             select(func.count()).select_from(query.subquery())
         )
@@ -117,6 +139,17 @@ class TransactionRepository(BaseRepository[TransactionModel]):
             _to_domain(row, account_name=name, account_archived=archived_at is not None, budget_category_name=budget_name)
             for row, name, archived_at, budget_name in rows
         ], total
+
+    async def totals_for_user(self, user_id: UUID, **filters) -> dict[str, Decimal]:
+        matching = self._filtered_query(user_id, **filters).subquery()
+        amount = matching.c.amount
+        result = await self.session.execute(select(
+            func.coalesce(func.sum(case((amount > 0, amount), else_=0)), 0),
+            func.coalesce(func.sum(case((amount < 0, -amount), else_=0)), 0),
+        ))
+        inflow, outflow = result.one()
+        return {"inflow": Decimal(inflow), "outflow": Decimal(outflow), "net": Decimal(inflow) - Decimal(outflow)}
+
 
     async def create(self, account_id: UUID, transaction: Transaction) -> Transaction:
         row = TransactionModel(
@@ -404,6 +437,11 @@ class TransactionRepository(BaseRepository[TransactionModel]):
             from app.core.exceptions import NotFoundError
 
             raise NotFoundError("Transaction", str(transaction_id))
+        if budget_category_id is not None and (
+            not (row.type == "expense" or (row.type == "transfer" and row.amount > 0))
+            or is_card_payment(row.type, row.category, row.merchant)
+        ):
+            raise ValidationError("Budget categories apply to expenses or incoming transfer reimbursements. Change the transaction type first if it is incorrect.")
         row.budget_category_id = budget_category_id
         if ignored_from_budget is not None:
             row.ignored_from_budget = ignored_from_budget

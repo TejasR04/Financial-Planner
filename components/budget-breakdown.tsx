@@ -14,7 +14,7 @@ export function BudgetBreakdown({ summary, loading, onSelect }: { summary: ApiBu
   return <Panel>
     <PanelHeader title="Category breakdown" description="Categorized spending · select a category to see transactions" />
     {loading ? <p className="flex min-h-64 items-center justify-center text-sm text-muted-foreground">Loading categories…</p> : <>
-      <div className="grid items-center gap-2 p-4 2xl:grid-cols-2">
+      <div className="grid flex-1 items-center gap-4 p-4 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
         <div className="relative h-52 min-w-0">
           {slices.length > 0 && <ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={slices} dataKey="spent" nameKey="name" innerRadius="65%" outerRadius="90%" paddingAngle={1} isAnimationActive={false} onClick={(entry) => onSelect(entry.id)} cursor="pointer">{slices.map((row) => <Cell key={row.id} fill={row.color} />)}</Pie><Tooltip formatter={(value) => formatCurrency(Number(value))} /></PieChart></ResponsiveContainer>}
           <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center"><span className="text-xs text-muted-foreground">Net categorized</span><strong className="mt-1 text-lg tabular-nums">{formatCurrency(net)}</strong></div>

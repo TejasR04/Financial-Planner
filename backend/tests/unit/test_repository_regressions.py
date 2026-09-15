@@ -31,6 +31,28 @@ def _empty_result():
 
 
 @pytest.mark.asyncio
+async def test_filtered_totals_share_scope_and_are_not_paginated():
+    session = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(one=lambda: (Decimal("25"), Decimal("100")))))
+    totals = await TransactionRepository(session).totals_for_user(
+        uuid4(), account_id=uuid4(), budget_category_id=uuid4(), since=date(2026, 9, 1),
+        until=date(2026, 9, 30), transaction_type="expense", cash_flow_only=True)
+    assert totals == {"inflow": Decimal("25"), "outflow": Decimal("100"), "net": Decimal("-75")}
+    sql = _sql(session.execute.await_args.args[0])
+    for required in ["accounts.user_id", "accounts.archived_at IS NULL", "transactions.deleted_at IS NULL", "transactions.budget_category_id", "transactions.type", "transactions.posted_at >=", "transactions.posted_at <="]:
+        assert required in sql
+    assert "LIMIT" not in sql and "OFFSET" not in sql
+
+
+@pytest.mark.asyncio
+async def test_income_cannot_silently_become_budget_spending():
+    from app.core.exceptions import ValidationError
+    row = SimpleNamespace(type="income", amount=Decimal("100"), category="Income", merchant="Salary")
+    session = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(scalar_one_or_none=lambda: row)))
+    with pytest.raises(ValidationError, match="Budget categories apply"):
+        await TransactionRepository(session).update_budget_category(uuid4(), uuid4(), uuid4())
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("repository_type", [HoldingRepository, LiabilityRepository])
 async def test_active_child_queries_exclude_archived_accounts(repository_type):
     session = SimpleNamespace(execute=AsyncMock(return_value=_empty_result()))

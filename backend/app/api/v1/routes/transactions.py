@@ -1,4 +1,5 @@
 from datetime import date
+from typing import Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -99,22 +100,26 @@ async def list_transactions(
     include_archived: bool = False,
     cash_flow_only: bool = False,
     type: TransactionType | None = None,
+    include_totals: bool = False,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> TransactionListResponse:
     await BudgetRepository(db).apply_category_defaults_for_user(current_user.id)
     await db.commit()
-    transactions, total = await TransactionRepository(db).list_for_user(
-        current_user.id, account_id=account_id, category=category,
+    filters: dict[str, Any] = dict(account_id=account_id, category=category,
         budget_category_id=budget_category_id, direction=direction, search=search, merchant=merchant, since=since, until=until,
-        limit=limit, offset=offset, include_archived=include_archived, cash_flow_only=cash_flow_only,
+        include_archived=include_archived, cash_flow_only=cash_flow_only,
         transaction_type=type.value if type else None,
     )
+    repository = TransactionRepository(db)
+    transactions, total = await repository.list_for_user(current_user.id, limit=limit, offset=offset, **filters)
+    totals = await repository.totals_for_user(current_user.id, **filters) if include_totals else None
     return TransactionListResponse(
         data=[TransactionResponse.model_validate(t, from_attributes=True) for t in transactions],
         total=total,
         limit=limit,
         offset=offset,
+        totals=totals,
     )
 
 

@@ -12,6 +12,8 @@ export function TransactionEditDialog({ transaction, account, onClose, onSaved }
   const [values, setValues] = useState({ posted_at: transaction.posted_at, merchant: transaction.merchant, category: transaction.category, amount: transaction.amount, type: transaction.type });
   const [categories, setCategories] = useState<ApiBudgetCategory[]>([]);
   const [budgetCategoryId, setBudgetCategoryId] = useState(transaction.budget_category_id ?? "");
+  const [ignoredFromBudget, setIgnoredFromBudget] = useState(transaction.ignored_from_budget);
+  const categoryEligible = values.type === "expense" || (values.type === "transfer" && Number(values.amount) > 0);
   const [error, setError] = useState("");
   const [loadingCategories, setLoadingCategories] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -28,7 +30,8 @@ export function TransactionEditDialog({ transaction, account, onClose, onSaved }
     try {
       const linked = Boolean(account?.institutionId);
       if (!linked) await api.transactions.update(transaction.id, values);
-      await api.transactions.updateBudgetCategory(transaction.id, budgetCategoryId || null);
+      else if (values.type !== transaction.type) await api.transactions.updateClassification(transaction.id, values.type);
+      await api.transactions.updateBudgetCategory(transaction.id, categoryEligible ? budgetCategoryId || null : null, categoryEligible && ignoredFromBudget);
       onSaved();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to update transaction.");
@@ -51,17 +54,21 @@ export function TransactionEditDialog({ transaction, account, onClose, onSaved }
   }
   const set = (key: keyof typeof values, value: string) => setValues({ ...values, [key]: value });
   return (
-    <DialogShell onClose={onClose} ariaLabelledBy="transaction-edit-title" panelClassName="max-w-lg rounded-lg bg-card p-4">
+    <DialogShell onClose={onClose} closeDisabled={saving} ariaLabelledBy="transaction-edit-title" panelClassName="max-w-lg rounded-lg bg-card p-4">
       <h2 id="transaction-edit-title" className="text-sm font-semibold">Edit transaction</h2>
-      <p className="mt-1 text-xs text-muted-foreground">{account?.institutionId ? "Institution-owned details are read-only. Assign your budget category below." : "Manual and CSV transactions can be corrected."}</p>
+      <p className="mt-1 text-xs text-muted-foreground">{account?.institutionId ? "Bank-provided date, merchant, and amount are read-only. You can change the type and budget treatment." : "Manual and CSV transactions can be corrected."}</p>
       <div className="mt-4 grid grid-cols-2 gap-3">
         <label className="text-xs font-medium text-muted-foreground">Date<input aria-label="Transaction date" className={`${input} mt-1`} type="date" disabled={Boolean(account?.institutionId)} value={values.posted_at} onChange={(event) => set("posted_at", event.target.value)} /></label>
         <label className="text-xs font-medium text-muted-foreground">Merchant<input aria-label="Merchant" className={`${input} mt-1`} disabled={Boolean(account?.institutionId)} value={values.merchant} onChange={(event) => set("merchant", event.target.value)} /></label>
-        <label className="col-span-2 text-xs font-medium text-muted-foreground">Your budget category<select aria-label="Your budget category" className={`${input} mt-1`} disabled={loadingCategories} value={budgetCategoryId} onChange={(event) => setBudgetCategoryId(event.target.value)}><option value="">Use provider category ({transaction.category})</option>{categories.filter((category) => category.active).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
+        <label className="col-span-2 text-xs font-medium text-muted-foreground">Budget category<select aria-label="Your budget category" className={`${input} mt-1`} disabled={loadingCategories || !categoryEligible || saving} value={categoryEligible ? budgetCategoryId : ""} onChange={(event) => setBudgetCategoryId(event.target.value)}><option value="">{categoryEligible ? "Uncategorized" : "Not included in budget"}</option>{categories.filter((category) => category.active).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select></label>
         <label className="text-xs font-medium text-muted-foreground">Amount<input aria-label="Amount" className={`${input} mt-1`} type="number" inputMode="decimal" disabled={Boolean(account?.institutionId)} value={values.amount} onChange={(event) => set("amount", event.target.value)} /></label>
-        <label className="text-xs font-medium text-muted-foreground">Type<select aria-label="Transaction type" className={`${input} mt-1`} disabled={Boolean(account?.institutionId)} value={values.type} onChange={(event) => set("type", event.target.value)}>
+        <label className="text-xs font-medium text-muted-foreground">Transaction type<select aria-label="Transaction type" className={`${input} mt-1`} disabled={saving} value={values.type} onChange={(event) => set("type", event.target.value)}>
           {["expense", "income", "transfer", "credit_card_payment", "contribution"].map((type) => <option key={type} value={type}>{type === "credit_card_payment" ? "Credit card payment" : type}</option>)}
         </select></label>
+        <div className="col-span-2 rounded-md bg-muted/40 p-3 text-xs text-muted-foreground">
+          <p>{values.type === "expense" ? "Expenses count in cash flow. Positive expense amounts are refunds and reduce spending." : values.type === "transfer" && Number(values.amount) > 0 ? "Assign a category to treat this incoming transfer as a reimbursement. It will reduce that category's spending and remain excluded from cash flow." : values.type === "income" ? "Income counts in cash flow and is excluded from budget spending." : "Transfers, card payments, and investment contributions are excluded from income and expense reporting."}</p>
+          {categoryEligible && <label className="mt-3 flex items-center gap-2"><input type="checkbox" checked={ignoredFromBudget} disabled={saving} onChange={(event) => setIgnoredFromBudget(event.target.checked)} />Exclude from budget</label>}
+        </div>
       </div>
       {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
       <div className="mt-4 flex items-center justify-between gap-2">

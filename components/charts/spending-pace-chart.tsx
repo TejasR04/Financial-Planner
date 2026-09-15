@@ -27,7 +27,7 @@ export function SpendingPaceChart({ summary, month, budget, loading }: { summary
     <div className="h-64 px-2 pt-3">
       {!loading && anyData ? <ResponsiveContainer width="100%" height="100%"><LineChart data={points} margin={{ top: 20, right: 24, left: 5, bottom: 5 }}>
         <CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 4" />
-        <XAxis dataKey="day" tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} />
+        <XAxis dataKey="day" ticks={[1, 5, 10, 15, 20, 25, points.length]} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} />
         <YAxis width={65} tickLine={false} axisLine={false} tick={{ fontSize: 11, fill: "var(--muted-foreground)" }} tickFormatter={(value) => formatCurrency(Number(value), { compact: true })} />
         <Tooltip labelFormatter={(day) => `Through day ${day}`} formatter={(value) => formatCurrency(Number(value))} contentStyle={{ background: "var(--popover)", borderColor: "var(--border)", borderRadius: 8, fontSize: 12 }} />
         {budget > 0 && <ReferenceLine y={budget} ifOverflow="extendDomain" stroke="var(--muted-foreground)" strokeDasharray="5 5" label={{ value: `${formatCurrency(budget)} budget`, position: "insideTopRight", fontSize: 11, fill: "var(--muted-foreground)" }} />}
@@ -36,6 +36,6 @@ export function SpendingPaceChart({ summary, month, budget, loading }: { summary
       </LineChart></ResponsiveContainer> : <p className="flex h-full items-center justify-center text-sm text-muted-foreground">{loading ? "Loading…" : "Spending history is unavailable."}</p>}
     </div>
     <div className="flex gap-4 px-4 py-2 text-xs text-muted-foreground"><span>{label} — solid</span><span>{previousLabel} — dashed</span></div>
-    <p className="px-4 pb-3 text-xs text-muted-foreground">Actuals stop at {summary?.as_of ?? "today"}. Imported history may be partial; shorter months stop on their last day. Budget limits use your current category settings.</p>
+    <p className="px-4 pb-3 text-xs text-muted-foreground">Data as of {summary?.as_of ?? "today"}. Imported history may be partial; shorter months stop on their last day. Budget limits use your current category settings.</p>
   </Panel>;
 }
