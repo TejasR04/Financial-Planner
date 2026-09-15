@@ -77,6 +77,7 @@ class BudgetSummaryResponse(BaseModel):
     month: date
     categories: list[BudgetCategorySummaryResponse]
     uncategorized: UncategorizedSpendResponse
+    reconciliation: dict[str, Decimal] = Field(default_factory=dict)
 
 
 class UncategorizedTransactionResponse(BaseModel):

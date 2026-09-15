@@ -10,6 +10,7 @@ import {
 } from "react";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
+import { cashFlowAmounts } from "@/lib/cash-flow";
 import { api, type ApiAccount, type ApiScenarioPreview, type ApiTransaction } from "@/lib/api-client";
 import {
   formatCurrency,
@@ -83,23 +84,12 @@ function buildCashflowSeries(transactions: ApiTransaction[], start: Date, end: D
   }
 
   for (const transaction of transactions) {
-    // Paying a credit-card bill only moves money between two owned accounts:
-    // the underlying card purchases are the expenses. Older synced rows only
-    // retained Plaid's broad LOAN_PAYMENTS category, so retain a conservative
-    // merchant fallback until those rows are refreshed with the detailed one.
-    const category = transaction.category.toUpperCase();
-    const merchant = transaction.merchant.toUpperCase();
-    const isCreditCardPayment = category === "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"
-      || merchant.includes("PAYMENT - BILT")
-      || (category === "LOAN_PAYMENTS" && ["CREDIT CRD", "CREDIT CARD", "AUTOPAY PAYMENT", "AUTOMATIC PAYMENT", "PAYMENT - THANK"].some((marker) => merchant.includes(marker)));
-    if (transaction.type === "transfer" || transaction.type === "credit_card_payment" || isCreditCardPayment) continue;
-
     const posted = new Date(`${transaction.posted_at}T00:00:00`);
     const bucket = buckets.get(monthKey(posted));
     if (!bucket) continue;
-    const amount = Math.abs(parseFloat(transaction.amount));
-    if (transaction.type === "income") bucket.income += amount;
-    if (transaction.type === "expense") bucket.expenses += amount;
+    const amounts = cashFlowAmounts(transaction);
+    bucket.income += amounts.income;
+    bucket.expenses += amounts.expenses;
   }
 
   return Array.from(buckets.entries()).map(([key, value]) => {

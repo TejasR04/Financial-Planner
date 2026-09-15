@@ -8,6 +8,7 @@ from decimal import Decimal
 from uuid import UUID
 
 from app.domain.merchant_rules import merchant_matches_rule
+from app.domain.cash_flow import is_card_payment, cash_flow_amounts
 
 ZERO = Decimal("0")
 
@@ -33,6 +34,39 @@ class BudgetTransactionInput:
     amount: Decimal
     status: str
     budget_category_id: UUID | None
+    type: str = "expense"
+    ignored_from_budget: bool = False
+    provider_category: str = ""
+    posted_at: date | None = None
+
+
+def budget_amount(transaction: BudgetTransactionInput) -> Decimal:
+    if transaction.ignored_from_budget or is_card_payment(transaction.type, transaction.provider_category, transaction.merchant):
+        return ZERO
+    if transaction.type == "expense":
+        return -transaction.amount
+    # Assigning an incoming transfer to a category explicitly treats it as a
+    # reimbursement. Unassigned transfers and salary never become spending.
+    if transaction.type == "transfer" and transaction.amount > ZERO and transaction.budget_category_id:
+        return -transaction.amount
+    return ZERO
+
+
+def reconcile_budget(transactions: list[BudgetTransactionInput]) -> dict[str, Decimal]:
+    expenses = excluded = reimbursements = pending = ZERO
+    for transaction in transactions:
+        _, expense = cash_flow_amounts(transaction.type, transaction.amount, transaction.provider_category, transaction.merchant)
+        expenses += expense
+        if transaction.ignored_from_budget:
+            excluded += expense
+        amount = budget_amount(transaction)
+        if transaction.type == "transfer":
+            reimbursements -= amount
+        if transaction.status == "pending":
+            pending += amount
+    return {"cash_flow_expenses": expenses, "excluded_expenses": excluded,
+            "reimbursements": reimbursements, "budget_spending": expenses - excluded - reimbursements,
+            "pending": pending}
 
 
 @dataclass(slots=True, frozen=True)
@@ -76,11 +110,13 @@ class BudgetService:
         uncategorized_count = 0
 
         for transaction in transactions:
+            amount = budget_amount(transaction)
+            if amount == ZERO:
+                continue
             category_id = self.classify_category_id(transaction, rules, category_ids)
 
             # Expense amounts are normalized as negative. A positive expense
             # (a provider refund) therefore reduces the category total.
-            amount = -transaction.amount
             target = totals.get(category_id) if category_id in category_ids else None
             if target is None:
                 uncategorized_count += 1

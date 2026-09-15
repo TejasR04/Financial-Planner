@@ -20,7 +20,7 @@ from app.schemas.budget import (
     UncategorizedTransactionResponse,
     UncategorizedSpendResponse,
 )
-from app.services.budget_service import BudgetCategoryInput, BudgetService, BudgetTransactionInput, MerchantRuleInput
+from app.services.budget_service import BudgetCategoryInput, BudgetService, BudgetTransactionInput, MerchantRuleInput, reconcile_budget
 
 router = APIRouter(prefix="/budgets", tags=["budgets"])
 service = BudgetService()
@@ -120,14 +120,17 @@ async def budget_summary(
     categories = await repo.list_categories(current_user.id)
     rules = await repo.list_rules(current_user.id)
     transactions = await repo.expense_transactions_for_month(current_user.id, selected_month, end)
+    inputs = [BudgetTransactionInput(row.merchant, row.amount, row.status, row.budget_category_id,
+              row.type, row.ignored_from_budget, row.category, row.posted_at) for row in transactions]
     rollups, uncategorized_spent, uncategorized_pending, uncategorized_count = service.summarize(
         [BudgetCategoryInput(row.id, row.name, row.group_name, row.monthly_limit, row.active) for row in categories],
         [MerchantRuleInput(rule.budget_category_id, rule.merchant_pattern) for rule, _ in rules if rule.budget_category_id],
-        [BudgetTransactionInput(row.merchant, row.amount, row.status, row.budget_category_id) for row in transactions],
+        inputs,
         selected_month,
     )
     return BudgetSummaryResponse(
         month=selected_month,
+        reconciliation=reconcile_budget(inputs),
         categories=[
             BudgetCategorySummaryResponse(
                 budget_category_id=rollup.budget_category_id,

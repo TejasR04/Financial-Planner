@@ -219,9 +219,7 @@ class BudgetRepository(BaseRepository[BudgetCategoryModel]):
                 AccountModel.archived_at.is_(None),
                 TransactionModel.posted_at >= start,
                 TransactionModel.posted_at <= end,
-                TransactionModel.ignored_from_budget.is_(False),
                 TransactionModel.deleted_at.is_(None),
-                (TransactionModel.type == "expense") | (TransactionModel.budget_category_id.is_not(None)),
             )
         )
         return list(result.scalars().all())

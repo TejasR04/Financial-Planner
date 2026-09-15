@@ -227,6 +227,17 @@ export default function BudgetPage() {
 
       {error && <p className="mb-4 rounded-md border border-destructive/30 bg-destructive/5 px-3 py-2 text-sm text-destructive" role="alert">{error}</p>}
 
+      {summary?.reconciliation && <details className="mb-4 rounded-lg border border-border bg-card p-3 text-xs">
+        <summary className="cursor-pointer font-medium">How budget spending relates to cash flow</summary>
+        <div className="mt-3 grid gap-2 sm:grid-cols-4">
+          <p>Cash-flow expenses, net of refunds<br /><strong>{formatCurrency(Number(summary.reconciliation.cash_flow_expenses))}</strong></p>
+          <p>Less expenses excluded from budget<br /><strong>{formatCurrency(Number(summary.reconciliation.excluded_expenses))}</strong></p>
+          <p>Less assigned reimbursements<br /><strong>{formatCurrency(Number(summary.reconciliation.reimbursements))}</strong></p>
+          <p>Total budget spending<br /><strong>{formatCurrency(Number(summary.reconciliation.budget_spending))}</strong></p>
+        </div>
+        <p className="mt-3 text-muted-foreground">Includes pending transactions and uncategorized expenses for {formatMonth(month)}. Assigning an incoming transfer to a category treats it as a reimbursement of that spending. Other transfers, income, and credit-card payments are excluded from the budget.</p>
+      </details>}
+
       <Panel className="mb-4">
         <PanelHeader title="This month’s spending" description="Cleared and pending categorized expenses, grouped by where they were assigned." />
         <div className="flex min-h-64 flex-col gap-4 p-4 sm:flex-row sm:items-center">{spendingChartData.length ? <><div className="h-56 min-w-0 flex-1"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={spendingChartData} dataKey="spent" nameKey="name" innerRadius="58%" outerRadius="82%" paddingAngle={2}>{spendingChartData.map((item) => <Cell key={item.name} fill={item.color} />)}</Pie><Tooltip formatter={(value) => formatCurrency(Number(value))} /></PieChart></ResponsiveContainer></div><div className="w-full space-y-2 text-[12px] sm:max-w-72">{spendingChartData.map((item) => <p key={item.name} className="flex items-center gap-2 text-muted-foreground"><span className="size-2.5 shrink-0 rounded-sm" style={{ background: item.color }} /><span className="min-w-0 flex-1 truncate">{item.name}</span><span className="font-mono tabular-nums text-foreground">{formatCurrency(item.spent)}</span></p>)}</div></> : <p className="flex min-h-56 w-full items-center justify-center text-center text-sm text-muted-foreground">Categorize this month’s expenses to see how your spending is distributed.</p>}</div>
