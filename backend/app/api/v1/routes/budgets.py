@@ -1,5 +1,5 @@
 from calendar import monthrange
-from datetime import date
+from datetime import date, timedelta
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, status
@@ -20,7 +20,7 @@ from app.schemas.budget import (
     UncategorizedTransactionResponse,
     UncategorizedSpendResponse,
 )
-from app.services.budget_service import BudgetCategoryInput, BudgetService, BudgetTransactionInput, MerchantRuleInput, reconcile_budget
+from app.services.budget_service import BudgetCategoryInput, BudgetService, BudgetTransactionInput, MerchantRuleInput, reconcile_budget, cumulative_spending
 
 router = APIRouter(prefix="/budgets", tags=["budgets"])
 service = BudgetService()
@@ -122,6 +122,13 @@ async def budget_summary(
     transactions = await repo.expense_transactions_for_month(current_user.id, selected_month, end)
     inputs = [BudgetTransactionInput(row.merchant, row.amount, row.status, row.budget_category_id,
               row.type, row.ignored_from_budget, row.category, row.posted_at) for row in transactions]
+    previous_end = selected_month - timedelta(days=1)
+    previous_month = previous_end.replace(day=1)
+    previous_rows = await repo.expense_transactions_for_month(current_user.id, previous_month, previous_end)
+    previous_inputs = [BudgetTransactionInput(row.merchant, row.amount, row.status, row.budget_category_id,
+                       row.type, row.ignored_from_budget, row.category, row.posted_at) for row in previous_rows]
+    history_start = await repo.history_start(current_user.id)
+    as_of = date.today()
     rollups, uncategorized_spent, uncategorized_pending, uncategorized_count = service.summarize(
         [BudgetCategoryInput(row.id, row.name, row.group_name, row.monthly_limit, row.active) for row in categories],
         [MerchantRuleInput(rule.budget_category_id, rule.merchant_pattern) for rule, _ in rules if rule.budget_category_id],
@@ -131,6 +138,10 @@ async def budget_summary(
     return BudgetSummaryResponse(
         month=selected_month,
         reconciliation=reconcile_budget(inputs),
+        daily_spending=cumulative_spending(inputs, selected_month, as_of, history_start),
+        previous_daily_spending=cumulative_spending(previous_inputs, previous_month, as_of, history_start),
+        history_start=history_start,
+        as_of=as_of,
         categories=[
             BudgetCategorySummaryResponse(
                 budget_category_id=rollup.budget_category_id,

@@ -69,6 +69,22 @@ def reconcile_budget(transactions: list[BudgetTransactionInput]) -> dict[str, De
             "pending": pending}
 
 
+def cumulative_spending(transactions: list[BudgetTransactionInput], month: date, today: date,
+                        history_start: date | None) -> list[Decimal | None]:
+    days = calendar.monthrange(month.year, month.month)[1]
+    has_history = history_start is not None and history_start <= month.replace(day=days)
+    daily = {day: ZERO for day in range(1, days + 1)}
+    for transaction in transactions:
+        if transaction.posted_at and transaction.posted_at.year == month.year and transaction.posted_at.month == month.month:
+            daily[transaction.posted_at.day] += budget_amount(transaction)
+    total = ZERO
+    result: list[Decimal | None] = []
+    for day in range(1, days + 1):
+        total += daily[day]
+        result.append(total if has_history and month.replace(day=day) <= today else None)
+    return result
+
+
 @dataclass(slots=True, frozen=True)
 class BudgetCategoryRollup:
     budget_category_id: UUID

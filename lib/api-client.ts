@@ -272,6 +272,10 @@ export type ApiMerchantBudgetRule = {
 };
 
 export type ApiBudgetSummary = {
+  daily_spending?: (string | null)[];
+  previous_daily_spending?: (string | null)[];
+  history_start?: string | null;
+  as_of?: string | null;
   reconciliation?: { cash_flow_expenses: string; excluded_expenses: string; reimbursements: string; budget_spending: string; pending: string };
   month: string;
   categories: {

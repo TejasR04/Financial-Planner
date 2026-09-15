@@ -224,6 +224,13 @@ class BudgetRepository(BaseRepository[BudgetCategoryModel]):
         )
         return list(result.scalars().all())
 
+    async def history_start(self, user_id: UUID) -> date | None:
+        from app.persistence.models import AccountModel
+        return await self.session.scalar(select(func.min(TransactionModel.posted_at))
+            .join(AccountModel, AccountModel.id == TransactionModel.account_id)
+            .where(AccountModel.user_id == user_id, AccountModel.archived_at.is_(None),
+                   TransactionModel.deleted_at.is_(None)))
+
     async def unreviewed_transactions(self, user_id: UUID) -> list[TransactionModel]:
         from app.persistence.models import AccountModel
 

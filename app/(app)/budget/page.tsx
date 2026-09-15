@@ -23,6 +23,7 @@ import {
 } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/data";
 import { localMonthKey } from "@/lib/local-date";
+import { SpendingPaceChart } from "@/components/charts/spending-pace-chart";
 
 // Explicit colors avoid SVG/CSS-variable fallback behavior in Recharts and
 // ensure no slice falls back to its neutral gray default.
@@ -238,10 +239,14 @@ export default function BudgetPage() {
         <p className="mt-3 text-muted-foreground">Includes pending transactions and uncategorized expenses for {formatMonth(month)}. Assigning an incoming transfer to a category treats it as a reimbursement of that spending. Other transfers, income, and credit-card payments are excluded from the budget.</p>
       </details>}
 
-      <Panel className="mb-4">
+      <div className="mb-4 grid gap-4 xl:grid-cols-2">
+      <SpendingPaceChart summary={summary} month={month} budget={totalBudgeted} loading={loading} />
+      <Panel>
         <PanelHeader title="This month’s spending" description="Cleared and pending categorized expenses, grouped by where they were assigned." />
         <div className="flex min-h-64 flex-col gap-4 p-4 sm:flex-row sm:items-center">{spendingChartData.length ? <><div className="h-56 min-w-0 flex-1"><ResponsiveContainer width="100%" height="100%"><PieChart><Pie data={spendingChartData} dataKey="spent" nameKey="name" innerRadius="58%" outerRadius="82%" paddingAngle={2}>{spendingChartData.map((item) => <Cell key={item.name} fill={item.color} />)}</Pie><Tooltip formatter={(value) => formatCurrency(Number(value))} /></PieChart></ResponsiveContainer></div><div className="w-full space-y-2 text-[12px] sm:max-w-72">{spendingChartData.map((item) => <p key={item.name} className="flex items-center gap-2 text-muted-foreground"><span className="size-2.5 shrink-0 rounded-sm" style={{ background: item.color }} /><span className="min-w-0 flex-1 truncate">{item.name}</span><span className="font-mono tabular-nums text-foreground">{formatCurrency(item.spent)}</span></p>)}</div></> : <p className="flex min-h-56 w-full items-center justify-center text-center text-sm text-muted-foreground">Categorize this month’s expenses to see how your spending is distributed.</p>}</div>
       </Panel>
+
+      </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <Panel className="xl:col-span-2">

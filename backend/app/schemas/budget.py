@@ -78,6 +78,10 @@ class BudgetSummaryResponse(BaseModel):
     categories: list[BudgetCategorySummaryResponse]
     uncategorized: UncategorizedSpendResponse
     reconciliation: dict[str, Decimal] = Field(default_factory=dict)
+    daily_spending: list[Decimal | None] = Field(default_factory=list)
+    previous_daily_spending: list[Decimal | None] = Field(default_factory=list)
+    history_start: date | None = None
+    as_of: date | None = None
 
 
 class UncategorizedTransactionResponse(BaseModel):

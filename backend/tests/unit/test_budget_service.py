@@ -59,3 +59,18 @@ def test_refunds_reimbursements_and_exclusions_reconcile():
     rollups, unassigned, _, _ = BudgetService().summarize(
         [BudgetCategoryInput(category_id, "Shopping", "Wants", Decimal("100"), True)], [], rows, date(2026, 7, 1))
     assert rollups[0].spent + rollups[0].pending + unassigned == result["budget_spending"]
+
+
+def test_cumulative_spending_stops_at_today_and_preserves_refunds():
+    from app.services.budget_service import cumulative_spending
+    rows = [BudgetTransactionInput("Purchase", Decimal("-100"), "cleared", None, posted_at=date(2026, 9, 1)),
+            BudgetTransactionInput("Refund", Decimal("20"), "cleared", None, posted_at=date(2026, 9, 3))]
+    series = cumulative_spending(rows, date(2026, 9, 1), date(2026, 9, 3), date(2026, 1, 1))
+    assert series[:4] == [Decimal("100"), Decimal("100"), Decimal("80"), None]
+    assert len(series) == 30
+
+
+def test_cumulative_spending_distinguishes_missing_history_and_zero_activity():
+    from app.services.budget_service import cumulative_spending
+    assert cumulative_spending([], date(2024, 2, 1), date(2024, 3, 1), None) == [None] * 29
+    assert cumulative_spending([], date(2024, 2, 1), date(2024, 3, 1), date(2024, 1, 1)) == [Decimal(0)] * 29
