@@ -574,7 +574,8 @@ export const api = {
       since?: string;
       until?: string;
       includeArchived?: boolean;
-      cashFlowOnly?: boolean;
+        cashFlowOnly?: boolean;
+        type?: ApiTransaction["type"];
     }, signal?: AbortSignal) => {
       const qs = new URLSearchParams();
       if (params?.limit) qs.set("limit", String(params.limit));
@@ -589,6 +590,7 @@ export const api = {
       if (params?.until) qs.set("until", params.until);
       if (params?.includeArchived) qs.set("include_archived", "true");
       if (params?.cashFlowOnly) qs.set("cash_flow_only", "true");
+      if (params?.type) qs.set("type", params.type);
       const suffix = qs.toString() ? `?${qs}` : "";
       return get<ApiTransactionList>(`/transactions${suffix}`, { signal });
     },

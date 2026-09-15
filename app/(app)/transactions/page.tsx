@@ -42,6 +42,7 @@ export default function TransactionsPage() {
   const [until, setUntil] = useState("");
   const [includeArchived, setIncludeArchived] = useState(false);
   const [cashFlowOnly, setCashFlowOnly] = useState(false);
+  const [transactionType, setTransactionType] = useState<ApiTransaction["type"] | "">("");
   const [page, setPage] = useState(0);
   const [result, setResult] = useState<ApiTransactionList | null>(null);
   const [loading, setLoading] = useState(true);
@@ -66,6 +67,8 @@ export default function TransactionsPage() {
     setUntil(params.get("until") ?? "");
     setDirection((params.get("direction") as "inflow" | "outflow" | null) ?? "");
     setCashFlowOnly(params.get("cash_flow_only") === "true");
+    const requestedType = params.get("type");
+    if (["income", "expense", "transfer", "credit_card_payment", "contribution"].includes(requestedType ?? "")) setTransactionType(requestedType as ApiTransaction["type"]);
     setFiltersReady(true);
   }, []);
 
@@ -96,6 +99,7 @@ export default function TransactionsPage() {
           until: until || undefined,
           includeArchived,
           cashFlowOnly,
+          type: transactionType || undefined,
         }, controller.signal)
         .then((next) => {
           if (!cancelled) setResult(next);
@@ -115,7 +119,7 @@ export default function TransactionsPage() {
       window.clearTimeout(handle);
       controller.abort();
     };
-  }, [accountId, budgetCategoryId, cashFlowOnly, direction, filtersReady, includeArchived, merchant, page, reloadTick, since, until]);
+  }, [accountId, budgetCategoryId, cashFlowOnly, direction, filtersReady, includeArchived, merchant, page, reloadTick, since, until, transactionType]);
 
   const resetFilters = () => {
     setAccountId("");
@@ -126,6 +130,7 @@ export default function TransactionsPage() {
     setUntil("");
     setIncludeArchived(false);
     setCashFlowOnly(false);
+    setTransactionType("");
     setPage(0);
   };
   const updateCategory = async (transaction: ApiTransaction, nextCategoryId: string) => {
@@ -243,7 +248,8 @@ export default function TransactionsPage() {
             To
             <input type="date" value={until} onChange={(event) => setFilterPage(() => setUntil(event.target.value))} className="h-8 min-w-0 flex-1 rounded-md border border-border bg-background px-2 text-foreground outline-none focus:border-ring" />
           </label>
-          <Button variant="outline" size="sm" onClick={resetFilters} disabled={!accountId && !merchant && !budgetCategoryId && !direction && !since && !until && !includeArchived}>
+          {transactionType && <Button variant="outline" size="sm" onClick={() => setFilterPage(() => setTransactionType(""))}>{transactionType} ×</Button>}
+          <Button variant="outline" size="sm" onClick={resetFilters} disabled={!accountId && !merchant && !budgetCategoryId && !direction && !since && !until && !includeArchived && !transactionType && !cashFlowOnly}>
             <RotateCcw /> Reset filters
           </Button>
         </div>

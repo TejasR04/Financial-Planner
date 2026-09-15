@@ -246,6 +246,7 @@ export default function BudgetPage() {
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
         <Panel className="xl:col-span-2">
           <PanelHeader title="Monthly plan" description={loading ? "Loading your budget…" : `${formatCurrency(totalSpent)} used of ${formatCurrency(totalBudgeted)} budgeted`} />
+          {month === localMonthKey() && <p className="border-b border-border px-4 py-3 text-xs text-muted-foreground">Pace estimates extend spending so far across the full month. Fixed bills and one-time purchases may make this estimate too high; it is not a prediction of upcoming charges.</p>}
           <div className="divide-y divide-border">
             {summary?.categories.map((item) => {
               const budgeted = Number(item.budgeted);
@@ -272,7 +273,7 @@ export default function BudgetPage() {
                 <div className="mt-2 h-3 overflow-hidden rounded-full bg-muted" aria-label={`${item.name}: ${formatCurrency(used)} of ${formatCurrency(budgeted)}`}>
                   <div className={overBudget ? "h-full bg-destructive" : "h-full bg-primary"} style={{ width: `${ratio}%` }} />
                 </div>
-                <p className="mt-1.5 text-[11px] text-muted-foreground">At this pace: {formatCurrency(Number(item.forecast))} this month</p>
+                {month === localMonthKey() && <p className="mt-1.5 text-[11px] text-muted-foreground">If spending continues at this rate: {formatCurrency(Number(item.forecast))} by month end</p>}
               </div>;
             })}
           </div>

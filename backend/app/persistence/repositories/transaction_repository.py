@@ -34,6 +34,7 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         offset: int = 0,
         include_archived: bool = False,
         cash_flow_only: bool = False,
+        transaction_type: str | None = None,
     ) -> tuple[list[Transaction], int]:
         query = (
             select(TransactionModel, AccountModel.name, AccountModel.archived_at, BudgetCategoryModel.name)
@@ -45,6 +46,8 @@ class TransactionRepository(BaseRepository[TransactionModel]):
             query = query.where(AccountModel.archived_at.is_(None))
         if account_id is not None:
             query = query.where(TransactionModel.account_id == account_id)
+        if transaction_type is not None:
+            query = query.where(TransactionModel.type == transaction_type)
         if category is not None and category.strip():
             # Categories arrive from providers as identifiers such as
             # "rent_and_utilities". Match the typed characters anywhere in

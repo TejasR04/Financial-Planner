@@ -76,6 +76,8 @@ function twelveMonthWindow(today = new Date()) {
 }
 
 function buildCashflowSeries(transactions: ApiTransaction[], start: Date, end: Date): CashflowPoint[] {
+  const firstDate = transactions.reduce((first, transaction) => transaction.posted_at < first ? transaction.posted_at : first, "9999-12-31");
+  const currentMonth = monthKey(new Date());
   const buckets = new Map<string, { income: number; expenses: number }>();
   const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
   while (cursor <= end) {
@@ -97,6 +99,8 @@ function buildCashflowSeries(transactions: ApiTransaction[], start: Date, end: D
     return {
       month: new Date(Number(year), Number(month) - 1, 1).toLocaleDateString("en-US", { month: "short" }),
       monthKey: key,
+      available: key >= firstDate.slice(0, 7),
+      incomplete: key === currentMonth,
       income: value.income,
       expenses: value.expenses,
     };
@@ -339,6 +343,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           .filter((a) => a.type === "depository")
           .reduce((s, a) => s + parseFloat(a.balance), 0) + cashHoldings;
         const savingsRate = averageMonthlyIncome > 0 ? (averageMonthlySurplus / averageMonthlyIncome) * 100 : null;
+        const rangeLabel = completedMonths.length
+          ? `${new Date(`${completedMonths[0].monthKey}-01T00:00:00`).toLocaleDateString("en-US", { month: "short", year: "numeric" })}–${new Date(`${completedMonths[completedMonths.length - 1].monthKey}-01T00:00:00`).toLocaleDateString("en-US", { month: "short", year: "numeric" })}`
+          : "No completed months available";
         const kpis: Kpi[] = [
           {
             id: "net-worth",
@@ -356,17 +363,17 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           },
           {
             id: "monthly-cash-flow",
-            label: "Monthly Cash Flow",
-            value: formatCurrency(averageMonthlySurplus, { sign: true }),
+            label: "Average monthly cash flow",
+            value: completedMonths.length ? formatCurrency(averageMonthlySurplus, { sign: true }) : "—",
             raw: averageMonthlySurplus,
-            hint: "Average monthly income less expenses across completed months only",
+            hint: `Income less expenses · ${rangeLabel}`,
           },
           {
             id: "savings-rate",
             label: "Savings Rate",
             value: savingsRate == null ? "—" : `${savingsRate.toFixed(1)}%`,
             raw: savingsRate ?? 0,
-            hint: "Average income retained after expenses across completed months only",
+            hint: `Income retained after expenses · ${rangeLabel}`,
           },
         ];
 

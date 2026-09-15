@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
 from app.domain.entities import Transaction, User
+from app.domain.enums import TransactionType
 from app.persistence.repositories.transaction_repository import TransactionRepository
 from app.persistence.repositories.account_repository import AccountRepository
 from app.persistence.repositories.budget_repository import BudgetRepository
@@ -97,6 +98,7 @@ async def list_transactions(
     offset: int = Query(default=0, ge=0),
     include_archived: bool = False,
     cash_flow_only: bool = False,
+    type: TransactionType | None = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> TransactionListResponse:
@@ -106,6 +108,7 @@ async def list_transactions(
         current_user.id, account_id=account_id, category=category,
         budget_category_id=budget_category_id, direction=direction, search=search, merchant=merchant, since=since, until=until,
         limit=limit, offset=offset, include_archived=include_archived, cash_flow_only=cash_flow_only,
+        transaction_type=type.value if type else None,
     )
     return TransactionListResponse(
         data=[TransactionResponse.model_validate(t, from_attributes=True) for t in transactions],

@@ -16,11 +16,16 @@ import { ChartTooltip } from "./chart-tooltip";
 
 export function CashflowChart({ data, onSelect }: { data?: CashflowPoint[]; onSelect?: (point: CashflowPoint, direction: "inflow" | "outflow") => void }) {
   const cashflowSeries = useCashflowSeries();
+  const points = (data ?? cashflowSeries).map((point) => ({ ...point,
+    month: `${point.month}${point.incomplete ? " MTD" : ""}${point.available === false ? " —" : ""}`,
+    income: point.available === false ? null : point.income,
+    expenses: point.available === false ? null : point.expenses,
+  }));
   return (
     <div className="h-[220px] w-full px-2 pb-2 pt-4">
       <ResponsiveContainer width="100%" height="100%">
         <BarChart
-          data={data ?? cashflowSeries}
+          data={points}
           margin={{ top: 4, right: 12, left: 4, bottom: 0 }}
           barGap={4}
         >

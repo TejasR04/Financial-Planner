@@ -76,6 +76,8 @@ export type CashflowPoint = {
   monthKey?: string;
   income: number;
   expenses: number;
+  available?: boolean;
+  incomplete?: boolean;
 };
 
 export type Account = {
