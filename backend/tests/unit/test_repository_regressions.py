@@ -47,6 +47,19 @@ async def test_filtered_totals_share_scope_and_are_not_paginated():
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("amount", ["-500", "100"])
+async def test_categorized_transfers_preserve_type_and_exclusion(monkeypatch, amount):
+    category_id = uuid4()
+    row = SimpleNamespace(type="transfer", amount=Decimal(amount), category="Transfer", merchant="Travel", ignored_from_budget=False)
+    session = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(scalar_one_or_none=lambda: row)), flush=AsyncMock())
+    monkeypatch.setattr("app.persistence.repositories.transaction_repository._to_domain", lambda value: value)
+    result = await TransactionRepository(session).update_budget_category(uuid4(), uuid4(), category_id)
+    assert result.budget_category_id == category_id
+    assert result.type == "transfer"
+    assert result.ignored_from_budget is False
+
+
+@pytest.mark.asyncio
 async def test_income_cannot_silently_become_budget_spending():
     from app.core.exceptions import ValidationError
     row = SimpleNamespace(type="income", amount=Decimal("100"), category="Income", merchant="Salary")

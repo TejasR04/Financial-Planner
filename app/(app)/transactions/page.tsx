@@ -333,7 +333,7 @@ export default function TransactionsPage() {
           <Button size="sm" variant="outline" disabled={!bulkCategory || bulkBusy || loading} onClick={() => void applyBulk("category")}>Apply category</Button>
           <Button size="sm" disabled={bulkBusy || loading} onClick={() => void applyBulk("approve")}>{bulkBusy ? "Saving…" : "Approve selected"}</Button>
           <Button size="sm" variant="ghost" disabled={bulkBusy} onClick={() => setSelectedIds([])}>Clear selection</Button>
-          <p className="w-full text-xs text-muted-foreground">Categories apply to expenses and incoming reimbursements. Budget exclusions are preserved. No merchant rules are created.</p>
+          <p className="w-full text-xs text-muted-foreground">Categories apply to expenses and transfers. Categorized outgoing transfers add budget spending; incoming transfers reimburse it. Budget exclusions are preserved. No merchant rules are created.</p>
         </div>}
         {error ? (
           <p role="alert" className="p-4 text-sm text-destructive">{error}</p>
@@ -374,7 +374,7 @@ export default function TransactionsPage() {
                         {categories.filter((category) => category.active).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
                       </select> : <button
                         disabled={bulkBusy || loading}
-                        onClick={() => transaction.type === "expense" || (transaction.type === "transfer" && Number(transaction.amount) > 0) ? setCategoryEditingId(transaction.id) : setEditing(transaction)}
+                        onClick={() => transaction.type === "expense" || transaction.type === "transfer" ? setCategoryEditingId(transaction.id) : setEditing(transaction)}
                         className="rounded py-1 text-left hover:text-primary hover:underline"
                         aria-label={`Edit category for ${transaction.merchant}`}
                       >{transaction.budget_category_name ?? categories.find((category) => category.id === transaction.budget_category_id)?.name ?? (transaction.type === "expense" ? "Uncategorized" : transaction.type === "credit_card_payment" ? "Card payment" : transaction.type === "income" ? "Income" : "No budget category")}</button>}

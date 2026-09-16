@@ -440,10 +440,10 @@ class TransactionRepository(BaseRepository[TransactionModel]):
 
             raise NotFoundError("Transaction", str(transaction_id))
         if budget_category_id is not None and (
-            not (row.type == "expense" or (row.type == "transfer" and row.amount > 0))
+            row.type not in ("expense", "transfer")
             or is_card_payment(row.type, row.category, row.merchant)
         ):
-            raise ValidationError("Budget categories apply to expenses or incoming transfer reimbursements. Change the transaction type first if it is incorrect.")
+            raise ValidationError("Budget categories apply to expenses or transfers. Change the transaction type first if it is incorrect.")
         row.budget_category_id = budget_category_id
         if ignored_from_budget is not None:
             row.ignored_from_budget = ignored_from_budget

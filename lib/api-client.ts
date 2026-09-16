@@ -276,7 +276,7 @@ export type ApiBudgetSummary = {
   previous_daily_spending?: (string | null)[];
   history_start?: string | null;
   as_of?: string | null;
-  reconciliation?: { cash_flow_expenses: string; excluded_expenses: string; reimbursements: string; budget_spending: string; pending: string };
+  reconciliation?: { cash_flow_expenses: string; excluded_expenses: string; reimbursements: string; categorized_transfer_spending?: string; budget_spending: string; pending: string };
   month: string;
   categories: {
     budget_category_id: string;

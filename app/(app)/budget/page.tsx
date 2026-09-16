@@ -244,9 +244,10 @@ export default function BudgetPage() {
           <p>Cash-flow expenses, net of refunds<br /><strong>{formatCurrency(Number(summary.reconciliation.cash_flow_expenses))}</strong></p>
           <p>Less expenses excluded from budget<br /><strong>{formatCurrency(Number(summary.reconciliation.excluded_expenses))}</strong></p>
           <p>Less assigned reimbursements<br /><strong>{formatCurrency(Number(summary.reconciliation.reimbursements))}</strong></p>
+          <p>Plus categorized outgoing transfers<br /><strong>{formatCurrency(Number(summary.reconciliation.categorized_transfer_spending ?? 0))}</strong></p>
           <p>Total budget spending<br /><strong>{formatCurrency(Number(summary.reconciliation.budget_spending))}</strong></p>
         </div>
-        <p className="mt-3 text-muted-foreground">Includes pending transactions and uncategorized expenses for {formatMonth(month)}. Assigning an incoming transfer to a category treats it as a reimbursement of that spending. Other transfers, income, and credit-card payments are excluded from the budget.</p>
+        <p className="mt-3 text-muted-foreground">Includes pending transactions and uncategorized expenses for {formatMonth(month)}. Categorized outgoing transfers count as spending; categorized incoming transfers reimburse it. Unassigned transfers, income, and credit-card payments are excluded. Leave transfers between your own accounts uncategorized.</p>
       </details>}
 
       <div className="mb-4 grid gap-4 xl:grid-cols-2">

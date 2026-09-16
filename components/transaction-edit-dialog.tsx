@@ -13,7 +13,7 @@ export function TransactionEditDialog({ transaction, account, onClose, onSaved }
   const [categories, setCategories] = useState<ApiBudgetCategory[]>([]);
   const [budgetCategoryId, setBudgetCategoryId] = useState(transaction.budget_category_id ?? "");
   const [ignoredFromBudget, setIgnoredFromBudget] = useState(transaction.ignored_from_budget);
-  const categoryEligible = values.type === "expense" || (values.type === "transfer" && Number(values.amount) > 0);
+  const categoryEligible = values.type === "expense" || values.type === "transfer";
   const [error, setError] = useState("");
   const [loadingCategories, setLoadingCategories] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -66,7 +66,7 @@ export function TransactionEditDialog({ transaction, account, onClose, onSaved }
           {["expense", "income", "transfer", "credit_card_payment", "contribution"].map((type) => <option key={type} value={type}>{type === "credit_card_payment" ? "Credit card payment" : type}</option>)}
         </select></label>
         <div className="col-span-2 rounded-md bg-muted/40 p-3 text-xs text-muted-foreground">
-          <p>{values.type === "expense" ? "Expenses count in cash flow. Positive expense amounts are refunds and reduce spending." : values.type === "transfer" && Number(values.amount) > 0 ? "Assign a category to treat this incoming transfer as a reimbursement. It will reduce that category's spending and remain excluded from cash flow." : values.type === "income" ? "Income counts in cash flow and is excluded from budget spending." : "Transfers, card payments, and investment contributions are excluded from income and expense reporting."}</p>
+          <p>{values.type === "expense" ? "Expenses count in cash flow. Positive expense amounts are refunds and reduce spending." : values.type === "transfer" ? "Assign a category to include this transfer in your budget: outgoing adds spending; incoming reimburses it. Leave transfers between your own accounts uncategorized to avoid counting them as spending. Transfers remain excluded from cash flow." : values.type === "income" ? "Income counts in cash flow and is excluded from budget spending." : "Card payments and investment contributions are excluded from income and expense reporting."}</p>
           {categoryEligible && <label className="mt-3 flex items-center gap-2"><input type="checkbox" checked={ignoredFromBudget} disabled={saving} onChange={(event) => setIgnoredFromBudget(event.target.checked)} />Exclude from budget</label>}
         </div>
       </div>

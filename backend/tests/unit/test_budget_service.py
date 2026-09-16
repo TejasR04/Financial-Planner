@@ -48,6 +48,8 @@ def test_refunds_reimbursements_and_exclusions_reconcile():
         BudgetTransactionInput("Refund", Decimal("20"), "cleared", category_id),
         BudgetTransactionInput("Shared meal", Decimal("15"), "pending", category_id, "transfer"),
         BudgetTransactionInput("Own transfer", Decimal("1000"), "cleared", None, "transfer"),
+        BudgetTransactionInput("Travel payment", Decimal("-500"), "cleared", category_id, "transfer"),
+        BudgetTransactionInput("Own outgoing transfer", Decimal("-1000"), "cleared", None, "transfer"),
         BudgetTransactionInput("Salary", Decimal("2000"), "cleared", category_id, "income"),
         BudgetTransactionInput("Excluded", Decimal("-10"), "cleared", category_id, ignored_from_budget=True),
         BudgetTransactionInput("PAYMENT - BILT", Decimal("-100"), "cleared", category_id),
@@ -55,7 +57,7 @@ def test_refunds_reimbursements_and_exclusions_reconcile():
     ]
     result = reconcile_budget(rows)
     assert result == {"cash_flow_expenses": Decimal("95"), "excluded_expenses": Decimal("10"),
-                      "reimbursements": Decimal("15"), "budget_spending": Decimal("70"), "pending": Decimal("-15")}
+                      "reimbursements": Decimal("15"), "categorized_transfer_spending": Decimal("500"), "budget_spending": Decimal("570"), "pending": Decimal("-15")}
     rollups, unassigned, _, _ = BudgetService().summarize(
         [BudgetCategoryInput(category_id, "Shopping", "Wants", Decimal("100"), True)], [], rows, date(2026, 7, 1))
     assert rollups[0].spent + rollups[0].pending + unassigned == result["budget_spending"]

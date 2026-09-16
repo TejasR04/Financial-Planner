@@ -45,15 +45,15 @@ def budget_amount(transaction: BudgetTransactionInput) -> Decimal:
         return ZERO
     if transaction.type == "expense":
         return -transaction.amount
-    # Assigning an incoming transfer to a category explicitly treats it as a
-    # reimbursement. Unassigned transfers and salary never become spending.
-    if transaction.type == "transfer" and transaction.amount > ZERO and transaction.budget_category_id:
+    # Explicitly categorized outgoing transfers are spending; incoming ones
+    # reimburse it. Unassigned transfers and salary never become spending.
+    if transaction.type == "transfer" and transaction.budget_category_id:
         return -transaction.amount
     return ZERO
 
 
 def reconcile_budget(transactions: list[BudgetTransactionInput]) -> dict[str, Decimal]:
-    expenses = excluded = reimbursements = pending = ZERO
+    expenses = excluded = reimbursements = transfer_spending = pending = ZERO
     for transaction in transactions:
         _, expense = cash_flow_amounts(transaction.type, transaction.amount, transaction.provider_category, transaction.merchant)
         expenses += expense
@@ -61,11 +61,15 @@ def reconcile_budget(transactions: list[BudgetTransactionInput]) -> dict[str, De
             excluded += expense
         amount = budget_amount(transaction)
         if transaction.type == "transfer":
-            reimbursements -= amount
+            if amount > ZERO:
+                transfer_spending += amount
+            else:
+                reimbursements -= amount
         if transaction.status == "pending":
             pending += amount
     return {"cash_flow_expenses": expenses, "excluded_expenses": excluded,
-            "reimbursements": reimbursements, "budget_spending": expenses - excluded - reimbursements,
+            "reimbursements": reimbursements, "categorized_transfer_spending": transfer_spending,
+            "budget_spending": expenses - excluded + transfer_spending - reimbursements,
             "pending": pending}
 
 
