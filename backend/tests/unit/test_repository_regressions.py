@@ -35,12 +35,15 @@ async def test_filtered_totals_share_scope_and_are_not_paginated():
     session = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(one=lambda: (Decimal("25"), Decimal("100")))))
     totals = await TransactionRepository(session).totals_for_user(
         uuid4(), account_id=uuid4(), budget_category_id=uuid4(), since=date(2026, 9, 1),
-        until=date(2026, 9, 30), transaction_type="expense", cash_flow_only=True)
-    assert totals == {"inflow": Decimal("25"), "outflow": Decimal("100"), "net": Decimal("-75")}
+        until=date(2026, 9, 30), transaction_type="expense", cash_flow_only=False)
+    assert totals == {"income": Decimal("25"), "spending": Decimal("100"), "net_cash_flow": Decimal("-75")}
     sql = _sql(session.execute.await_args.args[0])
     for required in ["accounts.user_id", "accounts.archived_at IS NULL", "transactions.deleted_at IS NULL", "transactions.budget_category_id", "transactions.type", "transactions.posted_at >=", "transactions.posted_at <="]:
         assert required in sql
     assert "LIMIT" not in sql and "OFFSET" not in sql
+    params = session.execute.await_args.args[0].compile().params
+    assert ["income", "expense"] in params.values()
+    assert "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT" in params.values()
 
 
 @pytest.mark.asyncio

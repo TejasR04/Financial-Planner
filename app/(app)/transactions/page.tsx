@@ -16,6 +16,14 @@ import { applyToTransactions } from "@/lib/bulk-transactions";
 
 const PAGE_SIZE = 50;
 
+function localDate(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function monthRange(date = new Date()) {
+  return [localDate(new Date(date.getFullYear(), date.getMonth(), 1)), localDate(new Date(date.getFullYear(), date.getMonth() + 1, 0))];
+}
+
 type PendingMerchantRule = {
   transaction: ApiTransaction;
   categoryId?: string;
@@ -68,8 +76,10 @@ export default function TransactionsPage() {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     setBudgetCategoryId(params.get("budget_category_id") ?? "");
-    setSince(params.get("since") ?? "");
-    setUntil(params.get("until") ?? "");
+    const [start, end] = monthRange();
+    const hasDates = params.has("since") || params.has("until");
+    setSince(hasDates ? params.get("since") ?? "" : start);
+    setUntil(hasDates ? params.get("until") ?? "" : end);
     setDirection((params.get("direction") as "inflow" | "outflow" | null) ?? "");
     setCashFlowOnly(params.get("cash_flow_only") === "true");
     const requestedType = params.get("type");
@@ -149,9 +159,8 @@ export default function TransactionsPage() {
   const selectPeriod = (period: string) => {
     if (!period) return;
     const today = new Date();
-    const localDate = (date: Date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
     const start = period === "last" ? new Date(today.getFullYear(), today.getMonth() - 1, 1) : period === "year" ? new Date(today.getFullYear(), 0, 1) : new Date(today.getFullYear(), today.getMonth(), 1);
-    const end = period === "last" ? new Date(today.getFullYear(), today.getMonth(), 0) : today;
+    const end = period === "last" ? new Date(today.getFullYear(), today.getMonth(), 0) : period === "this" ? new Date(today.getFullYear(), today.getMonth() + 1, 0) : today;
     setFilterPage(() => { setSince(period === "all" ? "" : localDate(start)); setUntil(period === "all" ? "" : localDate(end)); });
   };
 
@@ -160,8 +169,9 @@ export default function TransactionsPage() {
     setMerchant("");
     setBudgetCategoryId("");
     setDirection("");
-    setSince("");
-    setUntil("");
+    const [start, end] = monthRange();
+    setSince(start);
+    setUntil(end);
     setIncludeArchived(false);
     setCashFlowOnly(false);
     setTransactionType("");
@@ -233,6 +243,16 @@ export default function TransactionsPage() {
   const total = result?.total ?? 0;
   const first = total === 0 ? 0 : page * PAGE_SIZE + 1;
   const last = Math.min((page + 1) * PAGE_SIZE, total);
+  const selectedDate = since ? new Date(`${since}T00:00:00`) : new Date();
+  const [monthStart, monthEnd] = monthRange(selectedDate);
+  const isFullMonth = since === monthStart && until === monthEnd;
+  const periodLabel = isFullMonth
+    ? selectedDate.toLocaleDateString("en-US", { month: "long", year: "numeric" })
+    : !since && !until ? "All dates" : `${since ? formatDate(since) : "Beginning"} – ${until ? formatDate(until) : "Present"}`;
+  const changeMonth = (offset: number) => {
+    const [start, end] = monthRange(new Date(selectedDate.getFullYear(), selectedDate.getMonth() + offset, 1));
+    setFilterPage(() => { setSince(start); setUntil(end); });
+  };
 
   return (
     <PageContainer>
@@ -292,15 +312,19 @@ export default function TransactionsPage() {
         </fieldset>
       </Panel>
 
-      <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {[{ label: "Matching transactions", value: String(total) }, { label: "Money in", value: result?.totals ? formatCurrency(Number(result.totals.inflow)) : "—" }, { label: "Money out", value: result?.totals ? formatCurrency(Number(result.totals.outflow)) : "—" }, { label: "Net movement", value: result?.totals ? formatCurrency(Number(result.totals.net), { sign: true }) : "—" }].map((item) => <div key={item.label} className="rounded-lg border border-border bg-card p-3"><p className="text-xs text-muted-foreground">{item.label}</p><p className="mt-1 text-lg font-semibold tabular-nums">{loading ? "—" : item.value}</p></div>)}
+      <div className="mt-4 flex items-center justify-between gap-3">
+        <h2 className="text-sm font-semibold">{periodLabel}</h2>
+        <div className="flex gap-2"><Button size="sm" variant="outline" aria-label="Previous month" onClick={() => changeMonth(-1)}><ChevronLeft /></Button><Button size="sm" variant="outline" aria-label="Next month" onClick={() => changeMonth(1)}><ChevronRight /></Button></div>
       </div>
-      <p className="mt-2 text-xs text-muted-foreground">Totals cover all matching transactions, including pending activity. Money in/out describes account movements and includes transfers unless filtered.</p>
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-3">
+        {[{ label: "Income", value: result?.totals?.income }, { label: "Spending", value: result?.totals?.spending }, { label: "Net cash flow", value: result?.totals?.net_cash_flow }].map((item) => <div key={item.label} className="rounded-lg border border-border bg-card p-3"><p className="text-xs text-muted-foreground">{item.label}</p><p className="mt-1 text-lg font-semibold tabular-nums">{loading || item.value == null ? "—" : formatCurrency(Number(item.value), { sign: item.label === "Net cash flow" })}</p></div>)}
+      </div>
+      <p className="mt-2 text-xs text-muted-foreground">{periodLabel} · Totals follow the filters across all pages, including pending activity. Spending is net of refunds; transfers and card payments are excluded. Net cash flow is income minus spending, not your available account balance.</p>
       {notice && <p className="mt-3 rounded-md border border-border bg-muted/30 p-3 text-sm" role="status">{notice}</p>}
 
       <Panel className="mt-4">
         <PanelHeader
-          title="All activity"
+          title={`Activity · ${periodLabel}`}
           description={loading ? "Loading transactions…" : total ? `Showing ${first}–${last} of ${total}` : "No transactions match these filters"}
         />
         {selectedIds.length > 0 && <div className="flex flex-wrap items-center gap-3 border-b border-border bg-muted/30 p-3">

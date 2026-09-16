@@ -305,7 +305,7 @@ export type ApiUncategorizedBudgetTransaction = {
 };
 
 export type ApiTransactionList = {
-  totals?: { inflow: string; outflow: string; net: string } | null;
+  totals?: { income: string; spending: string; net_cash_flow: string } | null;
   data: ApiTransaction[];
   total: number;
   limit: number;

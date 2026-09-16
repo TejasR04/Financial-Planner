@@ -141,14 +141,16 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         ], total
 
     async def totals_for_user(self, user_id: UUID, **filters) -> dict[str, Decimal]:
-        matching = self._filtered_query(user_id, **filters).subquery()
+        # Keep every ledger filter, but summarize actual income/expenses rather
+        # than double-counting transfers and credit-card repayments.
+        matching = self._filtered_query(user_id, **{**filters, "cash_flow_only": True}).subquery()
         amount = matching.c.amount
         result = await self.session.execute(select(
-            func.coalesce(func.sum(case((amount > 0, amount), else_=0)), 0),
-            func.coalesce(func.sum(case((amount < 0, -amount), else_=0)), 0),
+            func.coalesce(func.sum(case((matching.c.type == "income", amount), else_=0)), 0),
+            func.coalesce(func.sum(case((matching.c.type == "expense", -amount), else_=0)), 0),
         ))
-        inflow, outflow = result.one()
-        return {"inflow": Decimal(inflow), "outflow": Decimal(outflow), "net": Decimal(inflow) - Decimal(outflow)}
+        income, spending = result.one()
+        return {"income": Decimal(income), "spending": Decimal(spending), "net_cash_flow": Decimal(income) - Decimal(spending)}
 
 
     async def create(self, account_id: UUID, transaction: Transaction) -> Transaction:
