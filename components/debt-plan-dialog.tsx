@@ -30,7 +30,7 @@ export function DebtPlanDialog({ accounts, onClose }: { accounts: Account[]; onC
     <DialogShell onClose={onClose} ariaLabelledBy="debt-plan-title" panelClassName="max-w-lg rounded-lg bg-card p-4">
       <h2 id="debt-plan-title" className="text-sm font-semibold">Plan debt payoff</h2>
       <p className="mt-1 text-xs text-muted-foreground">Uses current balances and saved debt terms. This comparison is not persisted.</p>
-      <div className="mt-4 grid grid-cols-2 gap-2">
+      <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
         <select className="h-8 rounded-md border border-border bg-background px-2 text-xs" value={strategy} onChange={(event) => setStrategy(event.target.value as typeof strategy)}>
           <option value="avalanche">Avalanche · highest APR</option>
           <option value="snowball">Snowball · smallest balance</option>

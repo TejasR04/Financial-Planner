@@ -17,6 +17,7 @@ type Props = {
   onLinked?: () => void;
   institutionId?: string;
   autoOpen?: boolean;
+  compactOnMobile?: boolean;
 } & VariantProps<typeof buttonVariants>;
 
 /**
@@ -34,6 +35,7 @@ export function PlaidLinkButton({
   onLinked,
   institutionId,
   autoOpen = false,
+  compactOnMobile = false,
   variant,
   size,
 }: Props) {
@@ -122,9 +124,9 @@ export function PlaidLinkButton({
 
   return (
     <div className="relative inline-block">
-      <Button variant={variant} size={size} className={className} onClick={handleClick} disabled={busy}>
+      <Button variant={variant} size={size} className={className} onClick={handleClick} disabled={busy} aria-label={label}>
         {busy ? <Loader2 className="animate-spin" /> : <Plus />}
-        {label}
+        <span className={compactOnMobile ? "hidden md:inline" : undefined}>{label}</span>
       </Button>
       {errorMessage && (
         <p className="absolute right-0 top-full z-50 mt-1.5 w-56 rounded-md border border-destructive/30 bg-background p-2 text-xs text-destructive shadow-md">

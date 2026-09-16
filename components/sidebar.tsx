@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { ChevronsLeft, LogOut } from "lucide-react";
+import { ChevronsLeft, LogOut, X } from "lucide-react";
 import { MeridianAppIcon } from "@/components/meridian-logo";
 import { navGroups } from "@/lib/nav";
 import { cn } from "@/lib/utils";
@@ -12,9 +12,13 @@ import { useAuth } from "@/lib/auth-context";
 export function Sidebar({
   collapsed,
   onToggle,
+  mobile = false,
+  onNavigate,
 }: {
   collapsed: boolean;
   onToggle: () => void;
+  mobile?: boolean;
+  onNavigate?: () => void;
 }) {
   const pathname = usePathname();
   const user = useUserAccount();
@@ -31,11 +35,12 @@ export function Sidebar({
     <aside
       className={cn(
         "flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200 ease-out",
-        collapsed ? "w-[56px]" : "w-[236px]",
+        mobile ? "h-full w-full" : collapsed ? "w-[56px]" : "w-[236px]",
       )}
     >
       {/* Brand */}
-      <div className="flex h-12 items-center gap-2 border-b border-sidebar-border px-3">
+      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-sidebar-border px-3">
+        {mobile && <button type="button" onClick={onToggle} aria-label="Close navigation" className="flex size-11 shrink-0 items-center justify-center rounded-md hover:bg-sidebar-accent"><X className="size-5" /></button>}
         <MeridianAppIcon className="size-7 shrink-0 rounded-md shadow-none" />
         {!collapsed && (
           <div className="flex min-w-0 flex-col">
@@ -50,7 +55,7 @@ export function Sidebar({
       </div>
 
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto px-2 py-3">
+      <nav className="min-h-0 flex-1 overflow-y-auto px-2 py-3">
         {navGroups.map((group) => (
           <div key={group.label} className="mb-4">
             {!collapsed && (
@@ -66,6 +71,8 @@ export function Sidebar({
                   <li key={item.href}>
                     <Link
                       href={item.href}
+                      onClick={onNavigate}
+                      aria-current={active ? "page" : undefined}
                       title={collapsed ? item.label : undefined}
                       className={cn(
                         "group flex h-8 items-center gap-2.5 rounded-md px-2 text-[13px] font-medium transition-colors",
@@ -73,6 +80,7 @@ export function Sidebar({
                           ? "bg-sidebar-accent text-sidebar-accent-foreground"
                           : "text-sidebar-foreground hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
                         collapsed && "justify-center",
+                        mobile && "h-11",
                       )}
                     >
                       <Icon
@@ -96,7 +104,7 @@ export function Sidebar({
       </nav>
 
       {/* Footer */}
-      <div className="border-t border-sidebar-border p-2">
+      <div className="shrink-0 border-t border-sidebar-border p-2">
         {!collapsed && (
           <div className="mb-1.5 flex items-center gap-2.5 rounded-md px-2 py-1.5">
             <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-chart-2/20 text-[11px] font-semibold text-chart-2">
@@ -125,9 +133,10 @@ export function Sidebar({
           <LogOut className="size-4 shrink-0" />
           {!collapsed && <span>Sign out</span>}
         </button>
-        <button
+        {!mobile && <button
           type="button"
           onClick={onToggle}
+          aria-label={collapsed ? "Expand navigation" : "Collapse navigation"}
           className={cn(
             "flex h-8 w-full items-center gap-2.5 rounded-md px-2 text-[13px] font-medium text-muted-foreground transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-accent-foreground",
             collapsed && "justify-center",
@@ -140,7 +149,7 @@ export function Sidebar({
             )}
           />
           {!collapsed && <span>Collapse</span>}
-        </button>
+        </button>}
       </div>
     </aside>
   );

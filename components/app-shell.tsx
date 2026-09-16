@@ -6,11 +6,20 @@ import { Sidebar } from "@/components/sidebar";
 import { Topbar } from "@/components/topbar";
 import { CommandPalette } from "@/components/command-palette";
 import { useDataError } from "@/lib/data-provider";
+import { DialogShell } from "@/components/ui/dialog-shell";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const [collapsed, setCollapsed] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
+  const [mobileOpen, setMobileOpen] = useState(false);
   const dataError = useDataError();
+
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 768px)");
+    const closeOnDesktop = () => { if (media.matches) setMobileOpen(false); };
+    media.addEventListener("change", closeOnDesktop);
+    return () => media.removeEventListener("change", closeOnDesktop);
+  }, []);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -18,6 +27,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       const modifier = mac ? e.metaKey : e.ctrlKey;
       if (modifier && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "k") {
         e.preventDefault();
+        setMobileOpen(false);
         setCommandOpen((o) => !o);
       }
     };
@@ -27,14 +37,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <ThemeProvider>
-      <div className="flex h-screen overflow-hidden bg-background text-foreground">
-        <Sidebar
-          collapsed={collapsed}
-          onToggle={() => setCollapsed((c) => !c)}
-        />
+      <div className="flex h-dvh overflow-hidden bg-background text-foreground" inert={mobileOpen}>
+        <div className="hidden md:flex">
+          <Sidebar
+            collapsed={collapsed}
+            onToggle={() => setCollapsed((c) => !c)}
+          />
+        </div>
         <div className="flex min-w-0 flex-1 flex-col">
-          <Topbar onOpenCommand={() => setCommandOpen(true)} />
-          <main className="flex-1 overflow-y-auto">
+          <Topbar onOpenCommand={() => setCommandOpen(true)} onOpenNavigation={() => setMobileOpen(true)} />
+          <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
             {dataError && (
               <div role="alert" className="border-b border-warning/30 bg-warning/10 px-5 py-2 text-xs text-foreground">
                 {dataError}
@@ -44,6 +56,13 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </main>
         </div>
       </div>
+      {mobileOpen && (
+        <DialogShell ariaLabel="Navigation" onClose={() => setMobileOpen(false)}
+          overlayClassName="justify-start p-0"
+          panelClassName="h-dvh max-h-dvh w-[min(280px,85vw)] rounded-none border-0">
+          <Sidebar collapsed={false} onToggle={() => setMobileOpen(false)} mobile onNavigate={() => setMobileOpen(false)} />
+        </DialogShell>
+      )}
       <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
     </ThemeProvider>
   );

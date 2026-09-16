@@ -1,7 +1,7 @@
 "use client";
 
 import { usePathname } from "next/navigation";
-import { Search, Sun, Moon, ChevronRight, RefreshCw } from "lucide-react";
+import { Search, Sun, Moon, ChevronRight, RefreshCw, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { PlaidLinkButton } from "@/components/plaid-link-button";
 import { KeyboardShortcut } from "@/components/keyboard-shortcut";
@@ -22,7 +22,7 @@ const titles: Record<string, string> = {
   "/settings": "Settings",
 };
 
-export function Topbar({ onOpenCommand }: { onOpenCommand: () => void }) {
+export function Topbar({ onOpenCommand, onOpenNavigation }: { onOpenCommand: () => void; onOpenNavigation: () => void }) {
   const pathname = usePathname();
   const { theme, toggle } = useTheme();
   const institutions = useInstitutionsData();
@@ -53,22 +53,24 @@ export function Topbar({ onOpenCommand }: { onOpenCommand: () => void }) {
   }
 
   return (
-    <header className="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-background/80 px-4 backdrop-blur">
-      <div className="flex items-center gap-1.5 text-[13px]">
-        <span className="text-muted-foreground">Personal</span>
-        <ChevronRight className="size-3.5 text-muted-foreground/50" />
-        <span className="font-medium text-foreground">{title}</span>
+    <header className="flex h-14 shrink-0 items-center gap-1 border-b border-border bg-background/80 px-2 backdrop-blur md:h-12 md:gap-3 md:px-4">
+      <Button variant="ghost" size="icon" className="size-11 md:hidden" aria-label="Open navigation" aria-haspopup="dialog" onClick={onOpenNavigation}><Menu /></Button>
+      <div className="flex min-w-0 flex-1 items-center gap-1.5 text-[13px] md:flex-none">
+        <span className="hidden text-muted-foreground lg:inline">Personal</span>
+        <ChevronRight className="hidden size-3.5 text-muted-foreground/50 lg:block" />
+        <span className="truncate font-medium text-foreground">{title}</span>
       </div>
 
-      <div className="flex flex-1 justify-center">
+      <div className="flex shrink-0 justify-center md:flex-1">
         <button
           type="button"
           onClick={onOpenCommand}
-          className="group flex h-8 w-full max-w-[420px] items-center gap-2 rounded-md border border-border bg-muted/50 px-2.5 text-[13px] text-muted-foreground transition-colors hover:bg-muted"
+          aria-label="Search or run a command"
+          className="group flex size-11 items-center justify-center gap-2 rounded-md text-[13px] text-muted-foreground transition-colors hover:bg-muted md:h-8 md:w-full md:max-w-[420px] md:justify-start md:border md:border-border md:bg-muted/50 md:px-2.5"
         >
           <Search className="size-4 shrink-0" />
-          <span className="flex-1 text-left">Search or run a command</span>
-          <span className="rounded border border-border bg-background px-1.5 py-0.5"><KeyboardShortcut keyName="K" /></span>
+          <span className="hidden flex-1 text-left md:block">Search or run a command</span>
+          <span className="hidden rounded border border-border bg-background px-1.5 py-0.5 lg:block"><KeyboardShortcut keyName="K" /></span>
         </button>
       </div>
 
@@ -82,6 +84,7 @@ export function Topbar({ onOpenCommand }: { onOpenCommand: () => void }) {
           variant="ghost"
           size="icon-sm"
           aria-label="Sync all linked institutions"
+          className="size-11 md:size-7"
           title={institutions.length ? "Sync all linked institutions" : "No linked institutions"}
           onClick={() => void syncAll()}
           disabled={syncing || institutions.length === 0}
@@ -92,11 +95,12 @@ export function Topbar({ onOpenCommand }: { onOpenCommand: () => void }) {
           variant="ghost"
           size="icon-sm"
           aria-label="Toggle theme"
+          className="size-11 md:size-7"
           onClick={toggle}
         >
           {theme === "dark" ? <Sun /> : <Moon />}
         </Button>
-        <PlaidLinkButton size="sm" className="ml-1" />
+        <PlaidLinkButton size="sm" className="size-11 px-0 md:ml-1 md:h-7 md:w-auto md:px-2.5" compactOnMobile />
       </div>
     </header>
   );

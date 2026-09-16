@@ -65,7 +65,7 @@ export function DialogShell({
         aria-labelledby={ariaLabelledBy}
         tabIndex={-1}
         className={cn(
-          "w-full rounded-xl border border-border bg-popover shadow-2xl outline-none",
+          "max-h-[calc(100dvh-2rem)] w-full overflow-y-auto rounded-xl border border-border bg-popover shadow-2xl outline-none",
           panelClassName,
         )}
         onKeyDown={(event) => {

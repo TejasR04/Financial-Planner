@@ -407,7 +407,7 @@ export function SettingsForms() {
               <Field label="Income sources" hint="Planning inputs only; never added to historical transaction income">
                 <div className="space-y-2">
                   {incomeSources.map((source) => <div key={source.id} className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-[12px]"><span>{source.name} · ${Number(source.annual_amount).toLocaleString()}/yr</span><Button variant="outline" size="xs" onClick={() => void removeIncomeSource(source)}>Remove</Button></div>)}
-                  <div className="grid grid-cols-[1fr_1fr_auto] gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2">
                     <input className={inputClass} value={incomeName} onChange={(e) => setIncomeName(e.target.value)} placeholder="Salary, pension…" />
                     <input className={inputClass} type="number" min="0" value={incomeAmount} onChange={(e) => setIncomeAmount(e.target.value)} placeholder="Annual amount" />
                     <Button variant="outline" size="sm" disabled={!incomeName || !incomeAmount} onClick={() => void addIncomeSource()}>Add</Button>
