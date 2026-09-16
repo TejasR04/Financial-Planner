@@ -20,17 +20,16 @@ from app.core.exceptions import (
     UnauthorizedError,
     ValidationError,
 )
-from app.persistence.repositories.user_repository import UserRepository
 from app.persistence.session import AsyncSessionLocal, engine
-from app.providers.plaid_provider import PlaidProvider
+from app.services.plaid_sync_service import (
+    sync_all_linked_institutions as _sync_all_linked_institutions,
+    try_acquire_sync_lease as _try_acquire_plaid_auto_sync_lease,
+    release_sync_lease as _release_plaid_auto_sync_lease,
+)
 
 settings = get_settings()
 configure_logging(settings.log_level)
 logger = logging.getLogger("meridian.api")
-
-# Stable signed-bigint key shared by every API worker/replica. PostgreSQL
-# session advisory locks release automatically if the owning connection dies.
-_PLAID_AUTO_SYNC_LOCK_ID = 0x4D4552494449414E
 
 app = FastAPI(title=settings.app_name, version="0.1.0")
 
@@ -80,25 +79,6 @@ async def validate_plaid_config() -> None:
             app.state.plaid_auto_sync_task = asyncio.create_task(_plaid_auto_sync_loop())
 
 
-async def _sync_all_linked_institutions() -> None:
-    """Refresh every user's linked Plaid Items without a browser request.
-
-    This is deliberately best-effort: `PlaidProvider.refresh` isolates one
-    failed institution from the others, and one user's failure must never
-    prevent the next user's data from being refreshed.
-    """
-    async with AsyncSessionLocal() as session:
-        user_ids = await UserRepository(session).list_active_ids()
-        for user_id in user_ids:
-            try:
-                provider = PlaidProvider(session, settings.plaid_client_id, settings.plaid_secret, settings.plaid_env)
-                await provider.refresh(user_id)
-                await session.commit()
-            except Exception:
-                await session.rollback()
-                logger.exception("plaid_auto_sync_user_failed", extra={"user_id": str(user_id)})
-
-
 async def _plaid_auto_sync_loop() -> None:
     interval_seconds = max(15, settings.plaid_auto_sync_interval_minutes * 60)
     retry_seconds = min(60, interval_seconds)
@@ -135,22 +115,6 @@ async def _plaid_auto_sync_loop() -> None:
         except Exception:
             logger.exception("plaid_auto_sync_lease_failed")
             await asyncio.sleep(retry_seconds)
-
-
-async def _try_acquire_plaid_auto_sync_lease(session) -> bool:
-    return bool(
-        await session.scalar(
-            text("SELECT pg_try_advisory_lock(:lock_id)"),
-            {"lock_id": _PLAID_AUTO_SYNC_LOCK_ID},
-        )
-    )
-
-
-async def _release_plaid_auto_sync_lease(session) -> None:
-    await session.execute(
-        text("SELECT pg_advisory_unlock(:lock_id)"),
-        {"lock_id": _PLAID_AUTO_SYNC_LOCK_ID},
-    )
 
 
 @app.on_event("shutdown")

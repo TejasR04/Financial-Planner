@@ -98,6 +98,45 @@ Invoke-RestMethod https://YOUR-CLOUD-RUN-SERVICE.run.app/health/ready
 ## Plaid scheduling
 
 The API deployment disables the in-process Plaid loop because Cloud Run may
-scale to zero. Plaid synchronization should be a separate authenticated Cloud
-Run job triggered by Cloud Scheduler. That job is intentionally a separate
-release step from the web service.
+scale to zero. The one-shot runner is `python -m app.jobs.plaid_sync`. Deploy it
+as a private Cloud Run Job with Cloud Scheduler at **8 AM and 8 PM Eastern**
+(`America/New_York`, including daylight-saving changes). It uses the same
+database lease as the local polling loop, commits each user independently,
+and exits unsuccessfully if any institution fails so Cloud Run can retry.
+
+This is an explicit release step; committing this code does **not** activate
+the schedule. First deploy the backend revision containing the runner. Enable
+the Cloud Scheduler API, and provision two service accounts:
+
+- Runtime account: Secret Accessor for the five secrets referenced by the script.
+- Scheduler account: only needs Cloud Run Invoker on this job (script grants it).
+
+The operator needs Cloud Run deployment/IAM and Cloud Scheduler management
+permissions, plus permission to act as both service accounts. No public access
+is granted to the job. Use the session-pooler database URL, not a transaction
+pooler, because the lease is session-scoped. Cloud Scheduler and job executions
+may incur Google Cloud charges.
+
+```powershell
+./scripts/deploy-plaid-sync.ps1 `
+  -ProjectId YOUR_PROJECT_ID `
+  -RuntimeServiceAccount plaid-sync@YOUR_PROJECT_ID.iam.gserviceaccount.com `
+  -SchedulerServiceAccount plaid-scheduler@YOUR_PROJECT_ID.iam.gserviceaccount.com `
+  -FrontendUrl https://YOUR_FRONTEND.vercel.app `
+  -PlaidEnvironment production
+```
+
+Use `sandbox` if the existing linked Items are sandbox Items. The script reuses
+the ready API image digest; rerun it after backend releases to update the job.
+It does not execute a sync immediately. Validate the first scheduled execution
+under Cloud Run > Jobs > meridian-plaid-sync, inspect failure logs, and configure
+an alert on failed executions. To pause without deleting anything:
+
+```powershell
+gcloud scheduler jobs pause meridian-plaid-sync --location=us-east1 --project=YOUR_PROJECT_ID
+```
+
+This imports Plaid's latest available transactions/accounts/holdings. It does
+not force a bank fetch through the separately enabled Transactions Refresh
+add-on. See [Plaid freshness](https://plaid.com/docs/transactions/) and
+[Cloud Run scheduled jobs](https://docs.cloud.google.com/run/docs/execute/jobs-on-schedule).
