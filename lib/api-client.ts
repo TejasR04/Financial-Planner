@@ -2,6 +2,11 @@
 // that knows the backend's response shapes; lib/data-provider.tsx maps
 // these onto the display types in lib/data.ts.
 
+import { ResponseCache } from "@/lib/response-cache";
+
+const responseCache = new ResponseCache();
+export function clearApiCache() { responseCache.clear(); }
+
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
 
@@ -11,6 +16,7 @@ let refreshPromise: Promise<string> | null = null;
 
 /** Called once by AuthProvider so the client always has the latest token. */
 export function setAuthToken(token: string | null) {
+  if (token !== authToken || token === null) clearApiCache();
   authToken = token;
 }
 
@@ -51,6 +57,9 @@ async function request<T>(
   options: RequestInit = {},
   retryAfterRefresh = true,
 ): Promise<T> {
+  const mutates = options.method && options.method !== "GET" &&
+    !path.startsWith("/simulations/") && !path.endsWith("/preview") && path !== "/scenarios/compare";
+  if (mutates) clearApiCache();
   const headers = new Headers(options.headers);
   headers.set("Content-Type", "application/json");
   if (authToken) headers.set("Authorization", `Bearer ${authToken}`);
@@ -60,6 +69,8 @@ async function request<T>(
     headers,
     credentials: "include",
   });
+  // Also invalidate reads started while a mutation was in flight.
+  if (mutates) clearApiCache();
 
   const isAuthEntryPoint = path === "/auth/login" || path === "/auth/register";
   if (res.status === 401 && retryAfterRefresh && !isAuthEntryPoint && path !== "/auth/refresh") {
@@ -107,7 +118,10 @@ async function request<T>(
   return (await res.json()) as T;
 }
 
-const get = <T>(path: string, options?: RequestInit) => request<T>(path, options);
+const get = <T>(path: string, options?: RequestInit) =>
+  /^\/(accounts|institutions|transactions|budgets)(\/|\?|$)/.test(path)
+    ? responseCache.load(path, () => request<T>(path, options), options?.signal)
+    : request<T>(path, options);
 const post = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined });
 const patch = <T>(path: string, body?: unknown) =>

@@ -1,5 +1,26 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api, formatApiErrorDetail } from "@/lib/api-client";
+import { api, clearApiCache, formatApiErrorDetail, setAuthToken } from "@/lib/api-client";
+
+afterEach(() => clearApiCache());
+
+describe("API cache invalidation", () => {
+  afterEach(() => { setAuthToken(null); vi.restoreAllMocks(); });
+
+  it("reuses reads but reloads after a write or a session change", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async () =>
+      new Response(JSON.stringify({ data: [], total: 0 }), { status: 200 }));
+    setAuthToken("first-session");
+    await api.transactions.list();
+    await api.transactions.list();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    await api.transactions.markReviewed("one");
+    await api.transactions.list();
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    setAuthToken("second-session");
+    await api.transactions.list();
+    expect(fetchMock).toHaveBeenCalledTimes(4);
+  });
+});
 
 describe("formatApiErrorDetail", () => {
   it("turns structured validation details into readable field messages", () => {
@@ -45,7 +66,7 @@ describe("transactions.listAll", () => {
     await expect(api.transactions.listAll({}, controller.signal)).rejects.toMatchObject({
       name: "AbortError",
     });
-    expect(fetchMock.mock.calls[0]?.[1]).toMatchObject({ signal: controller.signal });
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 });
 

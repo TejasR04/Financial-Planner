@@ -6,12 +6,14 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
 } from "react";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
 import { cashFlowAmounts } from "@/lib/cash-flow";
-import { api, type ApiAccount, type ApiScenarioPreview, type ApiTransaction } from "@/lib/api-client";
+import { api, clearApiCache, type ApiAccount, type ApiScenarioPreview, type ApiTransaction } from "@/lib/api-client";
+import { RESPONSE_CACHE_TTL_MS } from "@/lib/response-cache";
 import {
   formatCurrency,
   type Account,
@@ -224,7 +226,21 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [refreshTick, setRefreshTick] = useState(0);
 
-  const refresh = useCallback(() => setRefreshTick((t) => t + 1), []);
+  const lastRefreshAt = useRef(Date.now());
+  const refresh = useCallback(() => {
+    clearApiCache();
+    lastRefreshAt.current = Date.now();
+    setRefreshTick((t) => t + 1);
+  }, []);
+
+  useEffect(() => {
+    const refreshIfStale = () => {
+      if (status === "authenticated" && Date.now() - lastRefreshAt.current >= RESPONSE_CACHE_TTL_MS) refresh();
+    };
+    refreshIfStale();
+    window.addEventListener("focus", refreshIfStale);
+    return () => window.removeEventListener("focus", refreshIfStale);
+  }, [pathname, refresh, status]);
 
   useEffect(() => {
     if (status !== "authenticated") return;
