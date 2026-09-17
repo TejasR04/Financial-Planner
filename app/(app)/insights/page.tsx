@@ -31,20 +31,23 @@ export default function InsightsPage() {
   async function handleRerun() {
     setRerunning(true);
     setAnalysisError(null);
-    try {
-      const results = await Promise.allSettled([
-        api.financialHealth.recalculate(), api.recommendations.generate(), api.insights.generate(),
-      ]);
-      refresh();
-      const failed = results.find((result) => result.status === "rejected");
-      if (failed?.status === "rejected") throw failed.reason;
-    } catch (cause) {
-      setAnalysisError(
-        cause instanceof ApiError ? cause.message : "The rule-based analysis could not be refreshed.",
-      );
-    } finally {
-      setRerunning(false);
+    const operations = [
+      { label: "financial health", request: api.financialHealth.recalculate() },
+      { label: "recommendations", request: api.recommendations.generate() },
+      { label: "insights", request: api.insights.generate() },
+    ];
+    const results = await Promise.allSettled(operations.map(({ request }) => request));
+    refresh();
+    const failures = results.flatMap((result, index) =>
+      result.status === "rejected" ? [{ label: operations[index].label, cause: result.reason }] : [],
+    );
+    if (failures.length > 0) {
+      const details = failures
+        .map(({ label, cause }) => `${label}: ${cause instanceof ApiError ? cause.message : "request failed"}`)
+        .join("; ");
+      setAnalysisError(`Some analysis could not be refreshed (${details}). Successful sections were updated.`);
     }
+    setRerunning(false);
   }
 
   const healthRows = financialHealth

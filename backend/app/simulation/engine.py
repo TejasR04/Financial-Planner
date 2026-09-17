@@ -379,7 +379,9 @@ def implied_return_volatility(equity_allocation: Decimal) -> Decimal:
         (x0, y0), (x1, y1) = _VOLATILITY_ANCHORS[-2], _VOLATILITY_ANCHORS[-1]
     else:
         (x0, y0), (x1, y1) = next(
-            (lo, hi) for lo, hi in zip(_VOLATILITY_ANCHORS, _VOLATILITY_ANCHORS[1:]) if lo[0] <= x <= hi[0]
+            (lo, hi)
+            for lo, hi in zip(_VOLATILITY_ANCHORS, _VOLATILITY_ANCHORS[1:], strict=False)
+            if lo[0] <= x <= hi[0]
         )
 
     result = y0 + (x - x0) * ((y1 - y0) / (x1 - x0))

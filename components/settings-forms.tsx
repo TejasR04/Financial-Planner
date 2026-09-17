@@ -45,18 +45,21 @@ const inputClass =
 function Toggle({
   on,
   onChange,
+  disabled = false,
 }: {
   on: boolean;
   onChange: (next: boolean) => void;
+  disabled?: boolean;
 }) {
   return (
     <button
       type="button"
       role="switch"
       aria-checked={on}
+      disabled={disabled}
       onClick={() => onChange(!on)}
       className={cn(
-        "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors",
+        "relative inline-flex h-5 w-9 shrink-0 items-center rounded-full transition-colors disabled:cursor-not-allowed disabled:opacity-50",
         on ? "bg-primary" : "bg-muted",
       )}
     >
@@ -606,7 +609,7 @@ export function SettingsForms() {
           <Panel>
             <PanelHeader
               title="Notifications"
-              description="Choose what Meridian alerts you about — saved locally on this device for now"
+              description="Notification delivery is coming soon"
             />
             <div className="divide-y divide-border px-4">
               {[
@@ -658,26 +661,13 @@ function isDisconnectedImportedAccount(account: ApiArchivedAccount) {
   return !isLinkedAccount(account) && account.status === "connected";
 }
 
-// Local-only preference (no backend model exists for notification settings
-// yet) — kept isolated so it doesn't silently claim to be server-persisted.
+// Delivery is not implemented yet, so the controls stay visibly unavailable
+// instead of storing preferences that cannot produce notifications.
 function NotificationToggleField({ label, hint }: { label: string; hint: string }) {
-  const [on, setOn] = useState(false);
-  const [loaded, setLoaded] = useState(false);
-  const storageKey = `meridian-notification-${label.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`;
-
-  useEffect(() => {
-    setOn(localStorage.getItem(storageKey) === "true");
-    setLoaded(true);
-  }, [storageKey]);
-
-  useEffect(() => {
-    if (loaded) localStorage.setItem(storageKey, String(on));
-  }, [loaded, on, storageKey]);
-
   return (
-    <Field label={label} hint={hint}>
+    <Field label={label} hint={`${hint} · Coming soon`}>
       <div className="flex sm:justify-start">
-        <Toggle on={on} onChange={setOn} />
+        <Toggle on={false} onChange={() => undefined} disabled />
       </div>
     </Field>
   );

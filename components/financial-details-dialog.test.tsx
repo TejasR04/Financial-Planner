@@ -1,10 +1,13 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, expect, it, vi } from "vitest";
 import { FinancialDetailsDialog } from "./financial-details-dialog";
 import { api } from "@/lib/api-client";
 
-afterEach(() => vi.restoreAllMocks());
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 it("selects a merchant from transaction history before saving a future payment rule", async () => {
   vi.spyOn(api.accounts, "liability").mockResolvedValue(null);

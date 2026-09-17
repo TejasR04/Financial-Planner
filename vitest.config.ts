@@ -13,13 +13,16 @@ export default defineConfig({
     setupFiles: ["./vitest.setup.ts"],
     coverage: {
       provider: "v8",
-      include: ["lib/data.ts", "lib/projection-dollars.ts"],
+      include: ["lib/**/*.{ts,tsx}", "components/**/*.{ts,tsx}"],
+      exclude: ["**/*.test.{ts,tsx}"],
       reporter: ["text", "json-summary"],
       thresholds: {
-        branches: 80,
-        functions: 90,
-        lines: 90,
-        statements: 90,
+        // This is an honest whole-frontend baseline. Raise these staged
+        // thresholds as page orchestration and mutation flows gain tests.
+        branches: 25,
+        functions: 25,
+        lines: 20,
+        statements: 20,
       },
     },
   },
