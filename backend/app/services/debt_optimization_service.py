@@ -49,9 +49,36 @@ class DebtOptimizationService:
         if extra_monthly_payment < ZERO:
             raise ValueError("extra_monthly_payment must be non-negative")
 
-        balances = {str(i): l.principal for i, l in enumerate(liabilities)}
-        monthly_rates = {str(i): l.interest_rate / Decimal(12) for i, l in enumerate(liabilities)}
-        minimums = {str(i): l.minimum_payment for i, l in enumerate(liabilities)}
+        if any(
+            liability.principal is None
+            or liability.interest_rate is None
+            or liability.minimum_payment is None
+            for liability in liabilities
+        ):
+            raise ValueError("every liability needs a principal, interest rate, and minimum payment")
+
+        # The validation above narrows these optional persistence fields at the
+        # service boundary. Keeping concrete Decimal maps also makes the core
+        # payoff loop independent of partially populated liability records.
+        principals = {
+            str(i): liability.principal
+            for i, liability in enumerate(liabilities)
+            if liability.principal is not None
+        }
+        interest_rates = {
+            str(i): liability.interest_rate
+            for i, liability in enumerate(liabilities)
+            if liability.interest_rate is not None
+        }
+        minimum_payments = {
+            str(i): liability.minimum_payment
+            for i, liability in enumerate(liabilities)
+            if liability.minimum_payment is not None
+        }
+
+        balances = principals.copy()
+        monthly_rates = {key: rate / Decimal(12) for key, rate in interest_rates.items()}
+        minimums = minimum_payments
         total_monthly_budget = sum(minimums.values(), ZERO) + extra_monthly_payment
 
         def ordered_active() -> list[str]:
@@ -60,7 +87,7 @@ class DebtOptimizationService:
                 return sorted(
                     active,
                     key=lambda i: (
-                        -liabilities[int(i)].interest_rate,
+                        -interest_rates[i],
                         balances[i],
                         int(i),
                     ),
@@ -109,7 +136,7 @@ class DebtOptimizationService:
             ]
             if strategy == DebtPayoffStrategy.AVALANCHE:
                 newly_paid.sort(
-                    key=lambda i: (-liabilities[int(i)].interest_rate, int(i))
+                    key=lambda i: (-interest_rates[i], int(i))
                 )
             else:
                 newly_paid.sort(key=int)

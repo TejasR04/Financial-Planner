@@ -52,6 +52,7 @@ class CashFlowProjectionService:
             )
         if estimated_effective_tax_rate is not None and not ZERO <= estimated_effective_tax_rate < Decimal("1"):
             raise ValueError("estimated_effective_tax_rate must be between 0 and 1")
+        tax_rate = estimated_effective_tax_rate or ZERO
 
         active_sources = [s for s in income_sources if s.active]
         series: list[CashFlowMonthPoint] = []
@@ -63,7 +64,7 @@ class CashFlowProjectionService:
                 grown_annual = source.annual_amount * (Decimal("1") + source.growth_rate) ** years_elapsed
                 monthly_income += grown_annual / Decimal(MONTHS_PER_YEAR)
             if income_basis == "gross":
-                monthly_income *= Decimal("1") - estimated_effective_tax_rate
+                monthly_income *= Decimal("1") - tax_rate
 
             expenses_this_month = inflate(monthly_expenses, inflation_rate, years_elapsed)
             net = monthly_income - expenses_this_month

@@ -3,7 +3,16 @@ import nextVitals from "eslint-config-next/core-web-vitals";
 
 export default defineConfig([
   ...nextVitals,
-  globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts"]),
+  globalIgnores([
+    ".next/**",
+    "out/**",
+    "build/**",
+    "coverage/**",
+    ".pytest_cache/**",
+    "backend/.pytest_cache/**",
+    "backend/**/__pycache__/**",
+    "next-env.d.ts",
+  ]),
   {
     rules: {
       // These React Compiler diagnostics are useful during a migration, but

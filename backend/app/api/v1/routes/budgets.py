@@ -7,6 +7,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
 from app.domain.entities import User
+from app.domain.enums import TransactionType
 from app.domain.merchant_rules import normalize_merchant_rule
 from app.persistence.repositories.budget_repository import BudgetRepository
 from app.persistence.activity_history import load_activity_history
@@ -73,7 +74,7 @@ async def list_merchant_rules(current_user: User = Depends(get_current_user), db
         MerchantRuleResponse(
             id=rule.id, budget_category_id=rule.budget_category_id,
             budget_category_name=category.name if category else None,
-            transaction_type=rule.transaction_type,
+            transaction_type=TransactionType(rule.transaction_type) if rule.transaction_type else None,
             merchant_pattern=normalize_merchant_rule(rule.merchant_pattern),
         )
         for rule, category in rows
@@ -96,7 +97,7 @@ async def create_merchant_rule(
     return MerchantRuleResponse(
         id=rule.id, budget_category_id=rule.budget_category_id,
         budget_category_name=category.name if category else None,
-        transaction_type=rule.transaction_type,
+        transaction_type=TransactionType(rule.transaction_type) if rule.transaction_type else None,
         merchant_pattern=normalize_merchant_rule(rule.merchant_pattern),
     )
 
