@@ -9,7 +9,7 @@ def normalized(value: str) -> str:
 
 ALIASES = (
     {"groceries", "grocery", "supermarkets"},
-    {"dining", "dining out", "restaurants", "food and drink", "food and dining"},
+    {"dining", "dining out", "restaurant", "restaurants", "food and drink", "food and dining", "drinks and dining"},
     {"coffee", "coffee shops"},
     {"transportation", "transport", "travel transportation"},
     {"gas", "gas stations", "fuel"},
@@ -28,16 +28,25 @@ def match_existing_category(provider_category: str, categories: list[tuple[UUID,
     source = normalized(provider_category)
     names = [(category_id, normalized(name)) for category_id, name in categories]
     exact = [category_id for category_id, name in names if name == source]
-    if len(exact) == 1:
-        return exact[0]
+    if exact:
+        return exact[0] if len(exact) == 1 else None
     # Prefer detailed provider labels (e.g. FOOD_AND_DRINK_GROCERIES)
-    # over their broad primary category. Equal-strength matches stay unassigned.
+    # over their broad primary category. Fall back to the primary prefix for
+    # labels such as GENERAL_MERCHANDISE_SUPERSTORES. Match whole words so
+    # unrelated labels cannot accidentally pick up a partial category name.
+    # Equal-strength matches stay unassigned.
     candidates: dict[UUID, tuple[int, int]] = {}
     for aliases in ALIASES:
-        matches = [alias for alias in aliases if source == alias or source.endswith(" " + alias)]
+        matches = [
+            (1, len(alias)) if source.endswith(" " + alias) else
+            (0, len(alias)) if source == alias else
+            (-1, len(alias))
+            for alias in aliases
+            if source == alias or source.endswith(" " + alias) or source.startswith(alias + " ")
+        ]
         if not matches:
             continue
-        score = max((int(source.endswith(" " + alias)), len(alias)) for alias in matches)
+        score = max(matches)
         for category_id, name in names:
             if name in aliases:
                 candidates[category_id] = max(candidates.get(category_id, (-1, -1)), score)

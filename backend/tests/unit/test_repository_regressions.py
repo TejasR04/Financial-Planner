@@ -31,6 +31,49 @@ def _empty_result():
 
 
 @pytest.mark.asyncio
+async def test_provider_defaults_assign_categories_without_approving_transactions():
+    user_id, dining_id, shopping_id = uuid4(), uuid4(), uuid4()
+    rows = [
+        SimpleNamespace(category="FOOD_AND_DRINK_RESTAURANT", budget_category_id=None, reviewed_at=None),
+        SimpleNamespace(category="GENERAL_MERCHANDISE_SUPERSTORES", budget_category_id=None, reviewed_at=None),
+    ]
+    session = SimpleNamespace(
+        execute=AsyncMock(return_value=SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: rows))),
+        flush=AsyncMock(),
+    )
+    repo = BudgetRepository(session)
+    repo.apply_merchant_rules_for_user = AsyncMock(return_value=0)
+    repo.list_categories = AsyncMock(return_value=[
+        SimpleNamespace(id=dining_id, name="Drinks & Dining", active=True),
+        SimpleNamespace(id=shopping_id, name="Shopping", active=True),
+        SimpleNamespace(id=uuid4(), name="Restaurants", active=False),
+    ])
+
+    assert await repo.apply_category_defaults_for_user(user_id) == 2
+    assert [row.budget_category_id for row in rows] == [dining_id, shopping_id]
+    assert all(row.reviewed_at is None for row in rows)
+    repo.apply_merchant_rules_for_user.assert_awaited_once_with(user_id)
+
+    # Repair only this user's active, unassigned, unreviewed expenses. Existing
+    # choices, approvals, ignored transactions, and other users stay untouched.
+    statement = session.execute.await_args.args[0]
+    sql = _sql(statement)
+    for condition in [
+        "accounts.user_id", "accounts.archived_at IS NULL", "transactions.deleted_at IS NULL",
+        "transactions.budget_category_id IS NULL", "transactions.reviewed_at IS NULL",
+        "transactions.ignored_from_budget IS false", "transactions.type =",
+    ]:
+        assert condition in sql
+    assert user_id in statement.compile().params.values()
+    assert "expense" in statement.compile().params.values()
+
+    assert await repo.unreviewed_transactions(user_id) == rows
+    review_sql = _sql(session.execute.await_args.args[0])
+    assert "transactions.reviewed_at IS NULL" in review_sql
+    assert "transactions.budget_category_id IS NULL" not in review_sql
+
+
+@pytest.mark.asyncio
 async def test_filtered_totals_share_scope_and_are_not_paginated():
     session = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(one=lambda: (Decimal("25"), Decimal("100")))))
     totals = await TransactionRepository(session).totals_for_user(

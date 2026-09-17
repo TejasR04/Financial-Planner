@@ -34,7 +34,7 @@ function seed() {
     { id: "holding-3", account_id: "retirement", symbol: "VT", quantity: "1000", cost_basis: "115000", market_value: "146000", asset_class: "equity", as_of: now().slice(0, 10) },
   ];
   return { accounts, transactions, categories, scenarios, holdings, archived: [] as ApiAccount[],
-    user: { id: "demo-user", full_name: "Alex Morgan", email: "alex@example.com", base_currency: "USD", date_of_birth: `${new Date().getFullYear() - 34}-03-12` },
+    user: { id: "demo-user", full_name: "Tejas Ravi", email: "tejas.ravi04@gmail.com", base_currency: "USD", date_of_birth: `${new Date().getFullYear() - 34}-03-12` },
     profile: { target_retirement_age: 65, target_equity_allocation: "0.8", default_withdrawal_rate: "0.04", include_social_security: false, expected_return: "0.06", inflation_rate: "0.025", target_savings_rate: "0.2", cash_reserve_target: "24000" },
     income: [{ id: "salary", name: "Sample salary", annual_amount: "86400", growth_rate: "0.03", active: true }],
     recommendations: [{ id: "rec-1", title: "Build your emergency reserve", body: "Keep six months of living expenses in accessible savings.", category: "Savings", impact_value: "1200", effort: "low", confidence: 0.9, status: "new", generated_at: now() }],
