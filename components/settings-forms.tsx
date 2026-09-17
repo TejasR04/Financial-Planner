@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ArchiveRestore, Check, Trash2 } from "lucide-react";
+import { NotificationsSettings } from "@/components/notifications-settings";
 import { Panel, PanelHeader } from "@/components/panel";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -605,40 +606,7 @@ export function SettingsForms() {
           </div>
         )}
 
-        {tab === "notifications" && (
-          <Panel>
-            <PanelHeader
-              title="Notifications"
-              description="Notification delivery is coming soon"
-            />
-            <div className="divide-y divide-border px-4">
-              {[
-                {
-                  label: "Weekly portfolio digest",
-                  hint: "Every Monday at 8:00 AM",
-                },
-                {
-                  label: "Allocation drift alerts",
-                  hint: "When drift exceeds 5%",
-                },
-                {
-                  label: "Large transaction alerts",
-                  hint: "Transactions over $2,500",
-                },
-                {
-                  label: "New AI recommendations",
-                  hint: "When analysis surfaces opportunities",
-                },
-                {
-                  label: "Bill & contribution reminders",
-                  hint: "Two days before due dates",
-                },
-              ].map((n) => (
-                <NotificationToggleField key={n.label} label={n.label} hint={n.hint} />
-              ))}
-            </div>
-          </Panel>
-        )}
+        {tab === "notifications" && <NotificationsSettings />}
       </div>
     </div>
   );
@@ -661,14 +629,3 @@ function isDisconnectedImportedAccount(account: ApiArchivedAccount) {
   return !isLinkedAccount(account) && account.status === "connected";
 }
 
-// Delivery is not implemented yet, so the controls stay visibly unavailable
-// instead of storing preferences that cannot produce notifications.
-function NotificationToggleField({ label, hint }: { label: string; hint: string }) {
-  return (
-    <Field label={label} hint={`${hint} · Coming soon`}>
-      <div className="flex sm:justify-start">
-        <Toggle on={false} onChange={() => undefined} disabled />
-      </div>
-    </Field>
-  );
-}

@@ -11,8 +11,15 @@ import {
 } from "react";
 import { usePathname } from "next/navigation";
 import { useAuth } from "@/lib/auth-context";
-import { cashFlowAmounts } from "@/lib/cash-flow";
 import { api, clearApiCache, type ApiAccount, type ApiScenarioPreview, type ApiTransaction } from "@/lib/api-client";
+import {
+  ageFromBirthDate,
+  buildCashflowSeries,
+  formatShortDate,
+  formatTimestamp,
+  monthKey,
+  twelveMonthWindow,
+} from "@/lib/dashboard-data-helpers";
 import { RESPONSE_CACHE_TTL_MS } from "@/lib/response-cache";
 import {
   formatCurrency,
@@ -28,86 +35,6 @@ import {
   type Scenario,
   type Transaction,
 } from "@/lib/data";
-
-// ---------------------------------------------------------------------------
-// Small formatting helpers local to the mapping layer below.
-// ---------------------------------------------------------------------------
-
-function ageFromBirthDate(dob: string | null): number {
-  if (!dob) return 35; // no birth date on file yet — a reasonable planning default
-  const birth = new Date(dob);
-  const now = new Date();
-  let age = now.getFullYear() - birth.getFullYear();
-  const hadBirthday =
-    now.getMonth() > birth.getMonth() ||
-    (now.getMonth() === birth.getMonth() && now.getDate() >= birth.getDate());
-  if (!hadBirthday) age -= 1;
-  return age;
-}
-
-function formatTimestamp(iso: string | null): string {
-  if (!iso) return "—";
-  const timestamp = new Date(iso);
-  if (Number.isNaN(timestamp.getTime())) return "—";
-  return timestamp.toLocaleString("en-US", {
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
-  });
-}
-
-function formatShortDate(iso: string): string {
-  const d = new Date(`${iso}T00:00:00`);
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
-function monthKey(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function twelveMonthWindow(today = new Date()) {
-  const start = new Date(today.getFullYear(), today.getMonth() - 11, 1);
-  const end = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-  return {
-    start,
-    startDate: `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-01`,
-    end,
-  };
-}
-
-function buildCashflowSeries(transactions: ApiTransaction[], start: Date, end: Date): CashflowPoint[] {
-  const firstDate = transactions.reduce((first, transaction) => transaction.posted_at < first ? transaction.posted_at : first, "9999-12-31");
-  const currentMonth = monthKey(new Date());
-  const buckets = new Map<string, { income: number; expenses: number }>();
-  const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
-  while (cursor <= end) {
-    buckets.set(monthKey(cursor), { income: 0, expenses: 0 });
-    cursor.setMonth(cursor.getMonth() + 1);
-  }
-
-  for (const transaction of transactions) {
-    const posted = new Date(`${transaction.posted_at}T00:00:00`);
-    const bucket = buckets.get(monthKey(posted));
-    if (!bucket) continue;
-    const amounts = cashFlowAmounts(transaction);
-    bucket.income += amounts.income;
-    bucket.expenses += amounts.expenses;
-  }
-
-  return Array.from(buckets.entries()).map(([key, value]) => {
-    const [year, month] = key.split("-");
-    return {
-      month: new Date(Number(year), Number(month) - 1, 1).toLocaleDateString("en-US", { month: "short" }),
-      monthKey: key,
-      available: key >= firstDate.slice(0, 7),
-      incomplete: key === currentMonth,
-      income: value.income,
-      expenses: value.expenses,
-    };
-  });
-}
 
 const ACCOUNT_TYPE_LABEL: Record<ApiAccount["type"], Account["type"]> = {
   investment: "Investment",
