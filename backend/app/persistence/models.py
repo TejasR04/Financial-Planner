@@ -116,6 +116,7 @@ class AccountModel(Base):
         PGUUID(as_uuid=True), ForeignKey("institutions.id"), nullable=True
     )
     name: Mapped[str] = mapped_column(String(255))
+    custom_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
     type: Mapped[str] = mapped_column(String(20))
     mask: Mapped[str | None] = mapped_column(String(8), nullable=True)
     currency: Mapped[str] = mapped_column(String(3), default="USD")

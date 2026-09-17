@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -8,7 +8,13 @@ import pytest
 from sqlalchemy.dialects import postgresql
 
 from app.domain.entities import Account, Transaction
-from app.domain.enums import AccountType, TransactionStatus, TransactionType
+from app.domain.enums import (
+    AccountType,
+    RecommendationEffort,
+    RecommendationStatus,
+    TransactionStatus,
+    TransactionType,
+)
 from app.persistence.repositories.account_repository import AccountRepository
 from app.persistence.repositories.budget_repository import BudgetRepository
 from app.persistence.repositories.holding_repository import HoldingRepository
@@ -16,7 +22,9 @@ from app.persistence.repositories.investment_value_snapshot_repository import (
     InvestmentValueSnapshotRepository,
 )
 from app.persistence.repositories.liability_repository import LiabilityRepository
+from app.persistence.repositories.recommendation_repository import RecommendationRepository
 from app.persistence.repositories.transaction_repository import TransactionRepository
+from app.services.recommendation_engine import RecommendationDraft
 
 
 def _sql(statement) -> str:
@@ -153,6 +161,77 @@ async def test_linked_account_rename_sets_local_name_only():
     assert row.name == provider_name
     assert row.custom_name == "Roth IRA"
     assert renamed.name == "Roth IRA"
+
+
+@pytest.mark.asyncio
+async def test_recommendation_refresh_reuses_stable_row_and_updates_estimate():
+    user_id, recommendation_id = uuid4(), uuid4()
+    row = SimpleNamespace(
+        id=recommendation_id,
+        user_id=user_id,
+        title="Move excess cash",
+        body="Old estimate",
+        category="Cash Management",
+        impact_value=Decimal("10"),
+        effort=RecommendationEffort.LOW.value,
+        confidence=Decimal("0.7"),
+        status=RecommendationStatus.NEW.value,
+        generated_at=datetime.now(UTC),
+    )
+    session = SimpleNamespace(
+        execute=AsyncMock(return_value=SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [row]))),
+        add=Mock(),
+        flush=AsyncMock(),
+    )
+    draft = RecommendationDraft(
+        title="Move excess cash",
+        body="Updated estimate",
+        category="Cash Management",
+        impact_value=Decimal("25"),
+        effort=RecommendationEffort.MEDIUM,
+        confidence=0.9,
+    )
+
+    refreshed = await RecommendationRepository(session).save_drafts(user_id, [draft])
+
+    assert [item.id for item in refreshed] == [recommendation_id]
+    assert row.body == "Updated estimate"
+    assert row.impact_value == Decimal("25")
+    assert row.effort == RecommendationEffort.MEDIUM.value
+    session.add.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_recommendation_refresh_does_not_resurrect_dismissed_rule():
+    user_id = uuid4()
+    row = SimpleNamespace(
+        id=uuid4(),
+        user_id=user_id,
+        title="Move excess cash",
+        body="Already considered",
+        category="Cash Management",
+        impact_value=Decimal("10"),
+        effort=RecommendationEffort.LOW.value,
+        confidence=Decimal("0.8"),
+        status=RecommendationStatus.DISMISSED.value,
+        generated_at=datetime.now(UTC),
+    )
+    session = SimpleNamespace(
+        execute=AsyncMock(return_value=SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [row]))),
+        add=Mock(),
+        flush=AsyncMock(),
+    )
+    draft = RecommendationDraft(
+        title=" move excess cash ",
+        body="New wording",
+        category="cash management",
+        impact_value=Decimal("40"),
+        effort=RecommendationEffort.LOW,
+        confidence=0.9,
+    )
+
+    assert await RecommendationRepository(session).save_drafts(user_id, [draft]) == []
+    session.add.assert_not_called()
 
 
 @pytest.mark.asyncio

@@ -394,7 +394,7 @@ export function SettingsForms() {
               </Field>
               <Field
                 label="Include Social Security"
-                hint="Add projected benefits to models"
+                hint="Saved for future planning; current projections do not include benefits"
               >
                 <Toggle on={includeSS} onChange={setIncludeSS} />
               </Field>

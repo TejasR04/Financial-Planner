@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, ArrowRight } from "lucide-react";
+import { Check } from "lucide-react";
 import { type Recommendation } from "@/lib/data";
 import { api } from "@/lib/api-client";
 import { useDataRefresh } from "@/lib/data-provider";
@@ -18,15 +18,18 @@ const effortColor: Record<Recommendation["effort"], string> = {
 export function RecommendationCard({ rec }: { rec: Recommendation }) {
   const refresh = useDataRefresh();
   const [pending, setPending] = useState<"applied" | "dismissed" | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const confidenceLabel = rec.confidence >= 0.8 ? "High" : rec.confidence >= 0.6 ? "Medium" : "Limited";
 
   async function handleAction(status: "applied" | "dismissed") {
+    setError(null);
     setPending(status);
     try {
       await api.recommendations.update(rec.id, status);
       refresh();
     } catch {
       setPending(null);
+      setError(`Could not ${status === "applied" ? "mark this recommendation as done" : "dismiss this recommendation"}. Please try again.`);
     }
   }
 
@@ -54,6 +57,8 @@ export function RecommendationCard({ rec }: { rec: Recommendation }) {
         {rec.body}
       </p>
 
+      {error && <p role="alert" className="mt-3 text-[12px] text-destructive">{error}</p>}
+
       <div className="mt-4 flex items-center justify-between gap-2">
         <span className="text-[11px] text-muted-foreground" title="Based on whether the required account data and explicit planning inputs are available.">{confidenceLabel} confidence · Why?</span>
         <div className="flex items-center gap-1.5">
@@ -67,7 +72,7 @@ export function RecommendationCard({ rec }: { rec: Recommendation }) {
           </Button>
           <Button size="xs" onClick={() => handleAction("applied")} disabled={pending !== null}>
             <Check />
-            {pending === "applied" ? "Applying…" : "Apply"}
+            {pending === "applied" ? "Marking done…" : "Mark as done"}
           </Button>
         </div>
       </div>
