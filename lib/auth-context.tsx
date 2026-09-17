@@ -10,11 +10,13 @@ import {
   useState,
 } from "react";
 import { useRouter } from "next/navigation";
-import { api, ApiError, setAuthToken, setUnauthorizedHandler } from "@/lib/api-client";
+import { api, ApiError, setAuthToken, setUnauthorizedHandler, setDemoMode } from "@/lib/api-client";
 
 type AuthState = {
   status: "loading" | "authenticated" | "unauthenticated";
   error: string | null;
+  isDemo: boolean;
+  toggleDemo: () => void;
   login: (email: string, password: string) => Promise<void>;
   register: (email: string, password: string, fullName: string) => Promise<void>;
   logout: () => Promise<void>;
@@ -26,10 +28,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const [status, setStatus] = useState<AuthState["status"]>("loading");
   const [error, setError] = useState<string | null>(null);
+  const [isDemo, setIsDemo] = useState(false);
+  const toggleDemo = useCallback(() => {
+    const next = !isDemo;
+    setDemoMode(next);
+    setIsDemo(next);
+    try { sessionStorage.setItem("meridian-demo", String(next)); } catch {}
+    router.push(next || status === "authenticated" ? "/" : "/login");
+  }, [isDemo, router, status]);
   const authGeneration = useRef(0);
 
   const clearSession = useCallback(() => {
     authGeneration.current += 1;
+    setDemoMode(false);
+    setIsDemo(false);
+    try { sessionStorage.removeItem("meridian-demo"); } catch {}
     setAuthToken(null);
     setStatus("unauthenticated");
     router.push("/login");
@@ -51,6 +64,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   // Restore the session from the HttpOnly refresh cookie. Access tokens only
   // live in memory, which prevents browser scripts from reading long-lived credentials.
   useEffect(() => {
+    try {
+      if (sessionStorage.getItem("meridian-demo") === "true") {
+        setDemoMode(true);
+        setIsDemo(true);
+      }
+    } catch {}
     const generation = ++authGeneration.current;
     api.auth.refresh()
       .then((tokens) => {
@@ -73,6 +92,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const tokens = await api.auth.login(email, password);
         if (authGeneration.current !== generation) return;
+        setDemoMode(false);
+        setIsDemo(false);
+        try { sessionStorage.removeItem("meridian-demo"); } catch {}
         setAuthToken(tokens.access_token);
         setStatus("authenticated");
         router.push("/");
@@ -92,6 +114,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       try {
         const tokens = await api.auth.register(email, password, fullName);
         if (authGeneration.current !== generation) return;
+        setDemoMode(false);
+        setIsDemo(false);
+        try { sessionStorage.removeItem("meridian-demo"); } catch {}
         setAuthToken(tokens.access_token);
         setStatus("authenticated");
         router.push("/onboarding");
@@ -105,8 +130,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   );
 
   const value = useMemo(
-    () => ({ status, error, login, register, logout }),
-    [status, error, login, register, logout],
+    () => ({ status, error, login, register, logout, isDemo, toggleDemo }),
+    [status, error, login, register, logout, isDemo, toggleDemo],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

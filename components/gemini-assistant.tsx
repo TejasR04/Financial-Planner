@@ -20,6 +20,7 @@ import {
 } from "lucide-react";
 import { api, ApiError, type ApiAgentChatResponse } from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
 
 type ChatMessage = {
@@ -110,7 +111,7 @@ function AssistantContent({ content }: { content: string }) {
   );
 }
 
-export function GeminiAssistant() {
+function LiveGeminiAssistant() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
   const [loadingHistory, setLoadingHistory] = useState(true);
@@ -380,4 +381,9 @@ export function GeminiAssistant() {
       </form>
     </section>
   );
+}
+
+export function GeminiAssistant() {
+  const { isDemo } = useAuth();
+  return isDemo ? <div className="rounded-lg border border-border p-6 text-sm text-muted-foreground">Gemini assistant is disabled in demo mode.</div> : <LiveGeminiAssistant />;
 }

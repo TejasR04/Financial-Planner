@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuth } from "@/lib/auth-context";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { usePlaidLink } from "react-plaid-link";
 import { Loader2, Plus } from "lucide-react";
@@ -39,6 +40,7 @@ export function PlaidLinkButton({
   variant,
   size,
 }: Props) {
+  const { isDemo } = useAuth();
   const [linkToken, setLinkToken] = useState<string | null>(null);
   const [status, setStatus] = useState<Status>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -114,17 +116,17 @@ export function PlaidLinkButton({
   }, [institutionId]);
 
   useEffect(() => {
-    if (autoOpen && !autoOpenHandled.current) {
+    if (!isDemo && autoOpen && !autoOpenHandled.current) {
       autoOpenHandled.current = true;
       void handleClick();
     }
-  }, [autoOpen, handleClick]);
+  }, [autoOpen, handleClick, isDemo]);
 
   const busy = status === "fetching_token" || status === "linking";
 
   return (
     <div className="relative inline-block">
-      <Button variant={variant} size={size} className={className} onClick={handleClick} disabled={busy} aria-label={label}>
+      <Button variant={variant} size={size} className={className} onClick={handleClick} disabled={busy || isDemo} title={isDemo ? "Bank connections are disabled in demo mode" : undefined} aria-label={label}>
         {busy ? <Loader2 className="animate-spin" /> : <Plus />}
         <span className={compactOnMobile ? "hidden md:inline" : undefined}>{label}</span>
       </Button>

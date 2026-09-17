@@ -9,7 +9,7 @@ const inputClass =
   "h-9 w-full rounded-md border border-border bg-background px-3 text-[13px] text-foreground outline-none transition-colors placeholder:text-muted-foreground focus:border-ring focus:ring-3 focus:ring-ring/20";
 
 export default function RegisterPage() {
-  const { register } = useAuth();
+  const { register, toggleDemo } = useAuth();
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -102,6 +102,7 @@ export default function RegisterPage() {
             {submitting ? "Creating accountâ€¦" : "Create account"}
           </Button>
         </form>
+        <Button type="button" variant="outline" className="mt-3 w-full" onClick={toggleDemo}>Try demo — no sign-in needed</Button>
 
         <p className="mt-4 text-center text-[13px] text-muted-foreground">
           Already have an account?{" "}

@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuth } from "@/lib/auth-context";
 import { usePathname } from "next/navigation";
 import { Search, Sun, Moon, ChevronRight, RefreshCw, Menu } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -23,6 +24,7 @@ const titles: Record<string, string> = {
 };
 
 export function Topbar({ onOpenCommand, onOpenNavigation }: { onOpenCommand: () => void; onOpenNavigation: () => void }) {
+  const { isDemo, toggleDemo } = useAuth();
   const pathname = usePathname();
   const { theme, toggle } = useTheme();
   const institutions = useInstitutionsData();
@@ -75,6 +77,7 @@ export function Topbar({ onOpenCommand, onOpenNavigation }: { onOpenCommand: () 
       </div>
 
       <div className="flex items-center gap-1">
+        <Button variant="outline" size="sm" aria-pressed={isDemo} onClick={toggleDemo}>{isDemo ? "Exit demo" : "Demo mode"}</Button>
         {syncMessage && (
           <span className="hidden max-w-40 truncate text-[11px] text-muted-foreground lg:inline" role="status">
             {syncMessage}
@@ -87,7 +90,7 @@ export function Topbar({ onOpenCommand, onOpenNavigation }: { onOpenCommand: () 
           className="size-11 md:size-7"
           title={institutions.length ? "Sync all linked institutions" : "No linked institutions"}
           onClick={() => void syncAll()}
-          disabled={syncing || institutions.length === 0}
+          disabled={isDemo || syncing || institutions.length === 0}
         >
           <RefreshCw className={syncing ? "animate-spin" : undefined} />
         </Button>

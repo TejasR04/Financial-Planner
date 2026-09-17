@@ -219,7 +219,8 @@ const emptyState: Omit<DataState, "loading" | "error" | "refresh"> = {
 };
 
 export function DataProvider({ children }: { children: React.ReactNode }) {
-  const { status } = useAuth();
+  const { status: authStatus, isDemo } = useAuth();
+  const status = isDemo ? "authenticated" : authStatus;
   const pathname = usePathname();
   const [state, setState] = useState(emptyState);
   const [loading, setLoading] = useState(true);

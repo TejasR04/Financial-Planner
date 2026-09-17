@@ -1,5 +1,6 @@
 "use client";
 
+import { useAuth } from "@/lib/auth-context";
 import { useEffect, useState } from "react";
 import { ThemeProvider } from "@/components/theme-provider";
 import { Sidebar } from "@/components/sidebar";
@@ -9,6 +10,7 @@ import { useDataError } from "@/lib/data-provider";
 import { DialogShell } from "@/components/ui/dialog-shell";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
+  const { isDemo } = useAuth();
   const [collapsed, setCollapsed] = useState(false);
   const [commandOpen, setCommandOpen] = useState(false);
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -47,6 +49,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar onOpenCommand={() => setCommandOpen(true)} onOpenNavigation={() => setMobileOpen(true)} />
           <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
+            {isDemo && <div role="status" className="border-b border-primary/20 bg-primary/10 px-5 py-2 text-xs">Demo mode · Sample data only. Edits reset on exit or reload. Projections are illustrative. Gemini and bank connections are disabled.</div>}
             {dataError && (
               <div role="alert" className="border-b border-warning/30 bg-warning/10 px-5 py-2 text-xs text-foreground">
                 {dataError}

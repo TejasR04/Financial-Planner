@@ -2,6 +2,7 @@
 // that knows the backend's response shapes; lib/data-provider.tsx maps
 // these onto the display types in lib/data.ts.
 
+import { demoRequest, resetDemoData } from "@/lib/demo-api";
 import { ResponseCache } from "@/lib/response-cache";
 
 const responseCache = new ResponseCache();
@@ -9,6 +10,15 @@ export function clearApiCache() { responseCache.clear(); }
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1";
+
+let demoMode = false;
+let dataGeneration = 0;
+export function setDemoMode(enabled: boolean) {
+  dataGeneration++;
+  demoMode = enabled;
+  clearApiCache();
+  resetDemoData();
+}
 
 let authToken: string | null = null;
 let onUnauthorized: (() => void) | null = null;
@@ -57,6 +67,11 @@ async function request<T>(
   options: RequestInit = {},
   retryAfterRefresh = true,
 ): Promise<T> {
+  if (demoMode && !path.startsWith("/auth/")) {
+    if (options.method && options.method !== "GET") clearApiCache();
+    return structuredClone(demoRequest(path, options)) as T;
+  }
+  const generation = dataGeneration;
   const mutates = options.method && options.method !== "GET" &&
     !path.startsWith("/simulations/") && !path.endsWith("/preview") && path !== "/scenarios/compare";
   if (mutates) clearApiCache();
@@ -69,6 +84,7 @@ async function request<T>(
     headers,
     credentials: "include",
   });
+  if (!path.startsWith("/auth/") && generation !== dataGeneration) throw new ApiError(409, "Data mode changed.");
   // Also invalidate reads started while a mutation was in flight.
   if (mutates) clearApiCache();
 
