@@ -1,8 +1,15 @@
 import { api } from "@/lib/api-client";
 import type { Account, Transaction } from "@/lib/data";
 
+export function escapeCsvCell(value: string, neutralizeFormula = true) {
+  // Spreadsheet programs may execute formulas even when a CSV cell is quoted.
+  // Prefix text whose first visible character is formula-capable; leading
+  // whitespace and control characters must not bypass the check.
+  const safeValue = neutralizeFormula && /^[\s\u0000-\u001f]*[=+\-@]/u.test(value) ? `'${value}` : value;
+  return `"${safeValue.replaceAll('"', '""')}"`;
+}
+
 export function exportTransactionsCsv(transactions: Transaction[], filename = "meridian-transactions.csv") {
-  const escape = (value: string) => `"${value.replaceAll('"', '""')}"`;
   const rows = transactions.map((transaction) => [
     transaction.postedAt,
     transaction.merchant,
@@ -13,7 +20,7 @@ export function exportTransactionsCsv(transactions: Transaction[], filename = "m
     transaction.amount.toString(),
   ]);
   const csv = [["Date", "Merchant", "Category", "Account", "Type", "Status", "Amount"], ...rows]
-    .map((row) => row.map(escape).join(","))
+    .map((row) => row.map((value, index) => escapeCsvCell(value, index !== 6)).join(","))
     .join("\n");
   const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
   const link = document.createElement("a");

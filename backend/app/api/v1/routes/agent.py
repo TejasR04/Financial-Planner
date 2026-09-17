@@ -11,6 +11,7 @@ from app.ai.agent import AgentOrchestrator, GeminiConfigurationError
 from app.ai.context import build_user_financial_context
 from app.api.deps import get_current_user, get_db
 from app.domain.entities import User
+from app.core.rate_limit import PerKeyConcurrencyLimiter, SlidingWindowRateLimiter
 from app.persistence.repositories.agent_message_repository import AgentMessageRepository
 from app.persistence.snapshot_builder import build_financial_snapshot
 
@@ -18,9 +19,14 @@ router = APIRouter(prefix="/agent", tags=["agent"])
 logger = logging.getLogger("meridian.agent")
 
 
+class ChatHistoryEntry(BaseModel):
+    role: Literal["user", "assistant"]
+    content: str = Field(min_length=1, max_length=4000)
+
+
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
-    history: list[dict[str, str]] = Field(default_factory=list)
+    history: list[ChatHistoryEntry] = Field(default_factory=list, max_length=30)
 
 
 class ChatResponse(BaseModel):
@@ -34,6 +40,10 @@ class AgentMessageResponse(BaseModel):
     role: Literal["user", "assistant"]
     content: str
     created_at: datetime
+
+
+chat_rate_limiter = SlidingWindowRateLimiter(limit=10, window_seconds=60)
+chat_concurrency_limiter = PerKeyConcurrencyLimiter(limit=1)
 
 
 @router.get("/history", response_model=list[AgentMessageResponse])
@@ -64,45 +74,49 @@ async def chat(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ChatResponse:
+    user_key = str(current_user.id)
+    if not chat_rate_limiter.allow(user_key):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many assistant requests.")
+    if not chat_concurrency_limiter.acquire(user_key):
+        raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="An assistant request is already running.")
     try:
-        orchestrator = AgentOrchestrator()
-    except GeminiConfigurationError as exc:
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
+        try:
+            orchestrator = AgentOrchestrator()
+        except GeminiConfigurationError as exc:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
 
-    snapshot = await build_financial_snapshot(db, current_user.id)
-    user_context = await build_user_financial_context(db, snapshot)
-    message_repo = AgentMessageRepository(db)
-    stored = await message_repo.list_for_user(current_user.id)
-    conversation_history = (
-        [{"role": row.role, "content": row.content} for row in stored]
-        if stored
-        else body.history[-30:]
-    )
-
-    try:
-        result = await run_in_threadpool(
-            orchestrator.handle_message,
-            body.message.strip(),
-            conversation_history,
-            4,
-            user_context,
-        )
-    except Exception as exc:
-        logger.exception("gemini_request_failed", extra={"user_id": str(current_user.id)})
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Gemini could not complete the analysis. Please try again.",
-        ) from exc
-    if not result.reply.strip():
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Gemini returned an empty analysis. Please try again.",
+        snapshot = await build_financial_snapshot(db, current_user.id)
+        user_context = await build_user_financial_context(db, snapshot)
+        message_repo = AgentMessageRepository(db)
+        stored = await message_repo.list_for_user(current_user.id)
+        conversation_history = (
+            [{"role": row.role, "content": row.content} for row in stored]
+            if stored
+            else [item.model_dump() for item in body.history]
         )
 
-    await message_repo.append(current_user.id, "user", body.message.strip())
-    await message_repo.append(current_user.id, "assistant", result.reply)
-    await message_repo.prune(current_user.id)
-    await db.commit()
-    return ChatResponse(
-        reply=result.reply, tool_calls=result.tool_calls, structured_results=result.structured_results
-    )
+        try:
+            result = await run_in_threadpool(
+                orchestrator.handle_message, body.message.strip(), conversation_history, 4, user_context
+            )
+        except Exception as exc:
+            logger.exception("gemini_request_failed", extra={"user_id": user_key})
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Gemini could not complete the analysis. Please try again.",
+            ) from exc
+        if not result.reply.strip():
+            raise HTTPException(
+                status_code=status.HTTP_502_BAD_GATEWAY,
+                detail="Gemini returned an empty analysis. Please try again.",
+            )
+
+        await message_repo.append(current_user.id, "user", body.message.strip())
+        await message_repo.append(current_user.id, "assistant", result.reply)
+        await message_repo.prune(current_user.id)
+        await db.commit()
+        return ChatResponse(
+            reply=result.reply, tool_calls=result.tool_calls, structured_results=result.structured_results
+        )
+    finally:
+        chat_concurrency_limiter.release(user_key)

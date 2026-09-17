@@ -1,20 +1,28 @@
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from uuid import UUID
 
 
 class RetirementSimulationRequest(BaseModel):
-    current_age: int
-    retirement_age: int
-    life_expectancy_age: int = 95
-    current_retirement_balance: Decimal
-    annual_contribution: Decimal
-    expected_return: Decimal = Decimal("0.065")
-    inflation_rate: Decimal = Decimal("0.028")
-    withdrawal_rate: Decimal = Decimal("0.04")
-    annual_spending_target: Decimal | None = None
+    current_age: int = Field(ge=18, le=100)
+    retirement_age: int = Field(ge=18, le=110)
+    life_expectancy_age: int = Field(default=95, ge=18, le=120)
+    current_retirement_balance: Decimal = Field(ge=0, le=Decimal("10000000000"))
+    annual_contribution: Decimal = Field(ge=0, le=Decimal("10000000"))
+    expected_return: Decimal = Field(default=Decimal("0.065"), ge=Decimal("-0.50"), le=Decimal("0.50"))
+    inflation_rate: Decimal = Field(default=Decimal("0.028"), ge=Decimal("-0.10"), le=Decimal("0.25"))
+    withdrawal_rate: Decimal = Field(default=Decimal("0.04"), gt=0, le=Decimal("0.25"))
+    annual_spending_target: Decimal | None = Field(default=None, ge=0, le=Decimal("100000000"))
+
+    @model_validator(mode="after")
+    def validate_age_order(self) -> "RetirementSimulationRequest":
+        if self.retirement_age <= self.current_age:
+            raise ValueError("retirement_age must be greater than current_age")
+        if self.life_expectancy_age <= self.retirement_age:
+            raise ValueError("life_expectancy_age must be greater than retirement_age")
+        return self
 
 
 class RetirementSimulationResponse(BaseModel):
@@ -27,11 +35,21 @@ class RetirementSimulationResponse(BaseModel):
 
 
 class NetWorthSimulationRequest(BaseModel):
-    current_age: int
-    retirement_age: int
-    years: int
-    expected_return: Decimal = Decimal("0.065")
-    annual_net_contribution: Decimal = Decimal("0")
+    current_age: int = Field(ge=18, le=100)
+    retirement_age: int = Field(ge=18, le=110)
+    years: int = Field(ge=1, le=100)
+    expected_return: Decimal = Field(default=Decimal("0.065"), ge=Decimal("-0.50"), le=Decimal("0.50"))
+    annual_net_contribution: Decimal = Field(
+        default=Decimal("0"), ge=Decimal("-10000000"), le=Decimal("10000000")
+    )
+
+    @model_validator(mode="after")
+    def validate_age_horizon(self) -> "NetWorthSimulationRequest":
+        if self.retirement_age <= self.current_age:
+            raise ValueError("retirement_age must be greater than current_age")
+        if self.current_age + self.years > 120:
+            raise ValueError("projection horizon cannot extend beyond age 120")
+        return self
 
 
 class NetWorthYearPointResponse(BaseModel):

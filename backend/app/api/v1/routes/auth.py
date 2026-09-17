@@ -16,6 +16,7 @@ from app.core.security import (
     verify_password,
 )
 from app.core.config import get_settings
+from app.core.rate_limit import SlidingWindowRateLimiter
 from app.persistence.repositories.refresh_session_repository import RefreshSessionRepository
 from app.persistence.repositories.password_reset_token_repository import PasswordResetTokenRepository
 from app.persistence.repositories.user_repository import UserRepository
@@ -30,6 +31,24 @@ from app.services.email_service import send_password_reset_email
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 logger = logging.getLogger(__name__)
+
+register_limiter = SlidingWindowRateLimiter(limit=30, window_seconds=60)
+login_limiter = SlidingWindowRateLimiter(limit=30, window_seconds=60)
+password_reset_limiter = SlidingWindowRateLimiter(limit=5, window_seconds=3600)
+password_reset_confirm_limiter = SlidingWindowRateLimiter(limit=10, window_seconds=60)
+
+
+def _client_key(request: Request) -> str:
+    return request.client.host if request.client else "unknown"
+
+
+def _enforce_rate_limit(limiter: SlidingWindowRateLimiter, key: str) -> None:
+    if not limiter.allow(key):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many requests. Please try again later.",
+            headers={"Retry-After": "60"},
+        )
 
 
 def _set_refresh_cookie(response: Response, token: str) -> None:
@@ -62,8 +81,9 @@ async def _start_session(user_id: UUID, response: Response, db: AsyncSession) ->
 
 @router.post("/register", response_model=TokenResponse, status_code=status.HTTP_201_CREATED)
 async def register(
-    body: RegisterRequest, response: Response, db: AsyncSession = Depends(get_db)
+    body: RegisterRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)
 ) -> TokenResponse:
+    _enforce_rate_limit(register_limiter, _client_key(request))
     repo = UserRepository(db)
     if await repo.get_by_email(body.email) is not None:
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
@@ -76,8 +96,9 @@ async def register(
 
 @router.post("/login", response_model=TokenResponse)
 async def login(
-    body: LoginRequest, response: Response, db: AsyncSession = Depends(get_db)
+    body: LoginRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)
 ) -> TokenResponse:
+    _enforce_rate_limit(login_limiter, _client_key(request))
     repo = UserRepository(db)
     result = await repo.get_hashed_password(body.email)
     if result is None:
@@ -131,9 +152,10 @@ async def logout(
 
 @router.post("/password-reset/request", status_code=status.HTTP_202_ACCEPTED)
 async def request_password_reset(
-    body: PasswordResetRequest, db: AsyncSession = Depends(get_db)
+    body: PasswordResetRequest, request: Request, db: AsyncSession = Depends(get_db)
 ) -> None:
     """Always return the same response to avoid revealing registered emails."""
+    _enforce_rate_limit(password_reset_limiter, f"{_client_key(request)}:{body.email.lower()}")
     result = await UserRepository(db).get_hashed_password(body.email)
     if result is None:
         return
@@ -155,8 +177,9 @@ async def request_password_reset(
 
 @router.post("/password-reset/confirm", status_code=status.HTTP_204_NO_CONTENT)
 async def confirm_password_reset(
-    body: PasswordResetConfirmRequest, db: AsyncSession = Depends(get_db)
+    body: PasswordResetConfirmRequest, request: Request, db: AsyncSession = Depends(get_db)
 ) -> None:
+    _enforce_rate_limit(password_reset_confirm_limiter, _client_key(request))
     try:
         payload = decode_token(body.token)
         if payload.get("type") != "password_reset":
