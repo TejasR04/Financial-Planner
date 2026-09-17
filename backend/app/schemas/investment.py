@@ -19,9 +19,9 @@ class InvestmentHoldingResponse(BaseModel):
     account_name: str
     symbol: str
     quantity: Decimal
-    cost_basis: Decimal
+    cost_basis: Decimal | None
     market_value: Decimal
-    gain_loss: Decimal
+    gain_loss: Decimal | None
     asset_class: str
     as_of: date
 
@@ -41,7 +41,9 @@ class InvestmentDashboardResponse(BaseModel):
     total_value: Decimal
     total_holdings_value: Decimal
     total_cost_basis: Decimal
-    total_gain_loss: Decimal
+    total_gain_loss: Decimal | None
+    gain_loss_holding_count: int = 0
+    excluded_gain_loss_value: Decimal = Decimal("0")
     account_count: int
     holding_count: int
     accounts: list[InvestmentAccountResponse]

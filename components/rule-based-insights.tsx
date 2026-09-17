@@ -111,7 +111,7 @@ export function RuleBasedInsights({
         })}
         {insights.length === 0 && (
           <li className="px-4 py-8 text-center text-[13px] text-muted-foreground">
-            Refresh the rule-based analysis to evaluate your current financial data.
+            No checks are available from your current financial data.
           </li>
         )}
       </ul>

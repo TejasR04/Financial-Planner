@@ -32,9 +32,12 @@ export default function InsightsPage() {
     setRerunning(true);
     setAnalysisError(null);
     try {
-      await api.financialHealth.recalculate();
-      await Promise.all([api.recommendations.generate(), api.insights.generate()]);
+      const results = await Promise.allSettled([
+        api.financialHealth.recalculate(), api.recommendations.generate(), api.insights.generate(),
+      ]);
       refresh();
+      const failed = results.find((result) => result.status === "rejected");
+      if (failed?.status === "rejected") throw failed.reason;
     } catch (cause) {
       setAnalysisError(
         cause instanceof ApiError ? cause.message : "The rule-based analysis could not be refreshed.",

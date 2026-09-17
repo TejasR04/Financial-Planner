@@ -1,5 +1,6 @@
 // Isolated, tab-memory sample data. No demo request ever falls through to the server.
 import type { ApiAccount, ApiTransaction, ApiBudgetCategory, ApiScenario, ApiHolding } from "@/lib/api-client";
+import { cashFlowAmounts, isCardPayment } from "@/lib/cash-flow";
 
 const now = () => new Date().toISOString();
 const money = (n: number) => n.toFixed(2);
@@ -44,6 +45,41 @@ function seed() {
 let db = seed();
 export function resetDemoData() { db = seed(); }
 
+function sampleHistory(reference = now().slice(0, 7)) {
+  const current = now().slice(0, 7);
+  const end = reference < current ? reference : current;
+  const first = db.transactions.reduce((date, row) => row.posted_at < date ? row.posted_at : date, "9999-12-31");
+  const [year, month] = end.split("-").map(Number);
+  const months = Array.from({ length: 12 }, (_, index) => {
+    const date = new Date(year, month - 13 + index, 1);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
+  }).filter(key => `${key}-01` >= first);
+  const rows = db.transactions.filter(row => months.includes(row.posted_at.slice(0, 7)));
+  const average = rows.reduce((sum, row) => {
+    const amounts = cashFlowAmounts(row);
+    return { income: sum.income + amounts.income, expenses: sum.expenses + amounts.expenses };
+  }, { income: 0, expenses: 0 });
+  return { months, income: average.income / Math.max(1, months.length), expenses: average.expenses / Math.max(1, months.length) };
+}
+
+function sampleSpending(month: string) {
+  const history = sampleHistory(month);
+  const [year, monthNumber] = month.split("-").map(Number);
+  const days = new Date(year, monthNumber, 0).getDate();
+  const cumulative = (key: string, day: number) => db.transactions.filter(row =>
+    row.posted_at.startsWith(key) && Number(row.posted_at.slice(-2)) <= day && !row.ignored_from_budget &&
+    !isCardPayment(row) && (row.type === "expense" || (row.type === "transfer" && row.budget_category_id))
+  ).reduce((sum, row) => sum - Number(row.amount), 0);
+  return {
+    as_of: now().slice(0, 10),
+    daily_spending: Array.from({ length: days }, (_, day) => `${month}-${String(day + 1).padStart(2, "0")}` <= now().slice(0, 10) ? money(cumulative(month, day + 1)) : null),
+    average_daily_spending: Array.from({ length: days }, (_, day) => history.months.length ? money(history.months.reduce((sum, key) => sum + cumulative(key, day + 1), 0) / history.months.length) : null),
+    average_month_count: history.months.length,
+    average_period_start: history.months.length ? `${history.months[0]}-01` : null,
+    average_period_end: history.months.length ? `${history.months.at(-1)}-01` : null,
+  };
+}
+
 function totals() {
   const assets = db.accounts.filter(a => !["credit", "loan"].includes(a.type)).reduce((n, a) => n + Number(a.balance), 0);
   const liabilities = db.accounts.filter(a => ["credit", "loan"].includes(a.type)).reduce((n, a) => n + Math.abs(Number(a.balance)), 0);
@@ -75,15 +111,24 @@ export function demoRequest(path: string, options: RequestInit = {}): unknown {
   if (p === "/accounts/archived") return db.archived;
   if (p === "/accounts/disconnected-imported-data") return { account_count: 0, transaction_count: 0, deleted: method === "DELETE" };
   if (p === "/accounts/allocation" || p === "/investments/dashboard") {
+    const holdings = db.holdings.map(h => ({ ...h,
+      asset_class: h.symbol.toUpperCase().startsWith("CUR:") || h.symbol.toUpperCase() === "SPAXX" ? "cash" : h.asset_class,
+    }));
     const value = db.holdings.reduce((n, h) => n + Number(h.market_value), 0);
     const breakdown = ["equity", "fixed_income", "cash", "real_estate", "alternatives"].map(asset_class => {
-      const market = db.holdings.filter(h => h.asset_class === asset_class).reduce((n, h) => n + Number(h.market_value), 0);
+      const market = holdings.filter(h => h.asset_class === asset_class).reduce((n, h) => n + Number(h.market_value), 0);
       return { asset_class, market_value: money(market), weight: String(value ? market / value : 0) };
     }).filter(b => Number(b.market_value));
     if (p === "/accounts/allocation") return { total_market_value: money(value), breakdown, actual_equity_allocation: breakdown.find(b => b.asset_class === "equity")?.weight ?? "0", target_equity_allocation: db.profile.target_equity_allocation, drift: "0.1", is_within_tolerance: false, rebalance_suggestions: [] };
-    const cost = db.holdings.reduce((n, h) => n + Number(h.cost_basis), 0);
+    const eligible = holdings.filter(h => h.asset_class !== "cash" && Number(h.cost_basis) > 0);
+    const cost = eligible.reduce((n, h) => n + Number(h.cost_basis), 0);
+    const eligibleValue = eligible.reduce((n, h) => n + Number(h.market_value), 0);
     const accounts = db.accounts.filter(a => ["investment", "retirement"].includes(a.type));
-    return { total_value: money(accounts.reduce((n, a) => n + Number(a.balance), 0)), total_holdings_value: money(value), total_cost_basis: money(cost), total_gain_loss: money(value - cost), account_count: accounts.length, holding_count: db.holdings.length, accounts, holdings: db.holdings.map(h => ({ ...h, account_name: db.accounts.find(a => a.id === h.account_id)?.name ?? "Sample account", gain_loss: money(Number(h.market_value) - Number(h.cost_basis)) })), allocation: breakdown, history: Array.from({ length: 12 }, (_, i) => { const date = new Date(); date.setMonth(date.getMonth() - 11 + i); return { date: date.toISOString().slice(0, 10), value: money(value * (0.85 + i * 0.15 / 11)) }; }) };
+    return { total_value: money(accounts.reduce((n, a) => n + Number(a.balance), 0)), total_holdings_value: money(value), total_cost_basis: money(cost), total_gain_loss: eligible.length ? money(eligibleValue - cost) : null,
+      gain_loss_holding_count: eligible.length, excluded_gain_loss_value: money(value - eligibleValue),
+      account_count: accounts.length, holding_count: holdings.length, accounts,
+      holdings: holdings.map(h => ({ ...h, cost_basis: Number(h.cost_basis) > 0 ? h.cost_basis : null, account_name: db.accounts.find(a => a.id === h.account_id)?.name ?? "Sample account", gain_loss: eligible.includes(h) ? money(Number(h.market_value) - Number(h.cost_basis)) : null })),
+      allocation: breakdown, history: Array.from({ length: 12 }, (_, i) => { const date = new Date(); date.setMonth(date.getMonth() - 11 + i); return { date: date.toISOString().slice(0, 10), value: money(value * (0.85 + i * 0.15 / 11)) }; }) };
   }
   const accountMatch = p.match(/^\/accounts\/([^/]+)\/(liability|holdings|balance-rules|restore|name)(?:\/([^/]+))?$/);
   if (accountMatch) {
@@ -107,10 +152,13 @@ export function demoRequest(path: string, options: RequestInit = {}): unknown {
   }
   if (p === "/budgets/summary") {
     const month = (q.get("month") ?? now()).slice(0, 7);
-    return { month: `${month}-01`, categories: db.categories.filter(c => c.active).map(c => { const spent = -db.transactions.filter(t => t.posted_at.startsWith(month) && t.budget_category_id === c.id && !t.ignored_from_budget && t.type === "expense").reduce((n, t) => n + Number(t.amount), 0); return { budget_category_id: c.id, name: c.name, group_name: c.group_name, budgeted: c.monthly_limit, spent: money(spent), pending: "0", remaining: money(Number(c.monthly_limit) - spent), forecast: money(spent) }; }), uncategorized: { spent: "0", pending: "0", transaction_count: 0 } };
+    return { ...sampleSpending(month), month: `${month}-01`, categories: db.categories.filter(c => c.active).map(c => { const spent = -db.transactions.filter(t => t.posted_at.startsWith(month) && t.budget_category_id === c.id && !t.ignored_from_budget && t.type === "expense").reduce((n, t) => n + Number(t.amount), 0); return { budget_category_id: c.id, name: c.name, group_name: c.group_name, budgeted: c.monthly_limit, spent: money(spent), pending: "0", remaining: money(Number(c.monthly_limit) - spent), forecast: money(spent) }; }), uncategorized: { spent: "0", pending: "0", transaction_count: 0 } };
   }
   if (p === "/budgets/review-queue") return db.transactions.filter(t => t.type === "expense" && !t.budget_category_id && !t.ignored_from_budget).map(t => ({ ...t, provider_category: t.category }));
-  if (p === "/insights" || p === "/insights/generate") return [{ id: "insight-1", kind: "observation", text: "Your sample plan has a healthy emergency reserve and consistent monthly savings.", meta: "Sample insight", generated_at: now() }];
+  if (p === "/insights" || p === "/insights/generate") {
+    const { months, income, expenses } = sampleHistory();
+    return [{ id: "insight-1", kind: income < expenses ? "alert" : "observation", text: months.length ? `Sample monthly income averages $${money(income)} and expenses average $${money(expenses)}, leaving $${money(income - expenses)} per month.` : "A completed month of sample activity is needed for an average.", meta: `${months.length} completed sample months`, generated_at: now() }];
+  }
   if (p.startsWith("/financial-health")) return { overall: 82, liquidity: 90, diversification: 75, debt_ratio: 88, savings_discipline: 80, calculated_at: now() };
   if (p === "/recommendations/generate") return db.recommendations;
   if (p === "/scenarios/compare") return { rows: db.scenarios.filter(s => body.scenario_ids.includes(s.id)).map(s => ({ scenario_id: s.id, name: s.name, retirement_age: s.retirement_age, monthly_contribution: s.monthly_contribution, ...projection(s, {}), has_run: true })) };
@@ -135,7 +183,11 @@ export function demoRequest(path: string, options: RequestInit = {}): unknown {
     const series = Array.from({ length: Number(body.years ?? 30) + 1 }, (_, year_index) => { const point = { year_index, age: Number(body.current_age ?? 34) + year_index, assets: money(assets), liabilities: t.total_liabilities, net: money(assets - Number(t.total_liabilities)) }; assets = assets * (1 + Number(body.expected_return ?? 0.06)) + Number(body.annual_net_contribution ?? 18000); return point; });
     return { net_worth_today: t.net_worth, projected_net_worth_at_horizon: series.at(-1)!.net, series };
   }
-  if (p === "/simulations/cash-flow") { const income = db.income.filter(i => i.active).reduce((n, i) => n + Number(i.annual_amount) / 12, 0); const expenses = db.categories.filter(c => c.active).reduce((n, c) => n + Number(c.monthly_limit), 0); return { series: Array.from({ length: body.months ?? 12 }, (_, month_index) => ({ month_index, income: money(income), expenses: money(expenses), net: money(income - expenses) })), average_monthly_surplus: money(income - expenses), projected_savings_rate: String(income ? (income - expenses) / income : 0), income_source: "Sample income", expense_source: "Sample budget" }; }
+  if (p === "/simulations/cash-flow") {
+    const { income, expenses, months } = sampleHistory();
+    if (!months.length) throw new Error("A completed month of history is needed for an outlook.");
+    return { series: Array.from({ length: body.months ?? 12 }, (_, index) => ({ month_index: index + 1, income: money(income), expenses: money(expenses), net: money(income - expenses) })), average_monthly_surplus: money(income - expenses), projected_savings_rate: String(income ? (income - expenses) / income : 0), income_source: `Average sample income over ${months.length} completed months`, expense_source: `Average sample expenses over ${months.length} completed months` };
+  }
   if (p === "/simulations/debt-optimization") { const debt = db.accounts.filter(a => body.account_ids.includes(a.id)).reduce((n, a) => n + Number(a.balance), 0); return { strategy: body.strategy, months_to_debt_free: Math.ceil(debt / (250 + Number(body.extra_monthly_payment))), total_interest_paid: money(debt * 0.045), payoff_order: body.account_ids, paid_off: true, warning: "Illustrative sample estimate." }; }
   // Common local CRUD keeps all edits inside this disposable dataset.
   const collections = [

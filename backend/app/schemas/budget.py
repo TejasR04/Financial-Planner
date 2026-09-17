@@ -80,6 +80,10 @@ class BudgetSummaryResponse(BaseModel):
     reconciliation: dict[str, Decimal] = Field(default_factory=dict)
     daily_spending: list[Decimal | None] = Field(default_factory=list)
     previous_daily_spending: list[Decimal | None] = Field(default_factory=list)
+    average_daily_spending: list[Decimal | None] = Field(default_factory=list)
+    average_month_count: int = 0
+    average_period_start: date | None = None
+    average_period_end: date | None = None
     history_start: date | None = None
     as_of: date | None = None
 

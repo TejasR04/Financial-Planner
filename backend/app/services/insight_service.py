@@ -1,15 +1,13 @@
-"""InsightService — produces `Insight` drafts (observation/alert/opportunity),
-distinct from `RecommendationEngine`'s actionable `Recommendation` drafts.
-Pure Python, composes off the same `FinancialSnapshot` and a computed
-`FinancialHealthScore` rather than duplicating any scoring logic.
-"""
+"""Quantified checks from current balances and shared historical averages."""
 from __future__ import annotations
 
 from dataclasses import dataclass
 
 from app.domain.entities import FinancialSnapshot
 from app.domain.enums import InsightKind
-from app.services.financial_health_service import FinancialHealthScore
+from decimal import Decimal
+from app.domain.enums import AssetClass
+from app.services.activity_history import ActivityHistory
 
 
 @dataclass(slots=True, frozen=True)
@@ -20,57 +18,64 @@ class InsightDraft:
 
 
 class InsightService:
-    def generate(self, snapshot: FinancialSnapshot, health_score: FinancialHealthScore) -> list[InsightDraft]:
+    def generate(self, snapshot: FinancialSnapshot, history: ActivityHistory) -> list[InsightDraft]:
         drafts: list[InsightDraft] = []
 
-        if health_score.liquidity < 40:
-            drafts.append(
-                InsightDraft(
-                    kind=InsightKind.ALERT,
-                    text="Liquid savings are below a 6-month expense buffer. Consider building "
-                    "an emergency fund before increasing investment contributions.",
-                    meta="liquidity",
-                )
-            )
-
-        if health_score.debt_ratio < 50:
-            drafts.append(
-                InsightDraft(
-                    kind=InsightKind.ALERT,
-                    text="Liabilities are large relative to total assets. Paying down "
-                    "high-interest debt would meaningfully improve overall financial health.",
-                    meta="debt_ratio",
-                )
-            )
-
-        if health_score.diversification < 70:
-            drafts.append(
-                InsightDraft(
-                    kind=InsightKind.OPPORTUNITY,
-                    text="Portfolio allocation has drifted from target. Rebalancing could "
-                    "reduce risk without changing your long-term return assumptions.",
-                    meta="diversification",
-                )
-            )
-
-        if health_score.savings_discipline >= 100:
-            drafts.append(
-                InsightDraft(
-                    kind=InsightKind.OBSERVATION,
-                    text="Savings rate is at or above target. This is a strong position to "
-                    "increase retirement contributions if there's IRS headroom available.",
-                    meta="savings_discipline",
-                )
-            )
-
-        if snapshot.net_worth > 0 and not drafts:
-            drafts.append(
-                InsightDraft(
-                    kind=InsightKind.OBSERVATION,
-                    text="No urgent issues detected across liquidity, debt, diversification, "
-                    "or savings discipline based on current data.",
-                    meta="overall",
-                )
-            )
-
+        zero = Decimal("0")
+        income, expenses = history.monthly_cash_flow
+        if history.months:
+            drafts.append(InsightDraft(
+                InsightKind.ALERT if income < expenses else InsightKind.OBSERVATION,
+                f"Average monthly income is ${income:,.2f} and expenses are ${expenses:,.2f}, "
+                f"leaving ${income - expenses:,.2f} per month. Transfers and card payments are excluded.",
+                history.label,
+            ))
+            if expenses > zero:
+                cash = snapshot.liquid_assets + sum(
+                    (holding.market_value for holding in snapshot.holdings if holding.asset_class == AssetClass.CASH), zero)
+                months = cash / expenses
+                drafts.append(InsightDraft(
+                    InsightKind.ALERT if months < 6 else InsightKind.OBSERVATION,
+                    f"Depository balances and reported cash holdings total ${cash:,.2f}, covering "
+                    f"{months:.1f} months at your ${expenses:,.2f} average monthly expense level. "
+                    "This check uses a six-month reference; cash in retirement accounts may not be readily accessible.",
+                    f"Current cash / {history.label}",
+                ))
+            target = snapshot.profile.target_savings_rate
+            if income > zero and target is not None:
+                rate = (income - expenses) / income
+                drafts.append(InsightDraft(
+                    InsightKind.OBSERVATION if rate >= target else InsightKind.ALERT,
+                    f"You retained {rate:.1%} of recorded income after expenses, "
+                    f"compared with your saved savings target of {target:.1%}.",
+                    f"Savings / {history.label}",
+                ))
+        else:
+            drafts.append(InsightDraft(
+                InsightKind.OBSERVATION,
+                "Spending, savings-rate, and cash-buffer checks need a completed month of transaction history. "
+                "The current month and the first partially imported month are excluded.",
+                "Insufficient transaction history",
+            ))
+        assets = sum((account.balance for account in snapshot.accounts if not account.is_liability), zero)
+        debt = sum((abs(account.balance) for account in snapshot.accounts if account.is_liability), zero)
+        if assets > zero and debt > zero:
+            drafts.append(InsightDraft(
+                InsightKind.ALERT if debt / assets > Decimal("0.5") else InsightKind.OBSERVATION,
+                f"Debt balances total ${debt:,.2f}, or {debt / assets:.1%} of your ${assets:,.2f} in assets. "
+                "This compares balances only; it does not assess interest rates.",
+                f"Current account balances as of {snapshot.as_of}",
+            ))
+        total = sum((holding.market_value for holding in snapshot.holdings), zero)
+        if total > zero:
+            equity = sum((holding.market_value for holding in snapshot.holdings
+                          if holding.asset_class == AssetClass.EQUITY), zero) / total
+            target = snapshot.profile.target_equity_allocation
+            drafts.append(InsightDraft(
+                InsightKind.OPPORTUNITY if abs(equity - target) > Decimal("0.05") else InsightKind.OBSERVATION,
+                f"Equities are {equity:.1%} of ${total:,.2f} in reported holdings, compared with your "
+                f"{target:.1%} target ({abs(equity - target) * 100:.1f} percentage points "
+                f"{'above' if equity >= target else 'below'}). Accounts without reported holdings are excluded.",
+                f"Current reported holdings as of {snapshot.as_of}",
+            ))
         return drafts

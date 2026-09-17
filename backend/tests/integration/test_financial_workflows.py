@@ -117,7 +117,7 @@ async def test_rule_based_insight_refresh_replaces_previous_results(client: Asyn
     assert account.status_code == 201
 
     health = await client.post("/api/v1/financial-health/recalculate", headers=headers, json={})
-    assert health.status_code == 200, health.text
+    assert health.status_code == 422, health.text
 
     first = await client.post("/api/v1/insights/generate", headers=headers)
     second = await client.post("/api/v1/insights/generate", headers=headers)
@@ -127,6 +127,7 @@ async def test_rule_based_insight_refresh_replaces_previous_results(client: Asyn
     assert second.status_code == 200, second.text
     assert listed.status_code == 200
     assert len(listed.json()) == len(second.json())
+    assert "need a completed month" in listed.json()[0]["text"]
     assert {row["text"] for row in listed.json()} == {row["text"] for row in second.json()}
     assert {row["id"] for row in listed.json()}.isdisjoint(
         {row["id"] for row in first.json()}

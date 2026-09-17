@@ -379,8 +379,11 @@ def _to_holding_entity(raw: RawPlaidHolding, account_id: UUID) -> Holding:
 
 
 def _map_asset_class(raw: RawPlaidHolding) -> AssetClass:
+    from app.domain.holding_valuation import holding_asset_class
+
     security_type = (raw.security_type or "").lower()
-    if raw.is_cash_equivalent or security_type in {"cash", "cash equivalent"}:
+    if (raw.is_cash_equivalent or security_type in {"cash", "cash equivalent", "money market"}
+            or holding_asset_class(raw.symbol, AssetClass.ALTERNATIVES) == AssetClass.CASH):
         return AssetClass.CASH
     if security_type in {"fixed income", "loan"}:
         return AssetClass.FIXED_INCOME

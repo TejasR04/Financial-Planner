@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, get_db
 from app.domain.entities import User
 from app.domain.enums import AccountType
+from app.domain.holding_valuation import unrealized_gain_loss
 from app.persistence.repositories.account_repository import AccountRepository
 from app.persistence.repositories.holding_repository import HoldingRepository
 from app.persistence.repositories.institution_repository import InstitutionRepository
@@ -37,7 +38,10 @@ async def get_investment_dashboard(
 
     total_value = sum((account.balance for account in accounts), ZERO)
     total_holdings_value = sum((holding.market_value for holding in holdings), ZERO)
-    total_cost_basis = sum((holding.cost_basis for holding in holdings), ZERO)
+    eligible = [holding for holding in holdings if unrealized_gain_loss(
+        holding.symbol, holding.asset_class, holding.cost_basis, holding.market_value) is not None]
+    total_cost_basis = sum((holding.cost_basis for holding in eligible), ZERO)
+    eligible_value = sum((holding.market_value for holding in eligible), ZERO)
     allocation_values: dict[str, Decimal] = defaultdict(lambda: ZERO)
     for holding in holdings:
         allocation_values[holding.asset_class.value] += holding.market_value
@@ -61,7 +65,9 @@ async def get_investment_dashboard(
         total_value=total_value,
         total_holdings_value=total_holdings_value,
         total_cost_basis=total_cost_basis,
-        total_gain_loss=total_holdings_value - total_cost_basis,
+        total_gain_loss=eligible_value - total_cost_basis if eligible else None,
+        gain_loss_holding_count=len(eligible),
+        excluded_gain_loss_value=total_holdings_value - eligible_value,
         account_count=len(accounts),
         holding_count=len(holdings),
         accounts=[
@@ -81,9 +87,9 @@ async def get_investment_dashboard(
                 account_name=account_name_by_id[holding.account_id],
                 symbol=holding.symbol,
                 quantity=holding.quantity,
-                cost_basis=holding.cost_basis,
+                cost_basis=holding.cost_basis if holding.cost_basis > ZERO else None,
                 market_value=holding.market_value,
-                gain_loss=holding.market_value - holding.cost_basis,
+                gain_loss=unrealized_gain_loss(holding.symbol, holding.asset_class, holding.cost_basis, holding.market_value),
                 asset_class=holding.asset_class.value,
                 as_of=holding.as_of,
             )

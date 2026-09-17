@@ -4,6 +4,7 @@ import pytest
 from httpx import AsyncClient
 
 from .conftest import register_and_authorize
+from app.services.activity_history import shift_month
 
 
 @pytest.mark.asyncio
@@ -37,15 +38,25 @@ async def test_liability_terms_and_manual_holdings_follow_source_rules(client: A
 
 
 @pytest.mark.asyncio
-async def test_cash_flow_outlook_uses_saved_income_and_trailing_expenses(client: AsyncClient) -> None:
+async def test_cash_flow_outlook_uses_saved_income_and_completed_month_expenses(client: AsyncClient) -> None:
     headers = await register_and_authorize(client, "outlook@example.com")
     account = await client.post("/api/v1/accounts", headers=headers, json={"name": "Checking", "type": "depository", "balance": "1000"})
     await client.post("/api/v1/income-sources", headers=headers, json={"name": "Take-home pay", "annual_amount": "60000", "growth_rate": "0"})
     await client.post("/api/v1/transactions", headers=headers, json={"account_id": account.json()["id"], "posted_at": date.today().isoformat(), "merchant": "Rent", "category": "housing", "amount": "-3000", "type": "expense"})
+    partial = await client.post("/api/v1/simulations/cash-flow", headers=headers, json={"months": 12})
+    assert partial.status_code == 422
+    # Three completed months, including an observed zero-activity month.
+    for offset, amount in [(-3, "-3000"), (-1, "-6000")]:
+        await client.post("/api/v1/transactions", headers=headers, json={"account_id": account.json()["id"], "posted_at": shift_month(date.today(), offset).isoformat(), "merchant": "Rent", "category": "housing", "amount": amount, "type": "expense"})
     outlook = await client.post("/api/v1/simulations/cash-flow", headers=headers, json={"months": 12})
     assert outlook.status_code == 200, outlook.text
     assert outlook.json()["series"][0]["income"] == "5000.00"
-    assert outlook.json()["series"][0]["expenses"] == "1000.00"
+    assert outlook.json()["series"][0]["expenses"] == "3000.00"
+    assert "3 completed months" in outlook.json()["expense_source"]
+    summary = await client.get(f"/api/v1/budgets/summary?month={date.today().replace(day=1).isoformat()}", headers=headers)
+    assert summary.status_code == 200
+    assert summary.json()["average_month_count"] == 3
+    assert summary.json()["average_daily_spending"][-1] == "3000.00"
 
 
 @pytest.mark.asyncio

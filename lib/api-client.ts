@@ -304,6 +304,10 @@ export type ApiMerchantBudgetRule = {
 export type ApiBudgetSummary = {
   daily_spending?: (string | null)[];
   previous_daily_spending?: (string | null)[];
+  average_daily_spending?: (string | null)[];
+  average_month_count?: number;
+  average_period_start?: string | null;
+  average_period_end?: string | null;
   history_start?: string | null;
   as_of?: string | null;
   reconciliation?: { cash_flow_expenses: string; excluded_expenses: string; reimbursements: string; categorized_transfer_spending?: string; budget_spending: string; pending: string };
@@ -468,7 +472,9 @@ export type ApiInvestmentDashboard = {
   total_value: string;
   total_holdings_value: string;
   total_cost_basis: string;
-  total_gain_loss: string;
+  total_gain_loss: string | null;
+  gain_loss_holding_count?: number;
+  excluded_gain_loss_value?: string;
   account_count: number;
   holding_count: number;
   accounts: {
@@ -484,9 +490,9 @@ export type ApiInvestmentDashboard = {
     account_name: string;
     symbol: string;
     quantity: string;
-    cost_basis: string;
+    cost_basis: string | null;
     market_value: string;
-    gain_loss: string;
+    gain_loss: string | null;
     asset_class: string;
     as_of: string;
   }[];

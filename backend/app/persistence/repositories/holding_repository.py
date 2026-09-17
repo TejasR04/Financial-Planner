@@ -7,6 +7,7 @@ from sqlalchemy import delete, select
 from app.core.exceptions import NotFoundError
 from app.domain.entities import Holding
 from app.domain.enums import AssetClass
+from app.domain.holding_valuation import holding_asset_class
 from app.persistence.models import AccountModel, HoldingModel
 from app.persistence.repositories.base import BaseRepository
 
@@ -95,6 +96,6 @@ def _to_domain(row: HoldingModel) -> Holding:
         quantity=row.quantity,
         cost_basis=row.cost_basis,
         market_value=row.market_value,
-        asset_class=AssetClass(row.asset_class),
+        asset_class=holding_asset_class(row.symbol, AssetClass(row.asset_class)),
         as_of=row.as_of,
     )

@@ -30,14 +30,14 @@ export function CashFlowPanel() {
       if (cancelled) return;
       setOutlook(result.series.map((point) => {
         const today = new Date();
-        const date = new Date(today.getFullYear(), today.getMonth() + point.month_index - 1, 1);
+        const date = new Date(today.getFullYear(), today.getMonth() + point.month_index, 1);
         return { month: date.toLocaleDateString("en-US", { month: "short", year: "2-digit" }), income: Number(point.income), expenses: Number(point.expenses) };
       }));
       setNote(`${result.income_source} · ${result.expense_source}`);
     }).catch((error) => { if (!cancelled) setNote(error instanceof Error ? error.message : "Outlook unavailable."); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, [mode, months]);
+  }, [mode, months, transactions]);
   const visible = mode === "actuals" ? actuals.slice(-months) : outlook;
   const available = visible.filter((point) => point.available !== false);
   const completed = available.filter((point) => !point.incomplete);

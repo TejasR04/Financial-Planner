@@ -3,11 +3,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
 from app.domain.entities import IncomeSource, User
-from app.domain.enums import DebtPayoffStrategy, TransactionType
+from app.domain.enums import DebtPayoffStrategy
 from app.persistence.repositories.account_repository import AccountRepository
 from app.persistence.repositories.income_source_repository import IncomeSourceRepository
 from app.persistence.repositories.liability_repository import LiabilityRepository
-from app.persistence.repositories.transaction_repository import TransactionRepository
+from app.persistence.activity_history import load_activity_history
 from app.persistence.repositories.user_repository import UserRepository
 from app.schemas.simulation import (
     CashFlowMonthPointResponse,
@@ -101,41 +101,30 @@ async def simulate_net_worth(
 async def simulate_cash_flow(
     body: CashFlowSimulationRequest, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ) -> CashFlowSimulationResponse:
-    from datetime import date, timedelta
     from decimal import Decimal
     from uuid import uuid4
-    income_sources = await IncomeSourceRepository(db).list_for_user(current_user.id)
-    trailing_months = 3
-    since = date.today() - timedelta(days=30 * trailing_months)
-    transaction_repo = TransactionRepository(db)
-    totals = await transaction_repo.totals_by_type_since(current_user.id, since)
-    recent_transactions = await transaction_repo.list_since_for_income_expense(current_user.id, since)
-    if recent_transactions:
-        earliest = min(transaction.posted_at for transaction in recent_transactions)
-        coverage_months = max(1, (date.today().year - earliest.year) * 12 + date.today().month - earliest.month + 1)
-        coverage_months = min(trailing_months, coverage_months)
-    else:
-        coverage_months = trailing_months
-    categorized_income = totals.get(TransactionType.INCOME, Decimal("0"))
+    from fastapi import HTTPException
+
+    history = await load_activity_history(db, current_user.id)
+    if not history.months:
+        raise HTTPException(422, "A completed month of transaction history is needed for an average-based outlook. The current month and the first partial month are excluded.")
+    categorized_income, monthly_expenses = history.monthly_cash_flow
+    income_sources = [source for source in await IncomeSourceRepository(db).list_for_user(current_user.id) if source.active]
     uses_categorized_income = body.income_basis == "take_home" and categorized_income > 0
     if uses_categorized_income:
         income_sources = [
             IncomeSource(
                 id=uuid4(),
                 user_id=current_user.id,
-                name="Recent categorized income",
-                annual_amount=(categorized_income / coverage_months) * 12,
+                name="Average categorized income",
+                annual_amount=categorized_income * 12,
                 growth_rate=Decimal("0"),
             )
         ]
     if not income_sources:
-        from fastapi import HTTPException
         raise HTTPException(422, "Categorize recent deposits as income or add an active planning income source before generating an outlook.")
-    expenses = -totals.get(TransactionType.EXPENSE, Decimal("0"))
-    if expenses <= 0:
-        from fastapi import HTTPException
-        raise HTTPException(422, "At least one recent expense is required to generate an outlook.")
-    monthly_expenses = expenses / coverage_months
+    if monthly_expenses < 0:
+        raise HTTPException(422, "Historical refunds exceed expenses; there is no representative spending average for an outlook.")
     profile = await UserRepository(db).get_planning_profile(current_user.id)
     result = cash_flow_service.project(
         income_sources=income_sources,
@@ -155,13 +144,13 @@ async def simulate_cash_flow(
         average_monthly_surplus=result.average_monthly_surplus,
         projected_savings_rate=result.projected_savings_rate,
         income_source=(
-            f"Recent categorized income averaged across {coverage_months} month{'s' if coverage_months != 1 else ''}"
+            f"Average categorized income over {history.label}"
             if uses_categorized_income
             else "Saved planning income sources adjusted by the supplied effective tax rate"
             if body.income_basis == "gross"
             else "Saved planning take-home income sources"
         ),
-        expense_source=f"Recent tracked expenses averaged across {coverage_months} month{'s' if coverage_months != 1 else ''}",
+        expense_source=f"Average tracked expenses over {history.label}; excludes partial months",
         income_basis=result.income_basis,
     )
 

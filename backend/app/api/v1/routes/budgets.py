@@ -9,6 +9,7 @@ from app.api.deps import get_current_user, get_db
 from app.domain.entities import User
 from app.domain.merchant_rules import normalize_merchant_rule
 from app.persistence.repositories.budget_repository import BudgetRepository
+from app.persistence.activity_history import load_activity_history
 from app.schemas.budget import (
     BudgetCategoryCreateRequest,
     BudgetCategoryResponse,
@@ -129,6 +130,7 @@ async def budget_summary(
                        row.type, row.ignored_from_budget, row.category, row.posted_at) for row in previous_rows]
     history_start = await repo.history_start(current_user.id)
     as_of = date.today()
+    history = await load_activity_history(db, current_user.id, selected_month)
     rollups, uncategorized_spent, uncategorized_pending, uncategorized_count = service.summarize(
         [BudgetCategoryInput(row.id, row.name, row.group_name, row.monthly_limit, row.active) for row in categories],
         [MerchantRuleInput(rule.budget_category_id, rule.merchant_pattern) for rule, _ in rules if rule.budget_category_id],
@@ -140,6 +142,10 @@ async def budget_summary(
         reconciliation=reconcile_budget(inputs),
         daily_spending=cumulative_spending(inputs, selected_month, as_of, history_start),
         previous_daily_spending=cumulative_spending(previous_inputs, previous_month, as_of, history_start),
+        average_daily_spending=history.average_spending_curve(selected_month),
+        average_month_count=len(history.months),
+        average_period_start=history.months[0] if history.months else None,
+        average_period_end=history.months[-1] if history.months else None,
         history_start=history_start,
         as_of=as_of,
         categories=[

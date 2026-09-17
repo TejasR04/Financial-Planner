@@ -46,4 +46,16 @@ describe("isolated demo API", () => {
     const after = await api.scenarios.preview("baseline", params);
     expect(Number(after.net_worth_at_target_age)).toBeGreaterThan(Number(before.net_worth_at_target_age));
   });
+
+  it("uses completed sample months for spending averages and outlooks", async () => {
+    setDemoMode(true);
+    const month = new Date().toISOString().slice(0, 7);
+    const summary = await api.budgets.summary(month);
+    expect(summary.average_month_count).toBeGreaterThan(0);
+    expect(summary.average_daily_spending?.some(value => Number(value) > 0)).toBe(true);
+    const before = await api.simulations.cashFlow(6);
+    await api.transactions.create({ account_id: "checking", posted_at: `${month}-01`, merchant: "Big current purchase", category: "Shopping", amount: "-99999", type: "expense" });
+    expect((await api.simulations.cashFlow(6)).series).toEqual(before.series);
+    expect(before.series[0].month_index).toBe(1);
+  });
 });
