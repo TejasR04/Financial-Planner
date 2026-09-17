@@ -3,6 +3,7 @@ from uuid import uuid4
 
 from app.domain.entities import Account
 from app.domain.enums import AccountType
+from app.services.retirement_projection_service import RetirementProjectionService
 from app.services.scenario_service import ScenarioService
 from app.simulation.assumptions import PlanningAssumptions
 
@@ -77,6 +78,32 @@ def test_sensitivity_higher_return_increases_balance():
     return_row = next(r for r in result.rows if r.label == "+1% real return")
     assert return_row.kind == "balance_pct"
     assert return_row.value > 0  # more return -> bigger ending balance
+
+
+def test_sensitivity_adds_exactly_one_percentage_point_to_real_return():
+    service = ScenarioService()
+    assumptions = PlanningAssumptions(
+        current_age=40, retirement_age=65, expected_return=Decimal("0.065"),
+        inflation_rate=Decimal("0.04"), monthly_contribution=Decimal("500"),
+    )
+
+    result = service.analyze_sensitivity(
+        assumptions, current_retirement_balance=Decimal("100000"),
+        monte_carlo_trials=100,
+    )
+    expected = RetirementProjectionService().project(
+        current_retirement_balance=Decimal("100000"),
+        annual_contribution=Decimal("6000"),
+        assumptions=PlanningAssumptions(
+            current_age=40, retirement_age=65, expected_return=Decimal("0.075"),
+            inflation_rate=Decimal("0.04"), monthly_contribution=Decimal("500"),
+        ),
+    )
+    return_row = next(r for r in result.rows if r.label == "+1% real return")
+
+    assert return_row.note == (
+        f"Balance at retirement: {expected.projected_balance_at_retirement:,.0f}"
+    )
 
 
 def test_sensitivity_fewer_years_decreases_balance():

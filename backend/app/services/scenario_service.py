@@ -65,17 +65,6 @@ def _real_volatility(nominal_volatility: Decimal, inflation_rate: Decimal) -> De
     return nominal_volatility / (Decimal("1") + inflation_rate)
 
 
-def _nominal_return_for_real_increase(
-    assumptions: PlanningAssumptions, increase: Decimal
-) -> Decimal:
-    """Return the nominal assumption that raises real return by ``increase``."""
-    return (
-        (Decimal("1") + assumptions.real_return + increase)
-        * (Decimal("1") + assumptions.inflation_rate)
-        - Decimal("1")
-    )
-
-
 class ScenarioService:
     def __init__(self):
         self._net_worth_service = NetWorthProjectionService()
@@ -211,9 +200,7 @@ class ScenarioService:
                 "+1% real return",
                 replace(
                     assumptions,
-                    expected_return=_nominal_return_for_real_increase(
-                        assumptions, Decimal("0.01")
-                    ),
+                    expected_return=assumptions.real_return + Decimal("0.01"),
                 ),
                 "Balance at retirement",
             )

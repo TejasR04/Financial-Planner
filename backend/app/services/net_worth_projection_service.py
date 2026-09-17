@@ -42,8 +42,10 @@ class NetWorthProjectionService:
     ) -> NetWorthProjection:
         """Account-aware projection using the assumptions available here.
 
-        Investment and retirement accounts use ``expected_return``, deposits
-        use their own APY (or 0 when unknown), and property tracks inflation.
+        All balances are projected in today's dollars. Investment and
+        retirement accounts use the real ``expected_return``. Depository APY
+        is converted from nominal to real, and property has zero real growth
+        because its nominal growth is assumed to track inflation.
         New contributions are assigned to invested assets. Liabilities still
         use the explicitly approximate payoff rate because this service does
         not receive loan terms; specific debts should use
@@ -52,7 +54,7 @@ class NetWorthProjectionService:
         asset_balances = {
             account.id: account.balance
             for account in accounts
-            if not account.is_liability and account.balance > ZERO
+            if not account.is_liability and account.balance != ZERO
         }
         liability_balances = {
             account.id: abs(account.balance)
@@ -74,9 +76,14 @@ class NetWorthProjectionService:
                 if account.type in (AccountType.INVESTMENT, AccountType.RETIREMENT):
                     rate = assumptions.expected_return
                 elif account.type == AccountType.DEPOSITORY:
-                    rate = (account.apy or ZERO) / Decimal("100")
+                    nominal_rate = (account.apy or ZERO) / Decimal("100")
+                    rate = (
+                        (Decimal("1") + nominal_rate)
+                        / (Decimal("1") + assumptions.inflation_rate)
+                        - Decimal("1")
+                    )
                 elif account.type == AccountType.PROPERTY:
-                    rate = assumptions.inflation_rate
+                    rate = ZERO
                 else:
                     rate = ZERO
                 asset_balances[account.id] *= Decimal("1") + rate

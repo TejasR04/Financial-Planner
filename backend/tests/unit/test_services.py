@@ -150,7 +150,54 @@ def test_net_worth_projection_uses_account_specific_growth_rates():
 
     result = service.project(accounts, assumptions, years=1)
 
-    assert result.series[0].assets == Decimal("314000.00")
+    # All figures are in today's dollars: the 1% nominal savings yield is
+    # converted using 3% inflation, while property that tracks inflation has
+    # zero real growth.
+    assert result.series[0].assets == Decimal("308058.25")
+
+
+def test_net_worth_projection_includes_depository_overdraft():
+    user_id = uuid4()
+    accounts = [
+        Account(id=uuid4(), user_id=user_id, name="Brokerage", type=AccountType.INVESTMENT,
+                balance=Decimal("1000")),
+        Account(id=uuid4(), user_id=user_id, name="Checking", type=AccountType.DEPOSITORY,
+                balance=Decimal("-500")),
+    ]
+    assumptions = PlanningAssumptions(
+        current_age=40, retirement_age=65, expected_return=Decimal("0"),
+        inflation_rate=Decimal("0"),
+    )
+
+    result = NetWorthProjectionService().project(accounts, assumptions, years=1)
+
+    assert result.net_worth_today == Decimal("500")
+    assert result.series[0].assets == Decimal("500.00")
+    assert result.series[0].net == Decimal("500.00")
+
+
+def test_net_worth_projection_uses_consistent_real_dollar_basis():
+    user_id = uuid4()
+    accounts = [
+        Account(id=uuid4(), user_id=user_id, name="Brokerage", type=AccountType.INVESTMENT,
+                balance=Decimal("10000")),
+        Account(id=uuid4(), user_id=user_id, name="Savings", type=AccountType.DEPOSITORY,
+                balance=Decimal("10000"), apy=Decimal("5")),
+        Account(id=uuid4(), user_id=user_id, name="Home", type=AccountType.PROPERTY,
+                balance=Decimal("10000")),
+    ]
+    assumptions = PlanningAssumptions(
+        current_age=40, retirement_age=65, expected_return=Decimal("0.06"),
+        inflation_rate=Decimal("0.05"),
+    )
+
+    result = NetWorthProjectionService().project(
+        accounts, assumptions, years=1, annual_net_contribution=Decimal("1000")
+    )
+
+    # Investment: 10,600; savings and home: 10,000 each in real terms;
+    # contribution: 1,000 real dollars added at year end.
+    assert result.series[0].assets == Decimal("31600.00")
 
 
 def test_net_worth_projection_classifies_liabilities_by_account_type():
