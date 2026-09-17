@@ -102,7 +102,7 @@ export default function RegisterPage() {
             {submitting ? "Creating accountâ€¦" : "Create account"}
           </Button>
         </form>
-        <Button type="button" variant="outline" className="mt-3 w-full" onClick={toggleDemo}>Try demo — no sign-in needed</Button>
+        <Button type="button" variant="outline" className="mt-3 w-full" onClick={toggleDemo}>Try demo - no sign-in needed</Button>
 
         <p className="mt-4 text-center text-[13px] text-muted-foreground">
           Already have an account?{" "}
