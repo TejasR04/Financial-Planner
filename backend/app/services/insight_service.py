@@ -31,14 +31,13 @@ class InsightService:
                 history.label,
             ))
             if expenses > zero:
-                cash = snapshot.liquid_assets + sum(
-                    (holding.market_value for holding in snapshot.holdings if holding.asset_class == AssetClass.CASH), zero)
+                cash = snapshot.liquid_assets
                 months = cash / expenses
                 drafts.append(InsightDraft(
                     InsightKind.ALERT if months < 6 else InsightKind.OBSERVATION,
-                    f"Depository balances and reported cash holdings total ${cash:,.2f}, covering "
+                    f"Accessible depository balances and taxable brokerage cash total ${cash:,.2f}, covering "
                     f"{months:.1f} months at your ${expenses:,.2f} average monthly expense level. "
-                    "This check uses a six-month reference; cash in retirement accounts may not be readily accessible.",
+                    "This check uses a six-month reference and excludes cash in retirement accounts.",
                     f"Current cash / {history.label}",
                 ))
             target = snapshot.profile.target_savings_rate

@@ -14,7 +14,7 @@ async def test_monte_carlo_contract_names_metric_and_discloses_model_limits(clie
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["success_metric"] == "target_attainment"
-    assert body["model_version"] == "normal-iid-v2"
+    assert body["model_version"] == "normal-iid-monthly-contributions-v3"
     assert body["percentile_method"] == "nearest-rank"
     assert "taxes" in body["exclusions"]
 

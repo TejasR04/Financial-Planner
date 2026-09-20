@@ -4,7 +4,7 @@ return the service's typed result. No arithmetic lives here.
 """
 from decimal import Decimal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.ai.tool_registry import registry
 from app.domain.entities import IncomeSource
@@ -22,7 +22,7 @@ class ForecastRetirementInput(BaseModel):
     current_age: int
     retirement_age: int
     current_retirement_balance: Decimal
-    annual_contribution: Decimal
+    annual_contribution: Decimal = Field(ge=0)
     expected_return: Decimal = Decimal("0.065")
     withdrawal_rate: Decimal = Decimal("0.04")
     annual_spending_target: Decimal | None = None
@@ -53,7 +53,7 @@ def forecast_retirement(args: ForecastRetirementInput):
 class EarliestRetirementAgeInput(BaseModel):
     current_age: int
     current_retirement_balance: Decimal
-    annual_contribution: Decimal
+    annual_contribution: Decimal = Field(ge=0)
     annual_spending_target: Decimal
     expected_return: Decimal = Decimal("0.065")
     withdrawal_rate: Decimal = Decimal("0.04")

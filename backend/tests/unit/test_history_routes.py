@@ -23,8 +23,8 @@ async def test_outlook_uses_shared_history_and_not_partial_month_or_saved_salary
         BudgetTransactionInput("Rent", Decimal(-4000), "cleared", None, posted_at=date(2026, 8, 2)),
         BudgetTransactionInput("Partial month", Decimal(-9000), "cleared", None, posted_at=date(2026, 9, 2)),
     ])
-    loader = AsyncMock(return_value=history)
-    monkeypatch.setattr(simulations, "load_activity_history", loader)
+    loader = AsyncMock(return_value=(history, (Decimal("4000"), Decimal("3000"))))
+    monkeypatch.setattr(simulations, "load_budget_activity_summary", loader)
     monkeypatch.setattr(simulations, "IncomeSourceRepository", lambda db: SimpleNamespace(list_for_user=AsyncMock(return_value=[])))
     monkeypatch.setattr(simulations, "UserRepository", lambda db: SimpleNamespace(get_planning_profile=AsyncMock(return_value=PlanningProfile(user.id))))
     result = await simulations.simulate_cash_flow(CashFlowSimulationRequest(months=6), user, None)
@@ -32,8 +32,11 @@ async def test_outlook_uses_shared_history_and_not_partial_month_or_saved_salary
     assert result.series[0].income == 4000
     assert result.series[0].expenses == 3000
     assert result.average_monthly_surplus == 1000
+    assert "positive classified income" in result.income_source
+    assert "categorized budget spending" in result.expense_source
+    assert "categorized transfer offsets" in result.expense_source
     assert "2 completed months (Jul 2026 to Aug 2026)" in result.expense_source
-    loader.return_value = ActivityHistory([], [])
+    loader.return_value = (ActivityHistory([], []), (Decimal("0"), Decimal("0")))
     with pytest.raises(HTTPException) as error:
         await simulations.simulate_cash_flow(CashFlowSimulationRequest(), user, None)
     assert error.value.status_code == 422

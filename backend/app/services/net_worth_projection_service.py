@@ -51,6 +51,11 @@ class NetWorthProjectionService:
         not receive loan terms; specific debts should use
         ``DebtOptimizationService``.
         """
+        if annual_net_contribution < ZERO:
+            raise ValueError(
+                "annual_net_contribution cannot be negative; model withdrawals or cash-flow shortfalls explicitly"
+            )
+
         asset_balances = {
             account.id: account.balance
             for account in accounts

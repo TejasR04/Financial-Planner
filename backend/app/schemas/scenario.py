@@ -29,10 +29,10 @@ class ScenarioCreateRequest(BaseModel):
     current_age: int
     retirement_age: int
     savings_rate: Decimal = Decimal("0.20")
-    monthly_contribution: Decimal = Decimal("0")
-    expected_return: Decimal = Decimal("0.065")
-    inflation_rate: Decimal = Decimal("0.028")
-    withdrawal_rate: Decimal = Decimal("0.04")
+    monthly_contribution: Decimal = Field(default=Decimal("0"), ge=0)
+    expected_return: Decimal | None = None
+    inflation_rate: Decimal | None = None
+    withdrawal_rate: Decimal | None = None
     # Monthly retirement income target in TODAY's dollars. If set, this
     # replaces withdrawal_rate as what drives feasibility + Monte Carlo.
     desired_monthly_income_today: Decimal | None = None
@@ -48,7 +48,7 @@ class ScenarioUpdateRequest(BaseModel):
     description: str | None = None
     retirement_age: int | None = None
     savings_rate: Decimal | None = None
-    monthly_contribution: Decimal | None = None
+    monthly_contribution: Decimal | None = Field(default=None, ge=0)
     expected_return: Decimal | None = None
     inflation_rate: Decimal | None = None
     withdrawal_rate: Decimal | None = None
@@ -111,6 +111,9 @@ class ScenarioCompareRow(BaseModel):
     net_worth_at_target_age: Decimal | None
     retirement_age: int
     monthly_contribution: Decimal
+    plan_mode: str
+    modeled_monthly_spending: Decimal | None
+    withdrawal_rate_capacity: Decimal | None
     success_rate: Decimal | None
     has_run: bool
 

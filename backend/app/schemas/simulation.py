@@ -40,7 +40,7 @@ class NetWorthSimulationRequest(BaseModel):
     years: int = Field(ge=1, le=100)
     expected_return: Decimal = Field(default=Decimal("0.065"), ge=Decimal("-0.50"), le=Decimal("0.50"))
     annual_net_contribution: Decimal = Field(
-        default=Decimal("0"), ge=Decimal("-10000000"), le=Decimal("10000000")
+        default=Decimal("0"), ge=Decimal("0"), le=Decimal("10000000")
     )
 
     @model_validator(mode="after")

@@ -1,6 +1,6 @@
 from decimal import Decimal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from app.ai.tool_registry import registry
 from app.simulation.monte_carlo import run_monte_carlo as _run_monte_carlo
@@ -8,7 +8,7 @@ from app.simulation.monte_carlo import run_monte_carlo as _run_monte_carlo
 
 class RunMonteCarloInput(BaseModel):
     starting_balance: Decimal
-    annual_contribution: Decimal
+    annual_contribution: Decimal = Field(ge=0)
     expected_return: Decimal = Decimal("0.065")
     # Matches the 60/40-portfolio-calibrated default used elsewhere (see
     # app/simulation/engine.py:implied_return_volatility) rather than a

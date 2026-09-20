@@ -2,14 +2,13 @@
 from __future__ import annotations
 
 import json
-from datetime import date
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.entities import FinancialSnapshot
 from app.domain.enums import AccountType, TransactionType
-from app.persistence.repositories.transaction_repository import TransactionRepository
+from app.persistence.activity_history import load_budget_activity_summary
 
 
 def _money(value: Decimal) -> str:
@@ -20,20 +19,21 @@ async def build_user_financial_context(
     session: AsyncSession, snapshot: FinancialSnapshot
 ) -> str:
     """Return current planning facts without identifiers or transaction detail."""
-    today = date.today()
-    start_month_index = today.year * 12 + today.month - 1 - 11
-    start = date(start_month_index // 12, start_month_index % 12 + 1, 1)
-    totals = await TransactionRepository(session).totals_by_type_since(
-        snapshot.user.id, start, absolute=True
+    history, (monthly_income, monthly_expenses) = await load_budget_activity_summary(
+        session, snapshot.user.id, snapshot.as_of
     )
-
-    income = totals.get(TransactionType.INCOME, Decimal("0"))
-    expenses = totals.get(TransactionType.EXPENSE, Decimal("0"))
-    contributions = totals.get(TransactionType.CONTRIBUTION, Decimal("0"))
-    months = Decimal("12")
-    monthly_income = income / months
-    monthly_expenses = expenses / months
     monthly_surplus = monthly_income - monthly_expenses
+    has_history = bool(history.months)
+    contributions = sum(
+        (
+            abs(row.amount)
+            for row in history.transactions
+            if row.type == TransactionType.CONTRIBUTION
+            and row.posted_at is not None
+            and row.posted_at.replace(day=1) in set(history.months)
+        ),
+        Decimal("0"),
+    )
 
     positive_accounts = [
         account
@@ -71,10 +71,11 @@ async def build_user_financial_context(
             "total_liabilities": _money(total_liabilities),
             "liquid_assets": _money(snapshot.liquid_assets),
             "retirement_account_balance": _money(retirement_balance),
-            "average_monthly_income_trailing_12_months": _money(monthly_income),
-            "average_monthly_expenses_trailing_12_months": _money(monthly_expenses),
-            "average_monthly_surplus_trailing_12_months": _money(monthly_surplus),
-            "recorded_contributions_trailing_12_months": _money(contributions),
+            "average_monthly_classified_income_completed_history": _money(monthly_income) if has_history else None,
+            "average_monthly_budget_spending_completed_history": _money(monthly_expenses) if has_history else None,
+            "average_monthly_budget_surplus_completed_history": _money(monthly_surplus) if has_history else None,
+            "history_window": history.label,
+            "recorded_contributions_completed_history": _money(contributions) if has_history else None,
         },
         "accounts": [
             {

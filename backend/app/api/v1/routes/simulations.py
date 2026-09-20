@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -7,7 +9,7 @@ from app.domain.enums import DebtPayoffStrategy
 from app.persistence.repositories.account_repository import AccountRepository
 from app.persistence.repositories.income_source_repository import IncomeSourceRepository
 from app.persistence.repositories.liability_repository import LiabilityRepository
-from app.persistence.activity_history import load_activity_history
+from app.persistence.activity_history import load_budget_activity_summary
 from app.persistence.repositories.user_repository import UserRepository
 from app.schemas.simulation import (
     CashFlowMonthPointResponse,
@@ -36,6 +38,14 @@ retirement_service = RetirementProjectionService()
 net_worth_service = NetWorthProjectionService()
 cash_flow_service = CashFlowProjectionService()
 debt_service = DebtOptimizationService()
+
+
+def _debt_plan_paid_off(liabilities, payoff_order: list[str]) -> bool:
+    """Zero starting balances require no payoff event and are already paid."""
+    positive_starting_debts = sum(
+        1 for liability in liabilities if (liability.principal or Decimal("0")) > 0
+    )
+    return len(payoff_order) == positive_starting_debts
 
 
 @router.post("/retirement", response_model=RetirementSimulationResponse)
@@ -105,10 +115,11 @@ async def simulate_cash_flow(
     from uuid import uuid4
     from fastapi import HTTPException
 
-    history = await load_activity_history(db, current_user.id)
+    history, (categorized_income, monthly_expenses) = await load_budget_activity_summary(
+        db, current_user.id
+    )
     if not history.months:
         raise HTTPException(422, "A completed month of transaction history is needed for an average-based outlook. The current month and the first partial month are excluded.")
-    categorized_income, monthly_expenses = history.monthly_cash_flow
     income_sources = [source for source in await IncomeSourceRepository(db).list_for_user(current_user.id) if source.active]
     uses_categorized_income = body.income_basis == "take_home" and categorized_income > 0
     if uses_categorized_income:
@@ -144,13 +155,17 @@ async def simulate_cash_flow(
         average_monthly_surplus=result.average_monthly_surplus,
         projected_savings_rate=result.projected_savings_rate,
         income_source=(
-            f"Average categorized income over {history.label}"
+            f"Average positive classified income over {history.label}"
             if uses_categorized_income
             else "Saved planning income sources adjusted by the supplied effective tax rate"
             if body.income_basis == "gross"
             else "Saved planning take-home income sources"
         ),
-        expense_source=f"Average tracked expenses over {history.label}; excludes partial months",
+        expense_source=(
+            f"Average categorized budget spending over {history.label}; "
+            "includes categorized transfer offsets and excludes partial months, "
+            "ignored transactions, and card payments"
+        ),
         income_basis=result.income_basis,
     )
 
@@ -210,7 +225,7 @@ async def simulate_debt_optimization(
     plan = debt_service.optimize(
         liabilities=liabilities, extra_monthly_payment=body.extra_monthly_payment, strategy=strategy
     )
-    paid_off = len(plan.payoff_order) == len(liabilities)
+    paid_off = _debt_plan_paid_off(liabilities, plan.payoff_order)
     return DebtOptimizationResponse(
         strategy=plan.strategy.value,
         months_to_debt_free=plan.months_to_debt_free,

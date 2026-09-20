@@ -25,11 +25,34 @@ from app.schemas.scenario import (
 )
 from app.services.scenario_service import ScenarioService
 from app.simulation.assumptions import PlanningAssumptions
-from app.simulation.engine import implied_return_volatility
 
 router = APIRouter(prefix="/scenarios", tags=["scenarios"])
 
 scenario_service = ScenarioService()
+
+
+def _new_scenario_assumptions(
+    body: ScenarioCreateRequest, profile
+) -> PlanningAssumptions:
+    """Resolve omitted new-scenario assumptions from the saved profile."""
+    return PlanningAssumptions(
+        current_age=body.current_age,
+        retirement_age=body.retirement_age,
+        savings_rate=body.savings_rate,
+        monthly_contribution=body.monthly_contribution,
+        expected_return=(
+            body.expected_return if body.expected_return is not None else profile.expected_return
+        ),
+        inflation_rate=(
+            body.inflation_rate if body.inflation_rate is not None else profile.inflation_rate
+        ),
+        withdrawal_rate=(
+            body.withdrawal_rate
+            if body.withdrawal_rate is not None
+            else profile.default_withdrawal_rate
+        ),
+        desired_monthly_income_today=body.desired_monthly_income_today,
+    )
 
 
 def _retirement_trajectory(result, assumptions: PlanningAssumptions) -> list[dict]:
@@ -94,16 +117,8 @@ async def create_scenario(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ScenarioResponse:
-    assumptions = PlanningAssumptions(
-        current_age=body.current_age,
-        retirement_age=body.retirement_age,
-        savings_rate=body.savings_rate,
-        monthly_contribution=body.monthly_contribution,
-        expected_return=body.expected_return,
-        inflation_rate=body.inflation_rate,
-        withdrawal_rate=body.withdrawal_rate,
-        desired_monthly_income_today=body.desired_monthly_income_today,
-    )
+    profile = await UserRepository(db).get_planning_profile(current_user.id)
+    assumptions = _new_scenario_assumptions(body, profile)
     row = await ScenarioRepository(db).create(
         current_user.id, body.name, body.description, assumptions, is_baseline=body.is_baseline
     )
@@ -207,12 +222,12 @@ async def run_scenario(
             "success_metric": result.monte_carlo.success_metric,
             "trials": result.monte_carlo.trials,
             "seed": result.monte_carlo.seed,
-            "return_volatility": str(implied_return_volatility(assumptions.target_equity_allocation)),
+            "return_volatility": str(result.executed_return_volatility),
             "allocation": str(assumptions.target_equity_allocation),
             "return_basis": "real_pre_tax_pre_fee",
             "withdrawal_timing": "start_of_year",
             "contribution_timing": "month_end",
-            "inflation_treatment": "nominal returns deflated by constant inflation; withdrawals flat in today's dollars",
+            "inflation_treatment": "expected returns and withdrawals are modeled directly in today's dollars; nominal volatility is scaled to a real-return approximation",
             "retirement_dollar_basis": "today_dollars",
             "percentile_method": result.monte_carlo.percentile_method,
             "exclusions": ["taxes", "investment fees", "advisory fees"],
@@ -268,6 +283,9 @@ async def preview_scenario(
             "success_metric": result.monte_carlo.success_metric,
             "trials": result.monte_carlo.trials,
             "seed": result.monte_carlo.seed,
+            "return_volatility": str(result.executed_return_volatility),
+            "return_basis": "real_pre_tax_pre_fee",
+            "inflation_treatment": "expected returns and withdrawals are modeled directly in today's dollars; nominal volatility is scaled to a real-return approximation",
             "percentile_method": result.monte_carlo.percentile_method,
             "estimate_disclosure": "Modeled success frequency under stated assumptions; not a calibrated probability or guarantee.",
             "exclusions": ["taxes", "investment fees", "advisory fees"],
@@ -348,6 +366,19 @@ async def compare_scenarios(
                 net_worth_at_target_age=latest.net_worth_at_target_age if latest else None,
                 retirement_age=scenario.retirement_age,
                 monthly_contribution=scenario.monthly_contribution,
+                plan_mode=(
+                    "income_target"
+                    if scenario.desired_monthly_income_today is not None
+                    else "withdrawal_rate"
+                ),
+                modeled_monthly_spending=(
+                    scenario.desired_monthly_income_today
+                    if scenario.desired_monthly_income_today is not None
+                    else latest.monthly_sustainable_withdrawal if latest else None
+                ),
+                withdrawal_rate_capacity=(
+                    latest.monthly_sustainable_withdrawal if latest else None
+                ),
                 success_rate=latest.success_rate if latest else None,
                 has_run=latest is not None,
             )

@@ -183,7 +183,21 @@ class FinancialSnapshot:
     @property
     def liquid_assets(self) -> Decimal:
         from app.domain.enums import AccountType as AT
-        return sum(
+        depository_cash = sum(
             (a.balance for a in self.accounts if a.type == AT.DEPOSITORY and a.balance > 0),
             Decimal("0"),
         )
+        accessible_investment_ids = {
+            account.id for account in self.accounts if account.type == AT.INVESTMENT
+        }
+        brokerage_cash = sum(
+            (
+                holding.market_value
+                for holding in self.holdings
+                if holding.account_id in accessible_investment_ids
+                and holding.asset_class == AssetClass.CASH
+                and holding.market_value > 0
+            ),
+            Decimal("0"),
+        )
+        return depository_cash + brokerage_cash

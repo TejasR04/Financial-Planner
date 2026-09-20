@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import calendar
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from uuid import UUID
 
@@ -38,6 +38,7 @@ class BudgetTransactionInput:
     ignored_from_budget: bool = False
     provider_category: str = ""
     posted_at: date | None = None
+    reviewed_at: datetime | None = None
 
 
 def budget_amount(transaction: BudgetTransactionInput) -> Decimal:

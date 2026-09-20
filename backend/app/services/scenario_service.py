@@ -24,6 +24,7 @@ class ScenarioRunResult:
     net_worth_projection: NetWorthProjection
     retirement_projection: RetirementProjection
     monte_carlo: MonteCarloResult | None
+    executed_return_volatility: Decimal | None = None
     engine_version: str = ENGINE_VERSION
 
 
@@ -133,6 +134,10 @@ class ScenarioService:
             net_worth_projection=net_worth,
             retirement_projection=retirement,
             monte_carlo=monte_carlo,
+            executed_return_volatility=(
+                _real_volatility(effective_volatility, assumptions.inflation_rate)
+                if include_monte_carlo else None
+            ),
         )
 
     def analyze_sensitivity(

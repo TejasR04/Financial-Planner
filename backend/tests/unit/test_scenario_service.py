@@ -45,6 +45,7 @@ def test_scenario_run_includes_monte_carlo_when_requested():
     assert result.monte_carlo is not None
     assert result.monte_carlo.trials == 200
     assert 0.0 <= result.monte_carlo.success_rate <= 1.0
+    assert result.executed_return_volatility == Decimal("0.106") / Decimal("1.028")
 
 
 def test_scenario_run_monte_carlo_targets_spending_derived_balance():
@@ -323,3 +324,4 @@ def test_explicit_volatility_override_still_respected():
         return_volatility=Decimal("0.03"),  # deliberately tiny -> should push success very high
     )
     assert result.monte_carlo.success_rate > 0.95
+    assert result.executed_return_volatility == Decimal("0.03") / Decimal("1.028")

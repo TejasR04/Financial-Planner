@@ -80,6 +80,29 @@ def test_running_out_mid_retirement_clamps_to_zero_not_negative():
     assert result.success_rate < 1.0
 
 
+def test_exact_final_withdrawal_is_successful():
+    result = run_monte_carlo(
+        starting_balance=Decimal("100"), annual_contribution=Decimal("0"),
+        expected_return=Decimal("0"), return_volatility=Decimal("0"),
+        years=0, starting_age=65, target_balance=Decimal("0"),
+        retirement_years=1, annual_withdrawal=Decimal("100"), trials=100,
+    )
+
+    assert result.success_rate == 1.0
+    assert result.median_ending_balance == Decimal("0")
+
+
+def test_zero_balance_with_zero_withdrawals_is_successful():
+    result = run_monte_carlo(
+        starting_balance=Decimal("0"), annual_contribution=Decimal("0"),
+        expected_return=Decimal("0"), return_volatility=Decimal("0"),
+        years=0, starting_age=65, target_balance=Decimal("0"),
+        retirement_years=2, annual_withdrawal=Decimal("0"), trials=100,
+    )
+
+    assert result.success_rate == 1.0
+
+
 def test_fees_reduce_accumulation_ending_balance():
     common = dict(
         starting_balance=Decimal("100000"), annual_contribution=Decimal("12000"),

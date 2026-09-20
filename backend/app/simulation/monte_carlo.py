@@ -124,11 +124,11 @@ def run_monte_carlo(
         withdrawal = annual_withdrawal
         for _year in range(retirement_years):
             sampled_rate = Decimal(str(rng.normalvariate(mean, stdev)))
-            balance = balance - withdrawal
-            if balance <= ZERO:
+            if balance < withdrawal:
                 balance = ZERO
                 ran_out = True
             else:
+                balance = balance - withdrawal
                 balance = balance * max(
                     ZERO,
                     (Decimal("1") + sampled_rate) * (Decimal("1") - annual_fee_rate),

@@ -132,6 +132,14 @@ def test_net_worth_projection_series_length_and_direction():
     assert result.projected_net_worth_at_horizon > result.net_worth_today
 
 
+def test_net_worth_projection_rejects_negative_net_contribution():
+    service = NetWorthProjectionService()
+    assumptions = PlanningAssumptions(current_age=35, retirement_age=65)
+
+    with pytest.raises(ValueError, match="cannot be negative"):
+        service.project([], assumptions, years=1, annual_net_contribution=Decimal("-1000"))
+
+
 def test_net_worth_projection_uses_account_specific_growth_rates():
     service = NetWorthProjectionService()
     user_id = uuid4()

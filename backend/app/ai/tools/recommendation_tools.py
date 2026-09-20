@@ -54,7 +54,8 @@ def estimate_home_affordability(args: EstimateHomeAffordabilityInput):
     return {
         "max_home_price": max_home_price,
         "max_housing_payment": max_housing_payment.quantize(Decimal("0.01")),
-        "max_loan_amount": (max_home_price - args.down_payment).quantize(Decimal("0.01")),
+        "max_loan_amount": max(Decimal("0"), max_home_price - args.down_payment).quantize(Decimal("0.01")),
+        "unused_down_payment": max(Decimal("0"), args.down_payment - max_home_price).quantize(Decimal("0.01")),
     }
 
 
