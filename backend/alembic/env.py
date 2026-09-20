@@ -2,7 +2,7 @@ import asyncio
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import pool
+from sqlalchemy import pool, text
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from app.core.config import get_settings
@@ -30,6 +30,10 @@ def run_migrations_offline() -> None:
 def do_run_migrations(connection) -> None:
     context.configure(connection=connection, target_metadata=target_metadata)
     with context.begin_transaction():
+        # Every API container also checks migrations before it starts. A
+        # transaction-scoped advisory lock keeps concurrent Cloud Run starts
+        # from attempting the same schema change at once.
+        connection.execute(text("SELECT pg_advisory_xact_lock(636201633777)"))
         context.run_migrations()
 
 

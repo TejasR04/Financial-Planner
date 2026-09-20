@@ -63,15 +63,20 @@ Artifact Registry permissions.
 
 ## 4. Database migration
 
-Apply migrations before a backend revision that needs them:
+The backend deployment workflow applies migrations before releasing the new
+API revision. Each API container also runs the same command before startup as
+a safety check for manual Cloud Run deployments. Alembic serializes concurrent
+container starts with a PostgreSQL advisory lock.
+
+To apply migrations manually:
 
 ```powershell
 cd backend
 python -m alembic upgrade head
 ```
 
-For now this is an explicit release step using the production Supabase
-`DATABASE_URL`. Do not run migrations concurrently from multiple deployments.
+This uses the configured production Supabase `DATABASE_URL`. A migration
+failure prevents the new container revision from becoming ready.
 
 ## 5. Deploy
 
