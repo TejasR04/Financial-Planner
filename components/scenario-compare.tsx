@@ -14,8 +14,14 @@ import { displayProjectionDollars, type ProjectionDollarDisplay } from "@/lib/pr
 const metrics = [
   {
     key: "monthlyIncomeAtLifeExpectancy",
-    label: "Monthly retirement income",
-    hint: "Sustainable monthly withdrawal from retirement accounts, assuming a 95-year life expectancy — not the same as total net worth.",
+    label: "Modeled monthly spending",
+    hint: "The monthly spending modeled through age 95. Income-target scenarios use their fixed target; rate-based scenarios use their withdrawal-rate amount.",
+    fmt: (v: number) => formatCurrency(v),
+  },
+  {
+    key: "withdrawalRateCapacity",
+    label: "Withdrawal-rate capacity",
+    hint: "The monthly amount implied by this scenario's withdrawal rate and projected retirement balance. For income-target scenarios, this is capacity context rather than the spending modeled in success simulations.",
     fmt: (v: number) => formatCurrency(v),
   },
   { key: "retirementAge", label: "Retirement age", fmt: (v: number) => `${v}` },
@@ -27,7 +33,7 @@ const metrics = [
   {
     key: "successRate",
     label: "Monte Carlo success",
-    hint: "Of 1,000 simulated trials with randomized annual returns, the percentage where retirement savings lasted through age 95 without running out — contributions stop at retirement age, then the plan's sustainable withdrawal (a % of that scenario's own balance) is taken out each year of retirement. Because the withdrawal scales with the balance, a bigger balance alone doesn't raise this number much — it mainly reflects withdrawal rate, expected return, and volatility.",
+    hint: "Of 1,000 simulated trials with randomized annual returns, the percentage where retirement savings funded the scenario's modeled spending through age 95. Income-target scenarios use the fixed target; rate-based scenarios use their withdrawal rate.",
     fmt: (v: number) => `${v}%`,
   },
 ] as const;
@@ -174,7 +180,7 @@ export function ScenarioCompare({
                     let formatted: string;
                     if (value === null) {
                       formatted = s.projectionStatus === "loading" ? "Loading…" : "Unavailable";
-                    } else if (m.key === "monthlyIncomeAtLifeExpectancy") {
+                    } else if (m.key === "monthlyIncomeAtLifeExpectancy" || m.key === "withdrawalRateCapacity") {
                       formatted = m.fmt(displayProjectionDollars(value, Math.max(0, s.retirementAge - (currentAge ?? s.retirementAge)), s.inflationRate, dollarDisplay));
                     } else if (m.key === "monthlyContribution" && dollarDisplay === "future") {
                       formatted = m.fmt(displayProjectionDollars(value, Math.max(0, s.retirementAge - (currentAge ?? s.retirementAge)), s.inflationRate, dollarDisplay));

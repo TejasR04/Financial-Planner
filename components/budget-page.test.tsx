@@ -8,6 +8,7 @@ vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push }) }));
 vi.mock("@/components/charts/spending-pace-chart", () => ({ SpendingPaceChart: () => <div>Spending comparison</div> }));
 vi.mock("@/components/budget-breakdown", () => ({ BudgetBreakdown: () => <div>Category breakdown</div> }));
 vi.mock("@/lib/api-client", () => ({ ApiError: class extends Error {}, api: { budgets: mocks } }));
+vi.mock("@/lib/data-provider", () => ({ useDataRefresh: () => vi.fn() }));
 
 describe("budget summary and review scope", () => {
   it("includes uncategorized spending and uses the review queue for review amounts", async () => {

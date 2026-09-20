@@ -103,7 +103,7 @@ export function SettingsForms() {
       await api.users.updateMe({
         full_name: fullName,
         base_currency: "USD",
-        date_of_birth: dob || undefined,
+        date_of_birth: dob || null,
       });
       refresh();
       setProfileSaved(true);

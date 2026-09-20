@@ -4,6 +4,8 @@ import { afterEach, expect, it, vi } from "vitest";
 import { FinancialDetailsDialog } from "./financial-details-dialog";
 import { api } from "@/lib/api-client";
 
+vi.mock("@/lib/data-provider", () => ({ useDataRefresh: () => vi.fn() }));
+
 afterEach(() => {
   cleanup();
   vi.restoreAllMocks();
@@ -29,4 +31,22 @@ it("selects a merchant from transaction history before saving a future payment r
   await user.click(add);
   await waitFor(() => expect(save).toHaveBeenCalledWith("loan", { mode: "merchant", merchant_pattern: "Acme Auto Loan" }));
   expect(await screen.findByText(/Merchant matches/)).toBeInTheDocument();
+});
+
+it("does not let a late debt response populate a different account", async () => {
+  let resolveFirst!: (value: Awaited<ReturnType<typeof api.accounts.liability>>) => void;
+  vi.spyOn(api.accounts, "liability").mockImplementation((id) => id === "first"
+    ? new Promise((resolve) => { resolveFirst = resolve; })
+    : Promise.resolve(null));
+  vi.spyOn(api.accounts, "balanceRules").mockResolvedValue([]);
+  const first = { id: "first", name: "First loan", type: "Loan" as const, mask: "", balance: -1000, status: "manual" as const, updated: "Today" };
+  const second = { ...first, id: "second", name: "Second loan" };
+  const view = render(<FinancialDetailsDialog account={first} onClose={vi.fn()} />);
+
+  view.rerender(<FinancialDetailsDialog account={second} onClose={vi.fn()} />);
+  await waitFor(() => expect(screen.getByRole("button", { name: "Save" })).toBeEnabled());
+  resolveFirst({ id: "details", account_id: "first", principal: "1000", interest_rate: "0.05", term_months: 12, minimum_payment: "100", origination_date: null });
+
+  await waitFor(() => expect(screen.getByPlaceholderText("Original principal (optional)")).toHaveValue(null));
+  expect(screen.getByText(/Second loan/)).toBeVisible();
 });

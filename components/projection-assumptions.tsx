@@ -40,7 +40,7 @@ export function ProjectionAssumptions({ dollarDisplay }: { dollarDisplay: Projec
   // Seed sliders from the user's real profile + cash-flow-derived surplus
   // the first time it becomes available, rather than a hardcoded salary.
   useEffect(() => {
-    if (!profile || initialized) return;
+    if (!profile || profile.currentAge == null || initialized) return;
     setAssumptions([
       {
         key: "age",
@@ -87,13 +87,17 @@ export function ProjectionAssumptions({ dollarDisplay }: { dollarDisplay: Projec
   const years = Math.max(1, Math.round(age - (profile?.currentAge ?? age - 30)));
 
   const handleSaveAsScenario = async () => {
+    if (profile?.currentAge == null) {
+      setSaveError("Add your date of birth in Settings before saving an age-based scenario.");
+      return;
+    }
     setSaving(true);
     setSaveError(null);
     setSaved(false);
     try {
       await api.scenarios.create({
         name: `Retire at ${age}`,
-        current_age: profile?.currentAge ?? age - 30,
+        current_age: profile.currentAge,
         retirement_age: age,
         monthly_contribution: String(contribution),
         expected_return: (ret / 100).toFixed(4),
@@ -111,18 +115,23 @@ export function ProjectionAssumptions({ dollarDisplay }: { dollarDisplay: Projec
   // assets, not total net worth: a home or taxable cash balance alone does
   // not represent spendable retirement income in this model.
   useEffect(() => {
-    if (!profile || retirementBalance == null) return;
+    if (!profile || profile.currentAge == null || retirementBalance == null) {
+      setResult(null);
+      return;
+    }
+    const currentAge = profile.currentAge;
     let cancelled = false;
     const handle = setTimeout(async () => {
       setLoading(true);
       setError(null);
       try {
         const sim = await api.simulations.retirement({
-          current_age: profile.currentAge,
+          current_age: currentAge,
           retirement_age: age,
           current_retirement_balance: String(retirementBalance),
           expected_return: String(ret / 100),
           annual_contribution: String(contribution * 12),
+          withdrawal_rate: String(profile.defaultWithdrawalRate),
         });
         if (!cancelled) {
           setResult({
@@ -149,6 +158,7 @@ export function ProjectionAssumptions({ dollarDisplay }: { dollarDisplay: Projec
         title="Model assumptions"
         description="Quick retirement-balance what-if — contributions stop at retirement, then withdrawals begin"
       />
+      {profile?.currentAge == null && <p className="mx-4 mt-4 rounded-md border border-warning/30 bg-warning/5 p-3 text-xs text-muted-foreground">Add your date of birth in Settings to run age-based retirement projections.</p>}
       <div className="flex flex-col gap-4 p-4">
         {assumptions.map((a) => (
           <div key={a.key}>

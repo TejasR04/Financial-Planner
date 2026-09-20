@@ -7,6 +7,7 @@ import { PageContainer, PageHeader } from "@/components/page-container";
 import { Panel, PanelHeader } from "@/components/panel";
 import { ApiError, api, type ApiInvestmentDashboard } from "@/lib/api-client";
 import { formatCurrency } from "@/lib/data";
+import { useDataGeneration } from "@/lib/data-provider";
 
 const ASSET_CLASS_LABEL: Record<string, string> = {
   equity: "Equities",
@@ -21,6 +22,7 @@ function formatHistoryDate(value: string) {
 }
 
 export default function InvestmentsPage() {
+  const dataGeneration = useDataGeneration();
   const [dashboard, setDashboard] = useState<ApiInvestmentDashboard | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -32,7 +34,7 @@ export default function InvestmentsPage() {
       .catch((err) => { if (!cancelled) setError(err instanceof ApiError ? err.message : "Couldn't load your investments."); })
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
-  }, []);
+  }, [dataGeneration]);
 
   const history = useMemo(() => (dashboard?.history ?? []).map((point) => ({
     ...point,

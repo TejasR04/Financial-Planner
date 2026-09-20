@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { DialogShell } from "@/components/ui/dialog-shell";
 import { api, ApiError } from "@/lib/api-client";
 import type { Scenario } from "@/lib/data";
-import { useCurrentAge, useCurrentRetirementBalance, useDataRefresh } from "@/lib/data-provider";
+import { useCurrentAge, useCurrentRetirementBalance, useDataRefresh, useProfileSummary } from "@/lib/data-provider";
 import { sanitizeUnsignedNumberInput } from "@/lib/numeric-input";
 
 const inputClass =
@@ -28,6 +28,9 @@ export function NewScenarioDialog({ open, onClose, scenario = null }: Props) {
   const currentAge = useCurrentAge();
   const currentRetirementBalance = useCurrentRetirementBalance();
   const refresh = useDataRefresh();
+  const profile = useProfileSummary();
+  const profileRetirementAge = profile?.targetRetirementAge;
+  const profileExpectedReturn = profile?.expectedReturn;
   const isEditing = scenario != null;
 
   const [name, setName] = useState("");
@@ -57,14 +60,14 @@ export function NewScenarioDialog({ open, onClose, scenario = null }: Props) {
     } else {
       setName("");
       setDescription("");
-      setRetirementAge(DEFAULT_RETIREMENT_AGE);
+      setRetirementAge(String(profileRetirementAge ?? DEFAULT_RETIREMENT_AGE));
       setMonthlyContribution("");
-      setExpectedReturn(DEFAULT_EXPECTED_RETURN);
+      setExpectedReturn(profileExpectedReturn ? String(Math.round(Number(profileExpectedReturn) * 1000) / 10) : DEFAULT_EXPECTED_RETURN);
       setUseIncomeTarget(false);
       setDesiredIncome("");
     }
     setError(null);
-  }, [open, scenario]);
+  }, [open, scenario, profileRetirementAge, profileExpectedReturn]);
 
   if (!open) return null;
 
@@ -72,6 +75,10 @@ export function NewScenarioDialog({ open, onClose, scenario = null }: Props) {
     e.preventDefault();
     if (!name.trim()) {
       setError("Give the scenario a name.");
+      return;
+    }
+    if (currentAge == null) {
+      setError("Add your date of birth in Settings before creating an age-based scenario.");
       return;
     }
     const retirementAgeNum = Number(retirementAge);
@@ -114,22 +121,31 @@ export function NewScenarioDialog({ open, onClose, scenario = null }: Props) {
               ? { clear_income_target: true }
               : {}),
         });
-        if (currentAge != null && currentRetirementBalance != null) {
-          await api.scenarios.run(scenario.id, {
+        if (currentRetirementBalance != null) {
+          try { await api.scenarios.run(scenario.id, {
             current_age: currentAge,
             current_retirement_balance: String(currentRetirementBalance),
             include_monte_carlo: true,
             monte_carlo_trials: 1000,
-          });
+          }); } catch (runError) {
+            refresh();
+            setError(runError instanceof ApiError ? `Changes saved, but the new projection could not run: ${runError.message}` : "Changes saved, but the new projection could not run.");
+            return;
+          }
         }
+        refresh();
+        onClose();
+        return;
       } else {
         await api.scenarios.create({
           name: name.trim(),
           description: description.trim() || undefined,
-          current_age: currentAge ?? 30,
+          current_age: currentAge,
           retirement_age: retirementAgeNum,
           monthly_contribution: monthlyContribution.trim() || undefined,
           expected_return: (expectedReturnNum / 100).toFixed(4),
+          inflation_rate: profile?.inflationRate,
+          withdrawal_rate: profile ? String(profile.defaultWithdrawalRate) : undefined,
           desired_monthly_income_today: useIncomeTarget ? String(desiredIncomeNum) : undefined,
         });
       }
@@ -209,7 +225,7 @@ export function NewScenarioDialog({ open, onClose, scenario = null }: Props) {
               placeholder="0"
             />
             <p className="mt-1 text-[11px] text-muted-foreground">
-              Added to your retirement balance each year — also counts toward total net worth,
+              Added to your retirement balance each month — also counts toward total net worth,
               since it's new money going into your accounts.
             </p>
           </div>
@@ -247,7 +263,7 @@ export function NewScenarioDialog({ open, onClose, scenario = null }: Props) {
               </div>
             ) : (
               <p className="mt-1.5 text-[11px] text-muted-foreground">
-                Off: this scenario uses the standard 4%-of-balance withdrawal rule instead.
+                Off: this scenario uses your saved withdrawal-rate default ({((profile?.defaultWithdrawalRate ?? 0.04) * 100).toFixed(1)}% of balance).
               </p>
             )}
           </div>

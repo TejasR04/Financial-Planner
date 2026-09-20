@@ -7,12 +7,14 @@ import { Panel, PanelHeader } from "@/components/panel";
 import { api, ApiError } from "@/lib/api-client";
 import type { Scenario } from "@/lib/data";
 import { useCurrentAge, useCurrentRetirementBalance } from "@/lib/data-provider";
+import { useAuth } from "@/lib/auth-context";
 
 type Row = { label: string; kind: string; value: number; note: string };
 
 export function SensitivityAnalysis({ scenarios }: { scenarios: Scenario[] }) {
   const currentAge = useCurrentAge();
   const currentRetirementBalance = useCurrentRetirementBalance();
+  const { isDemo } = useAuth();
 
   const [scenarioId, setScenarioId] = useState<string>(scenarios[0]?.id ?? "");
   const [rows, setRows] = useState<Row[] | null>(null);
@@ -34,7 +36,7 @@ export function SensitivityAnalysis({ scenarios }: { scenarios: Scenario[] }) {
   // scenario is currently chosen here would keep showing stale numbers
   // until the user manually switched away and back.
   const assumptionsKey = selectedScenario
-    ? `${selectedScenario.retirementAge}|${selectedScenario.monthlyContribution}|${selectedScenario.expectedReturn}`
+    ? `${selectedScenario.retirementAge}|${selectedScenario.monthlyContribution}|${selectedScenario.expectedReturn}|${selectedScenario.inflationRate}|${selectedScenario.withdrawalRate}|${selectedScenario.desiredMonthlyIncomeToday ?? "rate"}`
     : "";
 
   useEffect(() => {
@@ -72,7 +74,9 @@ export function SensitivityAnalysis({ scenarios }: { scenarios: Scenario[] }) {
         title="Sensitivity analysis"
         description={
           selectedScenario
-            ? `How each input moves ${selectedScenario.name}'s projected outcome — computed live, not illustrative`
+            ? isDemo
+              ? `Illustrative sample changes for ${selectedScenario.name}`
+              : `How each input moves ${selectedScenario.name}'s projected outcome — computed live`
             : "How each input moves the projected outcome"
         }
         actions={
@@ -108,6 +112,7 @@ export function SensitivityAnalysis({ scenarios }: { scenarios: Scenario[] }) {
             {rows?.map((row) => {
               const pos = row.value >= 0;
               const isSuccessMetric = row.kind === "success_pp";
+              const isDollarMetric = row.kind === "illustration";
               return (
                 <div key={row.label} className="flex items-center gap-3">
                   <span className="w-48 shrink-0 text-[13px] text-foreground">
@@ -126,8 +131,7 @@ export function SensitivityAnalysis({ scenarios }: { scenarios: Scenario[] }) {
                     className={`w-16 shrink-0 text-right font-mono text-[13px] font-medium tabular-nums ${pos ? "text-positive" : "text-destructive"}`}
                   >
                     {pos ? "+" : ""}
-                    {row.value}
-                    {isSuccessMetric ? "pp" : "%"}
+                    {isDollarMetric ? `$${Math.abs(row.value).toLocaleString()}` : `${row.value}${isSuccessMetric ? "pp" : "%"}`}
                   </span>
                   <span className="hidden w-40 shrink-0 text-right text-[11px] text-muted-foreground lg:block">
                     {row.note}

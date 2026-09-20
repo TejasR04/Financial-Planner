@@ -118,7 +118,13 @@ export default function TransactionsPage() {
           includeTotals: true,
         }, controller.signal)
         .then((next) => {
-          if (!cancelled) setResult(next);
+          if (cancelled) return;
+          const lastValidPage = Math.max(0, Math.ceil(next.total / PAGE_SIZE) - 1);
+          if (page > lastValidPage) {
+            setPage(lastValidPage);
+            return;
+          }
+          setResult(next);
         })
         .catch((err) => {
           if (!cancelled && !controller.signal.aborted) {
@@ -219,11 +225,14 @@ export default function TransactionsPage() {
         await api.transactions.updateBudgetCategory(pending.transaction.id, pending.categoryId);
       }
       if (createRule) {
-        await api.budgets.createMerchantRule({
+        try { await api.budgets.createMerchantRule({
           ...(pending.categoryId ? { budget_category_id: pending.categoryId } : {}),
           ...(pending.transactionType ? { transaction_type: pending.transactionType } : {}),
           merchant_pattern: pending.transaction.merchant,
-        });
+        }); } catch (ruleError) {
+          setNotice("Transaction updated, but the merchant rule could not be created.");
+          setError(ruleError instanceof ApiError ? ruleError.message : "Couldn't create that merchant rule.");
+        }
       }
       setPendingMerchantRule(null);
       setReloadTick((current) => current + 1);

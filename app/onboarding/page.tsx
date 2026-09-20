@@ -196,6 +196,7 @@ export default function OnboardingPage() {
                   />
                   Include Social Security
                 </label>
+                <p className="text-[11px] text-muted-foreground sm:col-span-2">Saved for future planning. Social Security benefits are not yet included in projection results.</p>
               </div>
             </div>
           </div>

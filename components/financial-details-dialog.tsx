@@ -1,14 +1,16 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DialogShell } from "@/components/ui/dialog-shell";
 import { api, ApiHolding, ApiLoanBalanceRule } from "@/lib/api-client";
 import type { Account } from "@/lib/data";
+import { useDataRefresh } from "@/lib/data-provider";
 
 const input = "h-8 w-full rounded-md border border-border bg-background px-2.5 text-xs";
 
 export function FinancialDetailsDialog({ account, onClose }: { account: Account | null; onClose: () => void }) {
+  const refresh = useDataRefresh();
   const debt = account?.type === "Credit" || account?.type === "Loan";
   const holdingAccount = account?.type === "Investment" || account?.type === "Retirement";
   const [values, setValues] = useState<Record<string, string>>({});
@@ -26,6 +28,9 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
   const [merchantLoading, setMerchantLoading] = useState(false);
   const [merchantError, setMerchantError] = useState("");
   const [savingRule, setSavingRule] = useState(false);
+  const [loadedAccountId, setLoadedAccountId] = useState<string | null>(null);
+  const accountIdRef = useRef<string | null>(account?.id ?? null);
+  useLayoutEffect(() => { accountIdRef.current = account?.id ?? null; }, [account?.id]);
 
   useEffect(() => {
     if (!account || account.institutionId || !debt || ruleMode !== "merchant" || selectedMerchant) return;
@@ -41,22 +46,28 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
   }, [account, debt, ruleMode, merchantPattern, selectedMerchant]);
 
   useEffect(() => {
+    setValues({});
+    setHoldings([]);
+    setLoadedAccountId(null);
     if (!account) return;
+    let current = true;
     setError("");
     setRules([]);
+    setSavingRule(false);
     setMerchantPattern("");
     setSelectedMerchant("");
     if (debt) {
-      api.accounts.liability(account.id).then((row) => setValues(row ? {
+      api.accounts.liability(account.id).then((row) => { if (!current) return; setValues(row ? {
         principal: row.principal ?? "",
         interest_rate: row.interest_rate == null ? "" : String(Number(row.interest_rate) * 100),
         term_months: row.term_months == null ? "" : String(row.term_months),
         minimum_payment: row.minimum_payment ?? "",
         origination_date: row.origination_date ?? "",
-      } : {}));
-      if (!account.institutionId) api.accounts.balanceRules(account.id).then(setRules).catch(() => setRules([]));
+      } : {}); setLoadedAccountId(account.id); }).catch(() => { if (current) setError("Couldn't load debt details."); });
+      if (!account.institutionId) api.accounts.balanceRules(account.id).then((rows) => { if (current) setRules(rows); }).catch(() => { if (current) setRules([]); });
     }
-    if (holdingAccount) api.accounts.holdings(account.id).then(setHoldings);
+    if (holdingAccount) api.accounts.holdings(account.id).then((rows) => { if (current) { setHoldings(rows); setLoadedAccountId(account.id); } }).catch(() => { if (current) setError("Couldn't load holdings."); });
+    return () => { current = false; };
   }, [account, debt, holdingAccount]);
 
   if (!account) return null;
@@ -65,6 +76,7 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
   );
 
   async function save() {
+    const savingAccountId = account!.id;
     try {
       if (debt) {
         await api.accounts.saveLiability(account!.id, {
@@ -83,11 +95,13 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
           asset_class: (values.asset_class || "equity") as ApiHolding["asset_class"],
           as_of: values.as_of,
         });
+        if (accountIdRef.current !== savingAccountId) return;
         setHoldings([...holdings, row]);
         setValues({});
+        refresh();
         return;
       }
-      onClose();
+      if (accountIdRef.current === savingAccountId) onClose();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unable to save details.");
     }
@@ -95,21 +109,23 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
 
   async function addRule() {
     if (savingRule) return;
+    const savingAccountId = account!.id;
     setSavingRule(true);
     try {
       setError("");
       const row = await api.accounts.createBalanceRule(account!.id, ruleMode === "scheduled"
         ? { mode: "scheduled", amount: ruleAmount, frequency: ruleFrequency, next_run_date: ruleDate }
         : { mode: "merchant", merchant_pattern: selectedMerchant });
+      if (accountIdRef.current !== savingAccountId) return;
       setRules([...rules, row]);
       setRuleAmount("");
       setRuleDate("");
       setMerchantPattern("");
       setSelectedMerchant("");
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Unable to add automatic payment.");
+      if (accountIdRef.current === savingAccountId) setError(cause instanceof Error ? cause.message : "Unable to add automatic payment.");
     } finally {
-      setSavingRule(false);
+      if (accountIdRef.current === savingAccountId) setSavingRule(false);
     }
   }
 
@@ -149,13 +165,13 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
       {!debt && holdings.map((holding) => (
         <div key={holding.id} className="mt-2 flex justify-between text-xs">
           <span>{holding.symbol} · ${Number(holding.market_value).toLocaleString()}</span>
-          {!account.institutionId && <button className="text-destructive" onClick={async () => { await api.accounts.deleteHolding(holding.id); setHoldings(holdings.filter((row) => row.id !== holding.id)); }}>Remove</button>}
+          {!account.institutionId && <button className="text-destructive" onClick={async () => { await api.accounts.deleteHolding(holding.id); setHoldings(holdings.filter((row) => row.id !== holding.id)); refresh(); }}>Remove</button>}
         </div>
       ))}
       {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
       <div className="mt-4 flex justify-end gap-2">
         <Button variant="outline" size="sm" onClick={onClose}>Close</Button>
-        {(!holdingAccount || !account.institutionId) && <Button size="sm" onClick={() => void save()}>Save</Button>}
+        {(!holdingAccount || !account.institutionId) && <Button size="sm" disabled={loadedAccountId !== account.id} onClick={() => void save()}>{loadedAccountId === account.id ? "Save" : "Loading…"}</Button>}
       </div>
     </DialogShell>
   );

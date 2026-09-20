@@ -18,6 +18,7 @@ import { formatCurrency } from "@/lib/data";
 import { localMonthKey } from "@/lib/local-date";
 import { SpendingPaceChart } from "@/components/charts/spending-pace-chart";
 import { BudgetBreakdown } from "@/components/budget-breakdown";
+import { useDataRefresh } from "@/lib/data-provider";
 
 
 function shiftMonth(value: string, amount: number) {
@@ -40,6 +41,7 @@ type PendingAssignment = {
 
 export default function BudgetPage() {
   const router = useRouter();
+  const refreshData = useDataRefresh();
   const [month, setMonth] = useState(() => localMonthKey());
   const [summary, setSummary] = useState<ApiBudgetSummary | null>(null);
   const [categories, setCategories] = useState<ApiBudgetCategory[]>([]);
@@ -123,6 +125,7 @@ export default function BudgetPage() {
       setCategoryName("");
       setLimit("");
       await reload();
+      refreshData();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn't create the category.");
     }
@@ -133,6 +136,7 @@ export default function BudgetPage() {
     try {
       await api.budgets.updateCategory(categoryId, { monthly_limit: monthlyLimit });
       await reload();
+      refreshData();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn't update the monthly budget.");
     }
@@ -144,6 +148,7 @@ export default function BudgetPage() {
     try {
       await api.budgets.deleteCategory(category.id);
       await reload();
+      refreshData();
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Couldn't delete the category.");
     }
@@ -177,12 +182,14 @@ export default function BudgetPage() {
       }
       setPendingAssignment(null);
       await reload();
+      refreshData();
     } catch (err) {
       setPendingAssignment(null);
       setError(transactionAssigned
         ? (err instanceof ApiError ? `Transaction assigned, but the merchant rule wasn't saved: ${err.message}` : "Transaction assigned, but the merchant rule wasn't saved.")
         : (err instanceof ApiError ? err.message : "Couldn't assign that transaction."));
       await reload();
+      if (transactionAssigned) refreshData();
     } finally {
       setAssigning(false);
     }

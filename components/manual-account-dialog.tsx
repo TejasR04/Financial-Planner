@@ -67,7 +67,7 @@ export function ManualAccountDialog({
           await api.accounts.rename(account.id, name.trim());
         } else {
           await api.accounts.update(account.id, {
-            name: name.trim(), balance, mask: mask || undefined, apy: apy || undefined,
+            name: name.trim(), balance, mask: mask || null, apy: apy || null,
           });
         }
       } else {

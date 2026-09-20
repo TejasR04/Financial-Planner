@@ -4,6 +4,7 @@ import InvestmentsPage from "@/app/(app)/investments/page";
 
 const mocks = vi.hoisted(() => ({ dashboard: vi.fn() }));
 vi.mock("@/lib/api-client", () => ({ ApiError: class extends Error {}, api: { investments: mocks } }));
+vi.mock("@/lib/data-provider", () => ({ useDataGeneration: () => 0 }));
 vi.mock("recharts", () => ({
   ResponsiveContainer: () => null, CartesianGrid: () => null, Line: () => null, LineChart: () => null,
   Tooltip: () => null, XAxis: () => null, YAxis: () => null,
