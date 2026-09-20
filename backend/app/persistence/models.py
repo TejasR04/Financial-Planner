@@ -381,12 +381,27 @@ class InsightModel(Base):
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
 
 
+class AgentConversationModel(Base):
+    __tablename__ = "agent_conversations"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    title: Mapped[str] = mapped_column(String(120))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now, index=True)
+
+
 class AgentMessageModel(Base):
     __tablename__ = "agent_messages"
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     user_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True
+    )
+    conversation_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("agent_conversations.id", ondelete="CASCADE"), index=True
     )
     role: Mapped[str] = mapped_column(String(16))
     content: Mapped[str] = mapped_column(Text)

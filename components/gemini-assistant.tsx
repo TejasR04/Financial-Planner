@@ -12,13 +12,20 @@ import {
 import {
   Bot,
   CircleAlert,
-  Eraser,
+  History,
+  Plus,
   Send,
   Sparkles,
+  Trash2,
   UserRound,
   Wrench,
 } from "lucide-react";
-import { api, ApiError, type ApiAgentChatResponse } from "@/lib/api-client";
+import {
+  api,
+  ApiError,
+  type ApiAgentChatResponse,
+  type ApiAgentConversation,
+} from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
 import { cn } from "@/lib/utils";
@@ -35,6 +42,7 @@ const SUGGESTIONS = [
   "Can I retire at my saved target age based on the information in Meridian?",
   "How should I use my current monthly surplus?",
 ];
+const CHAT_INACTIVITY_MS = 30 * 60 * 1000;
 
 function temporaryId(role: ChatMessage["role"]) {
   return `${role}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
@@ -113,31 +121,30 @@ function AssistantContent({ content }: { content: string }) {
 
 function LiveGeminiAssistant() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [conversations, setConversations] = useState<ApiAgentConversation[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [input, setInput] = useState("");
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [loadingConversation, setLoadingConversation] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const lastActivityRef = useRef<number | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     api.agent
-      .history()
+      .conversations()
       .then((history) => {
         if (!cancelled) {
-          setMessages(
-            history.map((message) => ({
-              id: message.id,
-              role: message.role,
-              content: message.content,
-            })),
-          );
+          setConversations(history);
         }
       })
       .catch((cause) => {
         if (!cancelled) {
-          setError(cause instanceof Error ? cause.message : "Could not load the conversation.");
+          setError(cause instanceof Error ? cause.message : "Could not load chat history.");
         }
       })
       .finally(() => {
@@ -148,11 +155,54 @@ function LiveGeminiAssistant() {
     };
   }, []);
 
+  async function refreshConversations() {
+    const history = await api.agent.conversations();
+    setConversations(history);
+  }
+
+  async function openConversation(conversationId: string) {
+    if (sending || loadingConversation) return;
+    setLoadingConversation(true);
+    setError(null);
+    try {
+      const history = await api.agent.conversationMessages(conversationId);
+      setMessages(
+        history.map((message) => ({
+          id: message.id,
+          role: message.role,
+          content: message.content,
+        })),
+      );
+      setActiveConversationId(conversationId);
+      lastActivityRef.current = Date.now();
+      setShowHistory(false);
+      setConfirmClear(false);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not open that chat.");
+    } finally {
+      setLoadingConversation(false);
+    }
+  }
+
+  function startNewChat() {
+    if (sending) return;
+    setMessages([]);
+    setActiveConversationId(null);
+    lastActivityRef.current = null;
+    setInput("");
+    setError(null);
+    setConfirmClear(false);
+    setShowHistory(false);
+  }
+
   useEffect(() => {
-    scrollRef.current?.scrollTo({
-      top: scrollRef.current.scrollHeight,
-      behavior: "smooth",
-    });
+    const container = scrollRef.current;
+    if (!container) return;
+    if (typeof container.scrollTo === "function") {
+      container.scrollTo({ top: container.scrollHeight, behavior: "smooth" });
+    } else {
+      container.scrollTop = container.scrollHeight;
+    }
   }, [messages, sending]);
 
   async function sendMessage(message: string) {
@@ -164,13 +214,26 @@ function LiveGeminiAssistant() {
       role: "user",
       content: trimmed,
     };
-    setMessages((current) => [...current, userMessage]);
+    const conversationTimedOut = Boolean(
+      activeConversationId &&
+        lastActivityRef.current &&
+        Date.now() - lastActivityRef.current >= CHAT_INACTIVITY_MS,
+    );
+    const conversationId = conversationTimedOut ? null : activeConversationId;
+    if (conversationTimedOut) {
+      setMessages([userMessage]);
+      setActiveConversationId(null);
+    } else {
+      setMessages((current) => [...current, userMessage]);
+    }
     setInput("");
     setError(null);
     setSending(true);
 
     try {
-      const result = await api.agent.chat(trimmed);
+      const result = await api.agent.chat(trimmed, conversationId);
+      setActiveConversationId(result.conversation_id);
+      lastActivityRef.current = Date.now();
       setMessages((current) => [
         ...current,
         {
@@ -180,6 +243,9 @@ function LiveGeminiAssistant() {
           tools: result.tool_calls,
         },
       ]);
+      void refreshConversations().catch(() => {
+        setError("The response was saved, but chat history could not refresh.");
+      });
     } catch (cause) {
       setMessages((current) => current.filter((message) => message.id !== userMessage.id));
       setInput(trimmed);
@@ -206,13 +272,26 @@ function LiveGeminiAssistant() {
   }
 
   async function clearConversation() {
+    if (!activeConversationId) {
+      startNewChat();
+      return;
+    }
     try {
-      await api.agent.clearHistory();
-      setMessages([]);
-      setError(null);
-      setConfirmClear(false);
+      await api.agent.deleteConversation(activeConversationId);
+      startNewChat();
+      await refreshConversations();
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not clear the conversation.");
+      setError(cause instanceof Error ? cause.message : "Could not delete the chat.");
+    }
+  }
+
+  async function deleteConversation(conversationId: string) {
+    try {
+      await api.agent.deleteConversation(conversationId);
+      if (conversationId === activeConversationId) startNewChat();
+      await refreshConversations();
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Could not delete the chat.");
     }
   }
 
@@ -233,29 +312,91 @@ function LiveGeminiAssistant() {
           </div>
         </div>
 
-        {messages.length > 0 &&
-          (confirmClear ? (
+        <div className="flex flex-wrap items-center justify-end gap-1.5">
+          <Button size="xs" variant="ghost" onClick={() => setShowHistory((current) => !current)}>
+            <History />
+            History{conversations.length > 0 ? ` (${conversations.length})` : ""}
+          </Button>
+          {(activeConversationId || messages.length > 0) && (
+            <Button size="xs" variant="ghost" onClick={startNewChat} disabled={sending}>
+              <Plus />
+              New chat
+            </Button>
+          )}
+          {messages.length > 0 && (confirmClear ? (
             <div className="flex items-center gap-1.5">
-              <span className="mr-1 text-[11px] text-muted-foreground">Clear saved history?</span>
+              <span className="mr-1 text-[11px] text-muted-foreground">Delete this chat?</span>
               <Button size="xs" variant="ghost" onClick={() => setConfirmClear(false)}>
                 Cancel
               </Button>
               <Button size="xs" variant="destructive" onClick={() => void clearConversation()}>
-                Clear
+                Delete
               </Button>
             </div>
           ) : (
             <Button size="xs" variant="ghost" onClick={() => setConfirmClear(true)}>
-              <Eraser />
-              Clear conversation
+              <Trash2 />
+              Delete chat
             </Button>
           ))}
+        </div>
       </div>
 
+      {showHistory && (
+        <div className="border-b border-border bg-muted/15 px-4 py-3">
+          <div className="mb-2 flex items-center justify-between">
+            <p className="text-xs font-semibold text-foreground">Previous chats</p>
+            <Button size="xs" variant="outline" onClick={startNewChat} disabled={sending}>
+              <Plus />
+              New chat
+            </Button>
+          </div>
+          {conversations.length === 0 ? (
+            <p className="py-3 text-center text-xs text-muted-foreground">No previous chats yet.</p>
+          ) : (
+            <div className="max-h-52 space-y-1 overflow-y-auto">
+              {conversations.map((conversation) => (
+                <div
+                  key={conversation.id}
+                  className={cn(
+                    "flex items-center gap-2 rounded-md border px-2 py-1.5",
+                    conversation.id === activeConversationId
+                      ? "border-primary/35 bg-primary/5"
+                      : "border-transparent hover:bg-accent",
+                  )}
+                >
+                  <button
+                    type="button"
+                    className="min-w-0 flex-1 text-left"
+                    onClick={() => void openConversation(conversation.id)}
+                  >
+                    <span className="block truncate text-xs font-medium text-foreground">
+                      {conversation.title}
+                    </span>
+                    <span className="text-[10px] text-muted-foreground">
+                      {new Date(conversation.updated_at).toLocaleDateString()} · {conversation.message_count} messages
+                    </span>
+                  </button>
+                  <Button
+                    type="button"
+                    size="icon-xs"
+                    variant="ghost"
+                    aria-label={`Delete ${conversation.title}`}
+                    onClick={() => void deleteConversation(conversation.id)}
+                  >
+                    <Trash2 />
+                  </Button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       <div ref={scrollRef} className="max-h-[460px] min-h-64 overflow-y-auto p-4">
-        {loadingHistory ? (
+        {loadingHistory || loadingConversation ? (
           <div className="flex min-h-48 items-center justify-center text-[13px] text-muted-foreground">
-            Loading your conversation…
+            Loading chat…
           </div>
         ) : messages.length === 0 ? (
           <div className="mx-auto flex min-h-48 max-w-2xl flex-col items-center justify-center text-center">
@@ -363,13 +504,13 @@ function LiveGeminiAssistant() {
             placeholder="Ask Gemini about your plan…"
             rows={2}
             maxLength={4000}
-            disabled={sending || loadingHistory}
+            disabled={sending || loadingHistory || loadingConversation}
             className="max-h-32 min-h-10 flex-1 resize-none bg-transparent px-2 py-1.5 text-[13px] text-foreground outline-none placeholder:text-muted-foreground"
           />
           <Button
             type="submit"
             size="icon"
-            disabled={!input.trim() || sending || loadingHistory}
+            disabled={!input.trim() || sending || loadingHistory || loadingConversation}
             aria-label="Send message"
           >
             <Send />

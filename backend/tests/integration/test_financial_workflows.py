@@ -102,6 +102,10 @@ async def test_agent_reports_missing_gemini_configuration(client: AsyncClient) -
     assert history.status_code == 200
     assert history.json() == []
 
+    conversations = await client.get("/api/v1/agent/conversations", headers=headers)
+    assert conversations.status_code == 200
+    assert conversations.json() == []
+
     cleared = await client.delete("/api/v1/agent/history", headers=headers)
     assert cleared.status_code == 204
 

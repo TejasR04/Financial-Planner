@@ -20,9 +20,18 @@ export {
 export type ApiTokenResponse = { access_token: string; token_type: string };
 
 export type ApiAgentChatResponse = {
+  conversation_id: string;
   reply: string;
   tool_calls: { tool: string; arguments: Record<string, unknown> }[];
   structured_results: { tool: string; result: unknown }[];
+};
+
+export type ApiAgentConversation = {
+  id: string;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  message_count: number;
 };
 
 export type ApiAgentMessage = {
@@ -389,8 +398,16 @@ export const api = {
       post<void>("/auth/password-reset/confirm", { token, password }),
   },
   agent: {
-    chat: (message: string) =>
-      post<ApiAgentChatResponse>("/agent/chat", { message }),
+    chat: (message: string, conversationId?: string | null) =>
+      post<ApiAgentChatResponse>("/agent/chat", {
+        message,
+        conversation_id: conversationId ?? null,
+      }),
+    conversations: () => get<ApiAgentConversation[]>("/agent/conversations"),
+    conversationMessages: (conversationId: string) =>
+      get<ApiAgentMessage[]>(`/agent/conversations/${conversationId}/messages`),
+    deleteConversation: (conversationId: string) =>
+      del<void>(`/agent/conversations/${conversationId}`),
     history: () => get<ApiAgentMessage[]>("/agent/history"),
     clearHistory: () => del<void>("/agent/history"),
   },

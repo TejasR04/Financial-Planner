@@ -344,8 +344,11 @@ GET    /insights
 GET    /financial-health                                -> latest score
 POST   /financial-health/recalculate
 
-GET    /agent/history                                     -> saved per-user conversation
-DELETE /agent/history                                     -> clear saved conversation
+GET    /agent/conversations                               -> saved per-user chat summaries
+GET    /agent/conversations/{id}/messages                 -> messages in one saved chat
+DELETE /agent/conversations/{id}                          -> delete one saved chat
+GET    /agent/history                                     -> latest saved chat (legacy client support)
+DELETE /agent/history                                     -> clear all saved chats (legacy client support)
 POST   /agent/chat                                        -> {message} -> {reply, tool_calls[], structured_results[]}
 ```
 
