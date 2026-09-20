@@ -2,7 +2,7 @@
 // that knows the backend's response shapes; lib/data-provider.tsx maps
 // these onto the display types in lib/data.ts.
 
-import { del, get, patch, post, put } from "@/lib/api-transport";
+import { del, get, patch, post, put, refreshAccessToken } from "@/lib/api-transport";
 
 export {
   ApiError,
@@ -66,6 +66,7 @@ export type ApiLoanBalanceRule = {
 };
 export type ApiHolding = { id: string; account_id: string; symbol: string; quantity: string; cost_basis: string; market_value: string; asset_class: "equity" | "fixed_income" | "real_estate" | "cash" | "alternatives"; as_of: string };
 export type ApiCashFlowOutlook = { series: { month_index: number; income: string; expenses: string; net: string }[]; average_monthly_surplus: string; projected_savings_rate: string; income_source: string; expense_source: string };
+export type ApiActivitySummary = { history_start: string | null; months: string[]; month_count: number; period_start: string | null; period_end: string | null; label: string; average_monthly_income: string | null; average_monthly_expenses: string | null; average_monthly_surplus: string | null };
 export type ApiDebtPlan = { strategy: "avalanche" | "snowball"; months_to_debt_free: number; total_interest_paid: string; payoff_order: string[]; paid_off: boolean; warning: string | null };
 
 export type ApiAccount = {
@@ -265,6 +266,7 @@ export type ApiCsvImportRow = {
   type: ApiTransaction["type"];
   likely_duplicate: boolean;
   warnings: string[];
+  force_import?: boolean;
 };
 
 export type ApiCsvImportPreview = {
@@ -273,7 +275,7 @@ export type ApiCsvImportPreview = {
   duplicate_count: number;
 };
 
-export type ApiCsvImportOverride = Omit<ApiCsvImportRow, "likely_duplicate" | "warnings"> & { include: boolean };
+export type ApiCsvImportOverride = Omit<ApiCsvImportRow, "likely_duplicate" | "warnings" | "force_import"> & { include: boolean; force_import?: boolean };
 
 export type ApiScenarioPreview = {
   net_worth_at_target_age: string;
@@ -379,7 +381,7 @@ export const api = {
       post<ApiTokenResponse>("/auth/register", { email, password, full_name: fullName }),
     login: (email: string, password: string) =>
       post<ApiTokenResponse>("/auth/login", { email, password }),
-    refresh: () => post<ApiTokenResponse>("/auth/refresh"),
+    refresh: async (): Promise<ApiTokenResponse> => ({ access_token: await refreshAccessToken(), token_type: "bearer" }),
     logout: () => post<void>("/auth/logout"),
     requestPasswordReset: (email: string) =>
       post<void>("/auth/password-reset/request", { email }),
@@ -392,9 +394,12 @@ export const api = {
     history: () => get<ApiAgentMessage[]>("/agent/history"),
     clearHistory: () => del<void>("/agent/history"),
   },
+  activity: {
+    summary: () => get<ApiActivitySummary>("/activity/summary"),
+  },
   users: {
     me: () => get<ApiUser>("/users/me"),
-    updateMe: (body: { full_name?: string; base_currency?: "USD"; date_of_birth?: string }) =>
+    updateMe: (body: { full_name?: string; base_currency?: "USD"; date_of_birth?: string | null }) =>
       patch<ApiUser>("/users/me", body),
     planningProfile: () => get<ApiPlanningProfile>("/users/me/planning-profile"),
     updatePlanningProfile: (body: Partial<{
@@ -426,7 +431,7 @@ export const api = {
       mask?: string;
       apy?: string;
     }) => post<ApiAccount>("/accounts", body),
-    update: (accountId: string, body: { name?: string; balance?: string; mask?: string; apy?: string }) =>
+    update: (accountId: string, body: { name?: string; balance?: string; mask?: string | null; apy?: string | null }) =>
       patch<ApiAccount>(`/accounts/${accountId}`, body),
     rename: (accountId: string, name: string) =>
       patch<ApiAccount>(`/accounts/${accountId}/name`, { name }),
@@ -583,6 +588,8 @@ export const api = {
       retirement_age: number;
       monthly_contribution?: string;
       expected_return?: string;
+      inflation_rate?: string;
+      withdrawal_rate?: string;
       desired_monthly_income_today?: string;
     }) => post<ApiScenario>("/scenarios", body),
     update: (

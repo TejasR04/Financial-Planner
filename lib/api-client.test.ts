@@ -22,6 +22,75 @@ describe("API cache invalidation", () => {
   });
 });
 
+describe("session refresh coordination", () => {
+  afterEach(() => { setAuthToken(null); vi.restoreAllMocks(); });
+
+  it("deduplicates concurrent bootstrap refreshes", async () => {
+    let resolveRefresh!: (response: Response) => void;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      new Promise<Response>((resolve) => { resolveRefresh = resolve; }));
+
+    const first = api.auth.refresh();
+    const second = api.auth.refresh();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    resolveRefresh(new Response(JSON.stringify({ access_token: "fresh" }), { status: 200 }));
+
+    await expect(Promise.all([first, second])).resolves.toEqual([
+      { access_token: "fresh", token_type: "bearer" },
+      { access_token: "fresh", token_type: "bearer" },
+    ]);
+  });
+
+  it("does not install a delayed refresh token after the session changes", async () => {
+    let resolveRefresh!: (response: Response) => void;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      new Promise<Response>((resolve) => { resolveRefresh = resolve; }));
+    const staleRefresh = api.auth.refresh();
+    setAuthToken("new-login-token");
+    resolveRefresh(new Response(JSON.stringify({ access_token: "stale-token" }), { status: 200 }));
+    await expect(staleRefresh).rejects.toMatchObject({ status: 409 });
+
+    fetchMock.mockResolvedValueOnce(new Response(JSON.stringify({ id: "user" }), { status: 200 }));
+    await api.users.me();
+    const headers = new Headers(fetchMock.mock.calls.at(-1)?.[1]?.headers);
+    expect(headers.get("Authorization")).toBe("Bearer new-login-token");
+  });
+
+  it("does not refresh or retry an old request under a newly signed-in session", async () => {
+    setAuthToken("old-session");
+    let resolveOld!: (response: Response) => void;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(() =>
+      new Promise<Response>((resolve) => { resolveOld = resolve; }));
+    const oldRequest = api.users.me();
+
+    setAuthToken("new-session");
+    resolveOld(new Response(JSON.stringify({ detail: "expired" }), { status: 401 }));
+
+    await expect(oldRequest).rejects.toMatchObject({ status: 409 });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it("shares one refresh across parallel 401 responses", async () => {
+    setAuthToken("expired");
+    let refreshCalls = 0;
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockImplementation(async (input, init) => {
+      const url = new URL(String(input));
+      if (url.pathname.endsWith("/auth/refresh")) {
+        refreshCalls += 1;
+        return new Response(JSON.stringify({ access_token: "renewed" }), { status: 200 });
+      }
+      const auth = new Headers(init?.headers).get("Authorization");
+      return auth === "Bearer renewed"
+        ? new Response(JSON.stringify({ id: url.pathname }), { status: 200 })
+        : new Response(JSON.stringify({ detail: "expired" }), { status: 401 });
+    });
+
+    await Promise.all([api.users.me(), api.users.planningProfile()]);
+    expect(refreshCalls).toBe(1);
+    expect(fetchMock).toHaveBeenCalledTimes(5);
+  });
+});
+
 describe("formatApiErrorDetail", () => {
   it("turns structured validation details into readable field messages", () => {
     expect(formatApiErrorDetail([

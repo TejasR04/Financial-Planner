@@ -7,6 +7,7 @@ const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/a
 let demoMode = false;
 let dataGeneration = 0;
 let authToken: string | null = null;
+let authEpoch = 0;
 let onUnauthorized: (() => void) | null = null;
 let refreshPromise: Promise<string> | null = null;
 
@@ -27,6 +28,12 @@ export function setDemoMode(enabled: boolean) {
 /** Called once by AuthProvider so the client always has the latest token. */
 export function setAuthToken(token: string | null) {
   if (token !== authToken || token === null) clearApiCache();
+  if (token !== authToken || token === null) authEpoch += 1;
+  authToken = token;
+}
+
+function installRefreshedAuthToken(token: string) {
+  if (token !== authToken) clearApiCache();
   authToken = token;
 }
 
@@ -66,6 +73,7 @@ async function request<T>(
   options: RequestInit = {},
   retryAfterRefresh = true,
 ): Promise<T> {
+  const requestEpoch = authEpoch;
   if (demoMode && !path.startsWith("/auth/")) {
     if (options.method && options.method !== "GET") clearApiCache();
     return structuredClone(demoRequest(path, options)) as T;
@@ -86,28 +94,21 @@ async function request<T>(
   if (!path.startsWith("/auth/") && generation !== dataGeneration) {
     throw new ApiError(409, "Data mode changed.");
   }
+  if (!path.startsWith("/auth/") && requestEpoch !== authEpoch) {
+    throw new ApiError(409, "Session changed while the request was in progress.");
+  }
   if (mutates) clearApiCache();
 
   const isAuthEntryPoint = path === "/auth/login" || path === "/auth/register";
   if (res.status === 401 && retryAfterRefresh && !isAuthEntryPoint && path !== "/auth/refresh") {
     try {
-      if (!refreshPromise) {
-        refreshPromise = request<TokenResponse>(
-          "/auth/refresh",
-          { method: "POST" },
-          false,
-        ).then((tokens) => {
-          setAuthToken(tokens.access_token);
-          return tokens.access_token;
-        }).finally(() => {
-          refreshPromise = null;
-        });
-      }
-      await refreshPromise;
+      await refreshAccessToken();
       return request<T>(path, options, false);
     } catch {
-      setAuthToken(null);
-      onUnauthorized?.();
+      if (authEpoch === requestEpoch) {
+        setAuthToken(null);
+        onUnauthorized?.();
+      }
       throw new ApiError(401, "Session expired. Please sign in again.");
     }
   }
@@ -129,6 +130,24 @@ async function request<T>(
 
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;
+}
+
+/** Shared by bootstrap and 401 recovery. Web Locks serialize refresh-cookie
+ * rotation across tabs, while the module promise deduplicates this tab. */
+export function refreshAccessToken(): Promise<string> {
+  if (refreshPromise) return refreshPromise;
+  const epoch = authEpoch;
+  const rotate = async () => {
+    if (authEpoch !== epoch) throw new ApiError(409, "Session changed while waiting to refresh.");
+    const tokens = await request<TokenResponse>("/auth/refresh", { method: "POST" }, false);
+    if (authEpoch !== epoch) throw new ApiError(409, "Session changed while refreshing.");
+    installRefreshedAuthToken(tokens.access_token);
+    return tokens.access_token;
+  };
+  const locks = typeof navigator !== "undefined" ? navigator.locks : undefined;
+  refreshPromise = (locks ? locks.request("meridian-session-refresh", rotate) : rotate())
+    .finally(() => { refreshPromise = null; });
+  return refreshPromise;
 }
 
 export const get = <T>(path: string, options?: RequestInit) =>

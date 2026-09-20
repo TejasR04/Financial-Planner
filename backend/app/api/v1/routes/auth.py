@@ -3,6 +3,7 @@ import logging
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
+from fastapi.responses import JSONResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_db
@@ -13,7 +14,7 @@ from app.core.security import (
     create_refresh_token,
     decode_token,
     hash_password,
-    verify_password,
+    verify_password_and_update,
 )
 from app.core.config import get_settings
 from app.core.rate_limit import SlidingWindowRateLimiter
@@ -66,7 +67,13 @@ def _set_refresh_cookie(response: Response, token: str) -> None:
 
 def _clear_refresh_cookie(response: Response) -> None:
     settings = get_settings()
-    response.delete_cookie(key=settings.refresh_cookie_name, path=f"{settings.api_v1_prefix}/auth")
+    response.delete_cookie(
+        key=settings.refresh_cookie_name,
+        path=f"{settings.api_v1_prefix}/auth",
+        httponly=True,
+        secure=settings.refresh_cookie_secure,
+        samesite=settings.refresh_cookie_samesite,
+    )
 
 
 async def _start_session(user_id: UUID, response: Response, db: AsyncSession) -> TokenResponse:
@@ -104,8 +111,12 @@ async def login(
     if result is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
     user, hashed = result
-    if not verify_password(body.password, hashed):
+    verified, upgraded_hash = verify_password_and_update(body.password, hashed)
+    if not verified:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+
+    if upgraded_hash is not None:
+        await repo.update_password(user.id, upgraded_hash)
 
     tokens = await _start_session(user.id, response, db)
     await db.commit()
@@ -117,7 +128,7 @@ async def refresh(
     request: Request,
     response: Response,
     db: AsyncSession = Depends(get_db),
-) -> TokenResponse:
+) -> TokenResponse | Response:
     refresh_token = request.cookies.get(get_settings().refresh_cookie_name)
     if not refresh_token:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
@@ -125,8 +136,9 @@ async def refresh(
     consumed = await repo.consume(refresh_token)
     if consumed is None:
         await db.commit()
-        _clear_refresh_cookie(response)
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid refresh token")
+        rejected = JSONResponse(status_code=status.HTTP_401_UNAUTHORIZED, content={"detail": "Invalid refresh token"})
+        _clear_refresh_cookie(rejected)
+        return rejected
     replacement_token = create_refresh_token()
     replacement = await repo.create(
         consumed.user_id, replacement_token, get_settings().refresh_token_expire_days
