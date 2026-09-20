@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.domain.entities import FinancialSnapshot
 from app.domain.enums import AccountType, TransactionType
 from app.persistence.activity_history import load_budget_activity_summary
+from app.ai.relevant_activity import build_relevant_activity_context
 
 
 def _money(value: Decimal) -> str:
@@ -16,7 +17,7 @@ def _money(value: Decimal) -> str:
 
 
 async def build_user_financial_context(
-    session: AsyncSession, snapshot: FinancialSnapshot
+    session: AsyncSession, snapshot: FinancialSnapshot, message: str | None = None
 ) -> str:
     """Return current planning facts without identifiers or transaction detail."""
     history, (monthly_income, monthly_expenses) = await load_budget_activity_summary(
@@ -114,4 +115,10 @@ async def build_user_financial_context(
             if source.active
         ],
     }
+    if message:
+        requested_activity = await build_relevant_activity_context(
+            session, snapshot.user.id, message, snapshot.as_of
+        )
+        if requested_activity:
+            payload["requested_activity"] = requested_activity
     return json.dumps(payload, separators=(",", ":"), sort_keys=True)

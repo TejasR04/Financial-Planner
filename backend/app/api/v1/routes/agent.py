@@ -86,7 +86,7 @@ async def chat(
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
 
         snapshot = await build_financial_snapshot(db, current_user.id)
-        user_context = await build_user_financial_context(db, snapshot)
+        user_context = await build_user_financial_context(db, snapshot, body.message.strip())
         message_repo = AgentMessageRepository(db)
         stored = await message_repo.list_for_user(current_user.id)
         conversation_history = (

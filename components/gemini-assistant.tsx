@@ -228,7 +228,7 @@ function LiveGeminiAssistant() {
               Gemini financial assistant
             </h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Uses your current Meridian data and deterministic calculation tools
+              Uses summary data by default; relevant transaction details are included only when you ask for them
             </p>
           </div>
         </div>
