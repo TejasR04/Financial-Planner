@@ -17,6 +17,7 @@ from sqlalchemy import delete
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.api.deps import get_db
+from app.core.config import get_settings
 from app.main import app
 from app.persistence import models  # noqa: F401 - registers all tables with Base
 from app.persistence.session import Base
@@ -46,6 +47,7 @@ async def test_engine(migrate_test_database):
 
 @pytest_asyncio.fixture
 async def client(test_engine) -> AsyncIterator[AsyncClient]:
+    get_settings().registration_enabled = True
     session_factory = async_sessionmaker(test_engine, expire_on_commit=False, class_=AsyncSession)
     async with test_engine.begin() as connection:
         for table in reversed(Base.metadata.sorted_tables):
@@ -58,6 +60,7 @@ async def client(test_engine) -> AsyncIterator[AsyncClient]:
     app.dependency_overrides[get_db] = override_db
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver") as test_client:
         yield test_client
+    get_settings().registration_enabled = False
     app.dependency_overrides.clear()
 
 

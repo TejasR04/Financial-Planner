@@ -94,9 +94,15 @@ export default function LoginPage() {
 
         <p className="mt-4 text-center text-[13px] text-muted-foreground">
           Don&apos;t have an account?{" "}
-          <Link href="/register" className="font-medium text-primary hover:underline">
+          <button
+            type="button"
+            disabled
+            aria-disabled="true"
+            title="Registration is closed"
+            className="cursor-not-allowed font-medium text-muted-foreground opacity-60"
+          >
             Create one
-          </Link>
+          </button>
         </p>
       </div>
     </div>

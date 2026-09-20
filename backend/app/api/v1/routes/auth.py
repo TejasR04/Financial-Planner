@@ -90,6 +90,8 @@ async def _start_session(user_id: UUID, response: Response, db: AsyncSession) ->
 async def register(
     body: RegisterRequest, request: Request, response: Response, db: AsyncSession = Depends(get_db)
 ) -> TokenResponse:
+    if not get_settings().registration_enabled:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Registration is closed")
     _enforce_rate_limit(register_limiter, _client_key(request))
     repo = UserRepository(db)
     if await repo.get_by_email(body.email) is not None:

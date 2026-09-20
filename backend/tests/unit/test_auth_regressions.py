@@ -50,6 +50,24 @@ def auth_test_app(db: AsyncMock) -> FastAPI:
     return app
 
 
+@pytest.mark.asyncio
+async def test_registration_is_rejected_when_closed(monkeypatch: pytest.MonkeyPatch) -> None:
+    db = AsyncMock()
+    repo = AsyncMock()
+    monkeypatch.setattr(auth, "get_settings", lambda: SimpleNamespace(registration_enabled=False))
+    monkeypatch.setattr(auth, "UserRepository", lambda session: repo)
+    async with httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=auth_test_app(db)), base_url="http://test"
+    ) as client:
+        response = await client.post(
+            "/api/v1/auth/register",
+            json={"email": "new@example.com", "password": "not-allowed", "full_name": "New User"},
+        )
+    assert response.status_code == 403
+    assert response.json() == {"detail": "Registration is closed"}
+    repo.get_by_email.assert_not_awaited()
+
+
 def test_cookie_deletion_preserves_cross_site_cookie_attributes(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(auth, "get_settings", lambda: SimpleNamespace(
         refresh_cookie_name="meridian_refresh", api_v1_prefix="/api/v1",

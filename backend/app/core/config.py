@@ -25,6 +25,7 @@ class Settings(BaseSettings):
     refresh_cookie_secure: bool = False
     refresh_cookie_samesite: str = "lax"
     password_reset_token_expire_minutes: int = 30
+    registration_enabled: bool = False
     frontend_url: str = "http://localhost:3000"
     smtp_host: str | None = None
     smtp_port: int = 587
