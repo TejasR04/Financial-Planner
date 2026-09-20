@@ -30,6 +30,9 @@ _BROAD_DETAIL_REQUEST = re.compile(
     r"|(?:\b(?:transactions?|purchases?|charges?|deposits?)\b.{0,20}\b(?:recent|latest|last|this)\b)"
 )
 _BUDGET_WORDS = re.compile(r"\b(budget|category|categories|spent|spend|spending)\b")
+_COMPARISON_WORDS = re.compile(
+    r"\b(compare|comparison|histor(?:y|ical)|trend|previous months?|prior months?|other months?|month over month)\b"
+)
 _GENERIC_MERCHANT_WORDS = {
     "payment", "purchase", "online", "transfer", "transaction", "debit", "credit",
     "card", "store", "market", "shop", "pending", "deposit", "withdrawal",
@@ -148,6 +151,7 @@ async def build_relevant_activity_context(
     today = reference or date.today()
     lowered = " ".join(message.lower().split())
     explicit_period = _requested_period(lowered, today)
+    comparison_request = bool(_COMPARISON_WORDS.search(lowered))
     categories = [row for row in await BudgetRepository(session).list_categories(user_id) if row.active]
     normalized_question = " ".join(re.findall(r"[a-z0-9]+", lowered.replace("&", " and ")))
     matched_categories = [
@@ -164,9 +168,13 @@ async def build_relevant_activity_context(
 
     # Merchant matching happens locally over a bounded ledger window. Names
     # that do not occur in the question never leave Meridian.
+    trailing_start = shift_month(today.replace(day=1), -11)
     lookup_start, lookup_end = (
-        (explicit_period[0], explicit_period[1])
-        if explicit_period else (shift_month(today.replace(day=1), -11), today)
+        (trailing_start, today)
+        if comparison_request else (
+            (explicit_period[0], explicit_period[1])
+            if explicit_period else (trailing_start, today)
+        )
     )
     ledger, ledger_total = await TransactionRepository(session).list_for_user(
         user_id, since=lookup_start, until=lookup_end, limit=2000
@@ -182,7 +190,9 @@ async def build_relevant_activity_context(
     if not relevant:
         return None
 
-    if explicit_period:
+    if comparison_request:
+        start, end, label = lookup_start, lookup_end, "trailing 12 months"
+    elif explicit_period:
         start, end, label = explicit_period
     elif matched_merchants or (detail_request and not matched_categories):
         start, end, label = lookup_start, lookup_end, "trailing 12 months"
@@ -221,6 +231,37 @@ async def build_relevant_activity_context(
             }
             for category in selected_categories
         ]
+        if comparison_request:
+            monthly_totals: dict[tuple[UUID, date], _CategoryTotals] = defaultdict(_CategoryTotals)
+            for row in rows:
+                if row.budget_category_id not in category_ids or row.ignored_from_budget:
+                    continue
+                if row.type.value not in {"expense", "transfer"}:
+                    continue
+                month = row.posted_at.replace(day=1)
+                totals = monthly_totals[(row.budget_category_id, month)]
+                totals.spent += -row.amount
+                totals.transactions += 1
+            months: list[date] = []
+            month = start.replace(day=1)
+            while month <= end.replace(day=1):
+                months.append(month)
+                month = shift_month(month, 1)
+            payload["budget_category_monthly_history"] = [
+                {
+                    "name": category.name,
+                    "months": [
+                        {
+                            "month": month.isoformat()[:7],
+                            "net_spending": _money(monthly_totals[(category.id, month)].spent),
+                            "transaction_count": monthly_totals[(category.id, month)].transactions,
+                            "month_to_date": month == today.replace(day=1),
+                        }
+                        for month in months
+                    ],
+                }
+                for category in selected_categories
+            ]
 
     include_details = bool(matched_merchants or amounts or detail_request)
     if include_details:

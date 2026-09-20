@@ -116,3 +116,26 @@ async def test_period_spending_question_sends_category_totals_without_raw_transa
     assert result["period"]["label"] == "last month"
     assert {row["name"] for row in result["budget_categories"]} == {"Drinks & Dining", "Groceries"}
     assert "transactions" not in result
+
+
+@pytest.mark.asyncio
+async def test_follow_up_comparison_includes_monthly_category_history(activity_repositories) -> None:
+    result = await relevant_activity.build_relevant_activity_context(
+        object(),
+        uuid4(),
+        "Compare to other previous months\nPrior user request: spending on Dining this month",
+        date(2026, 9, 20),
+    )
+
+    assert result["period"]["label"] == "trailing 12 months"
+    history = result["budget_category_monthly_history"][0]
+    assert history["name"] == "Drinks & Dining"
+    assert history["months"][-2] == {
+        "month": "2026-08", "net_spending": "0.00", "transaction_count": 0,
+        "month_to_date": False,
+    }
+    assert history["months"][-1] == {
+        "month": "2026-09", "net_spending": "47.50", "transaction_count": 2,
+        "month_to_date": True,
+    }
+    assert "transactions" not in result

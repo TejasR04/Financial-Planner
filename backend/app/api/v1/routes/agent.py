@@ -1,5 +1,6 @@
 from datetime import datetime
 import logging
+import re
 from typing import Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
@@ -7,7 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette.concurrency import run_in_threadpool
 
-from app.ai.agent import AgentOrchestrator, GeminiConfigurationError
+from app.ai.agent import AgentOrchestrator, GeminiConfigurationError, GeminiTemporaryError
 from app.ai.context import build_user_financial_context
 from app.api.deps import get_current_user, get_db
 from app.domain.entities import User
@@ -44,6 +45,24 @@ class AgentMessageResponse(BaseModel):
 
 chat_rate_limiter = SlidingWindowRateLimiter(limit=10, window_seconds=60)
 chat_concurrency_limiter = PerKeyConcurrencyLimiter(limit=1)
+
+
+def _activity_selection_query(message: str, history: list[dict[str, str]]) -> str:
+    """Carry the prior user topic into short comparison/follow-up requests."""
+    follow_up = bool(
+        re.search(
+            r"\b(compare|comparison|previous|prior|other months?|what about|how about|same|that|those|instead)\b",
+            message,
+            re.IGNORECASE,
+        )
+    )
+    if not follow_up:
+        return message
+    prior = next(
+        (item["content"] for item in reversed(history) if item.get("role") == "user"),
+        None,
+    )
+    return f"{message}\nPrior user request: {prior}" if prior else message
 
 
 @router.get("/history", response_model=list[AgentMessageResponse])
@@ -85,8 +104,6 @@ async def chat(
         except GeminiConfigurationError as exc:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail=str(exc)) from exc
 
-        snapshot = await build_financial_snapshot(db, current_user.id)
-        user_context = await build_user_financial_context(db, snapshot, body.message.strip())
         message_repo = AgentMessageRepository(db)
         stored = await message_repo.list_for_user(current_user.id)
         conversation_history = (
@@ -94,11 +111,21 @@ async def chat(
             if stored
             else [item.model_dump() for item in body.history]
         )
+        message = body.message.strip()
+        snapshot = await build_financial_snapshot(db, current_user.id)
+        selection_query = _activity_selection_query(message, conversation_history)
+        user_context = await build_user_financial_context(db, snapshot, selection_query)
 
         try:
             result = await run_in_threadpool(
-                orchestrator.handle_message, body.message.strip(), conversation_history, 4, user_context
+                orchestrator.handle_message, message, conversation_history, 4, user_context
             )
+        except GeminiTemporaryError as exc:
+            logger.warning("gemini_temporarily_unavailable", extra={"user_id": user_key}, exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Gemini is temporarily busy. Please try again in a moment.",
+            ) from exc
         except Exception as exc:
             logger.exception("gemini_request_failed", extra={"user_id": user_key})
             raise HTTPException(
@@ -111,7 +138,7 @@ async def chat(
                 detail="Gemini returned an empty analysis. Please try again.",
             )
 
-        await message_repo.append(current_user.id, "user", body.message.strip())
+        await message_repo.append(current_user.id, "user", message)
         await message_repo.append(current_user.id, "assistant", result.reply)
         await message_repo.prune(current_user.id)
         await db.commit()

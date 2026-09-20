@@ -1,8 +1,10 @@
 from types import SimpleNamespace
+from unittest.mock import Mock
 
 import pytest
+from google.genai import errors
 
-from app.ai.agent import AgentOrchestrator, GeminiConfigurationError
+from app.ai.agent import AgentOrchestrator, GeminiConfigurationError, GeminiTemporaryError
 from app.ai import tool_registry
 from app.core.config import get_settings
 
@@ -64,3 +66,55 @@ def test_missing_gemini_key_is_explicit(monkeypatch: pytest.MonkeyPatch) -> None
     monkeypatch.setattr(get_settings(), "gemini_api_key", None)
     with pytest.raises(GeminiConfigurationError, match="GEMINI_API_KEY"):
         AgentOrchestrator()
+
+
+def test_temporary_gemini_failures_are_retried() -> None:
+    response = SimpleNamespace(candidates=[], text="Recovered response")
+    models = SimpleNamespace(
+        generate_content=Mock(
+            side_effect=[
+                errors.ServerError(503, {"error": {"message": "busy"}}),
+                errors.ClientError(429, {"error": {"message": "rate limited"}}),
+                response,
+            ]
+        )
+    )
+    sleeps: list[float] = []
+
+    result = AgentOrchestrator(
+        client=SimpleNamespace(models=models), model="test-model", sleep=sleeps.append
+    ).handle_message("Help")
+
+    assert result.reply == "Recovered response"
+    assert models.generate_content.call_count == 3
+    assert sleeps == [0.4, 1.0]
+
+
+def test_non_retryable_gemini_failure_is_not_retried() -> None:
+    models = SimpleNamespace(
+        generate_content=Mock(
+            side_effect=errors.ClientError(400, {"error": {"message": "bad request"}})
+        )
+    )
+    orchestrator = AgentOrchestrator(
+        client=SimpleNamespace(models=models), model="test-model", sleep=lambda _: None
+    )
+
+    with pytest.raises(errors.ClientError):
+        orchestrator.handle_message("Help")
+    assert models.generate_content.call_count == 1
+
+
+def test_temporary_gemini_failure_has_clear_terminal_error() -> None:
+    models = SimpleNamespace(
+        generate_content=Mock(
+            side_effect=errors.ServerError(503, {"error": {"message": "busy"}})
+        )
+    )
+    orchestrator = AgentOrchestrator(
+        client=SimpleNamespace(models=models), model="test-model", sleep=lambda _: None
+    )
+
+    with pytest.raises(GeminiTemporaryError):
+        orchestrator.handle_message("Help")
+    assert models.generate_content.call_count == 3

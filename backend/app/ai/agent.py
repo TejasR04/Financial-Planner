@@ -12,10 +12,12 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+import time
+from typing import Any, Callable
 
+import httpx
 from google import genai
-from google.genai import types
+from google.genai import errors, types
 
 from app.ai import tool_registry
 # Imported for registration side effects only.
@@ -43,8 +45,17 @@ class GeminiConfigurationError(RuntimeError):
     """Raised when AI is requested before a Gemini key is configured."""
 
 
+class GeminiTemporaryError(RuntimeError):
+    """Raised after retryable Gemini failures exhaust their retry budget."""
+
+
 class AgentOrchestrator:
-    def __init__(self, client: Any | None = None, model: str | None = None):
+    def __init__(
+        self,
+        client: Any | None = None,
+        model: str | None = None,
+        sleep: Callable[[float], None] | None = None,
+    ):
         settings = get_settings()
         if client is None:
             if not settings.gemini_api_key:
@@ -54,6 +65,22 @@ class AgentOrchestrator:
             client = genai.Client(api_key=settings.gemini_api_key)
         self.client = client
         self.model = model or settings.gemini_model
+        self._sleep = sleep or time.sleep
+
+    def _generate_content(self, **kwargs: Any) -> Any:
+        delays = (0.4, 1.0)
+        for attempt in range(len(delays) + 1):
+            try:
+                return self.client.models.generate_content(**kwargs)
+            except Exception as exc:
+                if not _is_temporary_gemini_error(exc):
+                    raise
+                if attempt == len(delays):
+                    raise GeminiTemporaryError(
+                        "Gemini remained unavailable after temporary failures."
+                    ) from exc
+                self._sleep(delays[attempt])
+        raise AssertionError("unreachable")
 
     def handle_message(
         self,
@@ -80,7 +107,7 @@ class AgentOrchestrator:
         structured_results: list[dict[str, Any]] = []
 
         for _ in range(max_tool_rounds):
-            response = self.client.models.generate_content(
+            response = self._generate_content(
                 model=self.model,
                 contents=contents,
                 config=types.GenerateContentConfig(
@@ -116,7 +143,7 @@ class AgentOrchestrator:
 
         # Ran out of tool rounds; ask once more for a final answer with no
         # further tool calls permitted, so the user always gets a reply.
-        final = self.client.models.generate_content(
+        final = self._generate_content(
             model=self.model,
             contents=contents,
             config=types.GenerateContentConfig(system_instruction=system_instruction),
@@ -136,3 +163,11 @@ def _function_calls(response: Any) -> list[Any]:
             if function_call is not None:
                 calls.append(function_call)
     return calls
+
+
+def _is_temporary_gemini_error(exc: Exception) -> bool:
+    if isinstance(exc, errors.ServerError):
+        return True
+    if isinstance(exc, errors.APIError):
+        return getattr(exc, "code", None) in {429, 500, 502, 503, 504}
+    return isinstance(exc, (httpx.TransportError, TimeoutError, ConnectionError))
