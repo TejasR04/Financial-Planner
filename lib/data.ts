@@ -78,6 +78,7 @@ export type CashflowPoint = {
   expenses: number;
   available?: boolean;
   incomplete?: boolean;
+  partialHistory?: boolean;
 };
 
 export type Account = {
@@ -147,6 +148,7 @@ export type Scenario = {
   // plan's life-expectancy assumption (95 by default) — i.e. "monthly
   // retirement income", not to be confused with total net worth above.
   monthlyIncomeAtLifeExpectancy: number | null;
+  withdrawalRateCapacity: number | null;
   retirementAge: number;
   monthlyContribution: number;
   expectedReturn: number; // decimal, e.g. 0.065 — needed to prefill the edit dialog

@@ -1,6 +1,7 @@
 // Isolated, tab-memory sample data. No demo request ever falls through to the server.
 import type { ApiAccount, ApiTransaction, ApiBudgetCategory, ApiScenario, ApiHolding } from "@/lib/api-client";
 import { cashFlowAmounts, isCardPayment } from "@/lib/cash-flow";
+import { budgetCashFlowAmounts } from "@/lib/budget-cash-flow";
 
 const now = () => new Date().toISOString();
 const money = (n: number) => n.toFixed(2);
@@ -55,8 +56,9 @@ function sampleHistory(reference = now().slice(0, 7)) {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}`;
   }).filter(key => `${key}-01` >= first);
   const rows = db.transactions.filter(row => months.includes(row.posted_at.slice(0, 7)));
+  const activeCategoryIds = new Set(db.categories.filter(category => category.active).map(category => category.id));
   const average = rows.reduce((sum, row) => {
-    const amounts = cashFlowAmounts(row);
+    const amounts = budgetCashFlowAmounts(row, activeCategoryIds);
     return { income: sum.income + amounts.income, expenses: sum.expenses + amounts.expenses };
   }, { income: 0, expenses: 0 });
   return { months, income: average.income / Math.max(1, months.length), expenses: average.expenses / Math.max(1, months.length) };
@@ -155,6 +157,11 @@ export function demoRequest(path: string, options: RequestInit = {}): unknown {
     return { ...sampleSpending(month), month: `${month}-01`, categories: db.categories.filter(c => c.active).map(c => { const spent = -db.transactions.filter(t => t.posted_at.startsWith(month) && t.budget_category_id === c.id && !t.ignored_from_budget && t.type === "expense").reduce((n, t) => n + Number(t.amount), 0); return { budget_category_id: c.id, name: c.name, group_name: c.group_name, budgeted: c.monthly_limit, spent: money(spent), pending: "0", remaining: money(Number(c.monthly_limit) - spent), forecast: money(spent) }; }), uncategorized: { spent: "0", pending: "0", transaction_count: 0 } };
   }
   if (p === "/budgets/review-queue") return db.transactions.filter(t => t.type === "expense" && !t.budget_category_id && !t.ignored_from_budget).map(t => ({ ...t, provider_category: t.category }));
+  if (p === "/activity/summary") {
+    const { months, income, expenses } = sampleHistory();
+    const label = months.length ? `${months[0]} through ${months.at(-1)}` : "No completed months available";
+    return { history_start: db.transactions.reduce((date, row) => row.posted_at < date ? row.posted_at : date, "9999-12-31") === "9999-12-31" ? null : db.transactions.reduce((date, row) => row.posted_at < date ? row.posted_at : date, "9999-12-31"), months: months.map(month => `${month}-01`), month_count: months.length, period_start: months.length ? `${months[0]}-01` : null, period_end: months.length ? `${months.at(-1)}-01` : null, label, average_monthly_income: months.length ? money(income) : null, average_monthly_expenses: months.length ? money(expenses) : null, average_monthly_surplus: months.length ? money(income - expenses) : null };
+  }
   if (p === "/insights" || p === "/insights/generate") {
     const { months, income, expenses } = sampleHistory();
     return [{ id: "insight-1", kind: income < expenses ? "alert" : "observation", text: months.length ? `Sample monthly income averages $${money(income)} and expenses average $${money(expenses)}, leaving $${money(income - expenses)} per month.` : "A completed month of sample activity is needed for an average.", meta: `${months.length} completed sample months`, generated_at: now() }];

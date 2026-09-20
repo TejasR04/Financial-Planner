@@ -17,7 +17,7 @@ import { ChartTooltip } from "./chart-tooltip";
 export function CashflowChart({ data, onSelect }: { data?: CashflowPoint[]; onSelect?: (point: CashflowPoint, direction: "inflow" | "outflow") => void }) {
   const cashflowSeries = useCashflowSeries();
   const points = (data ?? cashflowSeries).map((point) => ({ ...point,
-    month: `${point.month}${point.incomplete ? " MTD" : ""}${point.available === false ? " —" : ""}`,
+    month: `${point.month}${point.incomplete ? " MTD" : point.partialHistory ? " partial" : ""}${point.available === false ? " —" : ""}`,
     income: point.available === false ? null : point.income,
     expenses: point.available === false ? null : point.expenses,
   }));

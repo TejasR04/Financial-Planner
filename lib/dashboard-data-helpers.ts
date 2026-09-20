@@ -1,15 +1,16 @@
 import type { ApiTransaction } from "@/lib/api-client";
-import { cashFlowAmounts } from "@/lib/cash-flow";
+import { budgetCashFlowAmounts } from "@/lib/budget-cash-flow";
 import type { CashflowPoint } from "@/lib/data";
 
 /** Date and cash-flow transformations used while mapping dashboard API data. */
-export function ageFromBirthDate(dob: string | null, today = new Date()): number {
-  if (!dob) return 35;
-  const birth = new Date(dob);
-  let age = today.getFullYear() - birth.getFullYear();
+export function ageFromBirthDate(dob: string | null, today = new Date()): number | null {
+  if (!dob) return null;
+  const [birthYear, birthMonth, birthDay] = dob.slice(0, 10).split("-").map(Number);
+  if (!birthYear || !birthMonth || !birthDay) return null;
+  let age = today.getFullYear() - birthYear;
   const hadBirthday =
-    today.getMonth() > birth.getMonth()
-    || (today.getMonth() === birth.getMonth() && today.getDate() >= birth.getDate());
+    today.getMonth() + 1 > birthMonth
+    || (today.getMonth() + 1 === birthMonth && today.getDate() >= birthDay);
   if (!hadBirthday) age -= 1;
   return age;
 }
@@ -53,8 +54,10 @@ export function buildCashflowSeries(
   start: Date,
   end: Date,
   today = new Date(),
+  historyStart?: string | null,
+  activeCategoryIds?: ReadonlySet<string>,
 ): CashflowPoint[] {
-  const firstDate = transactions.reduce(
+  const firstDate = historyStart ?? transactions.reduce(
     (first, transaction) => transaction.posted_at < first ? transaction.posted_at : first,
     "9999-12-31",
   );
@@ -70,7 +73,7 @@ export function buildCashflowSeries(
     const posted = new Date(`${transaction.posted_at}T00:00:00`);
     const bucket = buckets.get(monthKey(posted));
     if (!bucket) continue;
-    const amounts = cashFlowAmounts(transaction);
+    const amounts = budgetCashFlowAmounts(transaction, activeCategoryIds);
     bucket.income += amounts.income;
     bucket.expenses += amounts.expenses;
   }
@@ -82,6 +85,7 @@ export function buildCashflowSeries(
       monthKey: key,
       available: key >= firstDate.slice(0, 7),
       incomplete: key === currentMonth,
+      partialHistory: key === firstDate.slice(0, 7) && firstDate.slice(8, 10) !== "01",
       income: value.income,
       expenses: value.expenses,
     };

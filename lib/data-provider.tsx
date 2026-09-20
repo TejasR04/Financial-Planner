@@ -5,6 +5,7 @@ import {
   useCallback,
   useContext,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -17,7 +18,6 @@ import {
   buildCashflowSeries,
   formatShortDate,
   formatTimestamp,
-  monthKey,
   twelveMonthWindow,
 } from "@/lib/dashboard-data-helpers";
 import { RESPONSE_CACHE_TTL_MS } from "@/lib/response-cache";
@@ -72,12 +72,13 @@ type AllocationMeta = {
 };
 
 type ProfileSummary = {
-  currentAge: number;
+  currentAge: number | null;
   currentRetirementBalance: number;
   netWorthToday: number;
   targetRetirementAge: number;
   expectedReturn: string; // decimal string, e.g. "0.065" — as the API expects
   inflationRate: string;
+  defaultWithdrawalRate: number;
   monthlySurplusEstimate: number;
 };
 
@@ -118,7 +119,7 @@ type DashboardData = Pick<DataState, "kpis" | "netWorthSeries" | "allocation" | 
 type AccountsData = Pick<DataState, "accounts" | "institutions">;
 type InsightsData = Pick<DataState, "recommendations" | "insights" | "financialHealth">;
 type ProfileData = Pick<DataState, "profile" | "userAccount">;
-type DataMeta = Pick<DataState, "error" | "refresh">;
+type DataMeta = Pick<DataState, "error" | "refresh"> & { generation: number };
 
 const DashboardContext = createContext<DashboardData | null>(null);
 const AccountsContext = createContext<AccountsData | null>(null);
@@ -153,6 +154,15 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [refreshTick, setRefreshTick] = useState(0);
+  const modeRef = useRef(isDemo);
+
+  useLayoutEffect(() => {
+    if (modeRef.current === isDemo) return;
+    modeRef.current = isDemo;
+    setState(emptyState);
+    setLoading(true);
+    setError(null);
+  }, [isDemo]);
 
   const lastRefreshAt = useRef(Date.now());
   const refresh = useCallback(() => {
@@ -198,6 +208,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           recommendationRows,
           health,
           allocationAnalysis,
+          investmentDashboard,
+          activitySummary,
+          budgetCategories,
         ] = await Promise.all([
           api.users.me(),
           api.users.planningProfile(),
@@ -215,6 +228,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           optional("recommendations", api.recommendations.list("new"), []),
           optional("financial health", api.financialHealth.get(), null, false),
           optional("allocation", api.accounts.allocation(), null),
+          optional("investment details", api.investments.dashboard(), null, false),
+          optional("activity summary", api.activity.summary(), null, false),
+          optional("budget categories", api.budgets.categories(controller.signal), []),
         ]);
         const insightRows = await optional("insights", api.insights.list(), []);
 
@@ -259,37 +275,40 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           type: t.type,
           status: t.status,
         }));
-        const cashflowSeries = buildCashflowSeries(transactionRows, window.start, window.end);
+        const activeCategoryIds = new Set(budgetCategories.filter((category) => category.active).map((category) => category.id));
+        const cashflowSeries = buildCashflowSeries(
+          transactionRows,
+          window.start,
+          window.end,
+          new Date(),
+          activitySummary?.history_start,
+          activeCategoryIds,
+        );
         // Do not treat months before the first imported transaction as real
         // zero-income months. Plaid history can be shorter than the chart's
         // requested 12-month window.
-        const firstTransactionMonth = transactionRows.length
-          ? monthKey(new Date(`${transactionRows.reduce((earliest, row) => row.posted_at < earliest ? row.posted_at : earliest, transactionRows[0].posted_at)}T00:00:00`))
-          : null;
-        const actualMonths = firstTransactionMonth
-          ? cashflowSeries.slice(Math.max(0, Array.from({ length: 12 }, (_, index) => monthKey(new Date(window.start.getFullYear(), window.start.getMonth() + index, 1))).indexOf(firstTransactionMonth)))
-          : [];
         // The current month is incomplete and would depress both KPIs early
         // in the month. Keep it on the chart, but calculate the headline
         // cash-flow and savings-rate figures from completed months only.
-        const completedMonths = actualMonths.slice(0, -1);
-        const averageDivisor = Math.max(1, completedMonths.length);
-        const averageMonthlyIncome = completedMonths.reduce((sum, month) => sum + month.income, 0) / averageDivisor;
-        const averageMonthlyExpenses = completedMonths.reduce((sum, month) => sum + month.expenses, 0) / averageDivisor;
-        const averageMonthlySurplus = averageMonthlyIncome - averageMonthlyExpenses;
+        const averageMonthlyIncome = activitySummary?.average_monthly_income == null ? null : parseFloat(activitySummary.average_monthly_income);
+        const averageMonthlyExpenses = activitySummary?.average_monthly_expenses == null ? null : parseFloat(activitySummary.average_monthly_expenses);
+        const averageMonthlySurplus = activitySummary?.average_monthly_surplus == null ? null : parseFloat(activitySummary.average_monthly_surplus);
 
         // --- kpis (all values are based on the selected trailing window)
         const netWorthToday = parseFloat(accountList.net_worth);
-        const cashHoldings = (allocationAnalysis?.breakdown ?? [])
-          .filter((item) => item.asset_class === "cash")
-          .reduce((sum, item) => sum + parseFloat(item.market_value), 0);
+        const taxableInvestmentIds = new Set(
+          (investmentDashboard?.accounts ?? [])
+            .filter((account) => account.type === "investment")
+            .map((account) => account.id),
+        );
+        const cashHoldings = (investmentDashboard?.holdings ?? [])
+          .filter((holding) => holding.asset_class === "cash" && taxableInvestmentIds.has(holding.account_id))
+          .reduce((sum, holding) => sum + parseFloat(holding.market_value), 0);
         const liquidAssets = accountList.data
-          .filter((a) => a.type === "depository")
+          .filter((a) => a.type === "depository" && parseFloat(a.balance) > 0)
           .reduce((s, a) => s + parseFloat(a.balance), 0) + cashHoldings;
-        const savingsRate = averageMonthlyIncome > 0 ? (averageMonthlySurplus / averageMonthlyIncome) * 100 : null;
-        const rangeLabel = completedMonths.length
-          ? `${new Date(`${completedMonths[0].monthKey}-01T00:00:00`).toLocaleDateString("en-US", { month: "short", year: "numeric" })}–${new Date(`${completedMonths[completedMonths.length - 1].monthKey}-01T00:00:00`).toLocaleDateString("en-US", { month: "short", year: "numeric" })}`
-          : "No completed months available";
+        const savingsRate = averageMonthlyIncome != null && averageMonthlyIncome > 0 && averageMonthlySurplus != null ? (averageMonthlySurplus / averageMonthlyIncome) * 100 : null;
+        const rangeLabel = activitySummary?.label ?? "No completed months available";
         const kpis: Kpi[] = [
           {
             id: "net-worth",
@@ -303,13 +322,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             label: "Liquid Assets",
             value: formatCurrency(liquidAssets),
             raw: liquidAssets,
-            hint: "Depository balances plus cash-equivalent investment holdings",
+            hint: "Positive depository balances plus cash holdings in taxable brokerage accounts",
           },
           {
             id: "monthly-cash-flow",
             label: "Average monthly cash flow",
-            value: completedMonths.length ? formatCurrency(averageMonthlySurplus, { sign: true }) : "—",
-            raw: averageMonthlySurplus,
+            value: averageMonthlySurplus == null ? "—" : formatCurrency(averageMonthlySurplus, { sign: true }),
+            raw: averageMonthlySurplus ?? 0,
             hint: `Income less expenses · ${rangeLabel}`,
           },
           {
@@ -330,13 +349,13 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             net: netWorthToday,
           },
         ];
-        try {
+        if (currentAge != null) try {
           const projection = await api.simulations.netWorth({
             current_age: currentAge,
             retirement_age: planningProfile.target_retirement_age,
             years: Math.max(1, planningProfile.target_retirement_age - currentAge),
             expected_return: planningProfile.expected_return,
-            annual_net_contribution: String(Math.max(0, averageMonthlySurplus) * 12),
+            annual_net_contribution: String(Math.max(0, averageMonthlySurplus ?? 0) * 12),
           });
           netWorthSeries = [
             ...netWorthSeries,
@@ -397,6 +416,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           description: s.description ?? "",
           netWorthAt65: null,
           monthlyIncomeAtLifeExpectancy: null,
+          withdrawalRateCapacity: null,
           retirementAge: s.retirement_age,
           monthlyContribution: parseFloat(s.monthly_contribution),
           expectedReturn: parseFloat(s.expected_return),
@@ -405,7 +425,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             ? parseFloat(s.desired_monthly_income_today)
             : null,
           withdrawalRate: parseFloat(s.withdrawal_rate),
-          retirementYear: String(currentYear + s.retirement_age - currentAge),
+          retirementYear: currentAge == null ? "Age needed" : String(currentYear + s.retirement_age - currentAge),
           successRate: null,
           projectionStatus: "loading",
           color: CHART_COLORS[i % CHART_COLORS.length],
@@ -440,7 +460,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           targetRetirementAge: planningProfile.target_retirement_age,
           expectedReturn: planningProfile.expected_return,
           inflationRate: planningProfile.inflation_rate,
-          monthlySurplusEstimate: Math.max(0, Math.round(averageMonthlySurplus)),
+          defaultWithdrawalRate: parseFloat(planningProfile.default_withdrawal_rate),
+          monthlySurplusEstimate: Math.max(0, Math.round(averageMonthlySurplus ?? 0)),
         };
 
         const userAccount: UserAccountDetails = {
@@ -489,13 +510,14 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
       cancelled = true;
       controller.abort();
     };
-  }, [status, refreshTick]);
+  }, [status, isDemo, refreshTick]);
 
   useEffect(() => {
     if (
       status !== "authenticated" ||
       pathname !== "/projections" ||
       !state.profile ||
+      state.profile.currentAge == null ||
       state.scenarios.length === 0 ||
       !state.scenarios.some((scenario) => scenario.projectionStatus === "loading")
     ) {
@@ -533,6 +555,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
               ...scenario,
               netWorthAt65: null,
               monthlyIncomeAtLifeExpectancy: null,
+              withdrawalRateCapacity: null,
               successRate: null,
               projectionStatus: "unavailable",
               modelMetadata: undefined,
@@ -551,7 +574,9 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
                 ?? preview.retirement_trajectory.find((point) => point.age === scenario.retirementAge)?.balance
                 ?? preview.net_worth_at_target_age,
             ),
-            monthlyIncomeAtLifeExpectancy: preview.monthly_sustainable_withdrawal
+            monthlyIncomeAtLifeExpectancy: scenario.desiredMonthlyIncomeToday
+              ?? (preview.monthly_sustainable_withdrawal ? parseFloat(preview.monthly_sustainable_withdrawal) : null),
+            withdrawalRateCapacity: preview.monthly_sustainable_withdrawal
               ? parseFloat(preview.monthly_sustainable_withdrawal)
               : null,
             successRate: preview.success_rate
@@ -601,7 +626,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
     profile: state.profile,
     userAccount: state.userAccount,
   }), [state.profile, state.userAccount]);
-  const metaValue = useMemo<DataMeta>(() => ({ error, refresh }), [error, refresh]);
+  const metaValue = useMemo<DataMeta>(() => ({ error, refresh, generation: refreshTick }), [error, refresh, refreshTick]);
 
   if (status === "authenticated" && loading && state === emptyState) {
     return (
@@ -653,4 +678,5 @@ export const useFinancialHealthData = () => useRequiredContext(InsightsContext).
 export const useProfileSummary = () => useRequiredContext(ProfileContext).profile;
 export const useUserAccount = () => useRequiredContext(ProfileContext).userAccount;
 export const useDataRefresh = () => useRequiredContext(DataMetaContext).refresh;
+export const useDataGeneration = () => useRequiredContext(DataMetaContext).generation;
 export const useDataError = () => useRequiredContext(DataMetaContext).error;
