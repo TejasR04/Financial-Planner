@@ -111,7 +111,6 @@ class ActivityHistory:
             if (
                 effective_type == "income"
                 and row.amount > ZERO
-                and row.budget_category_id is None
                 and not is_card_payment(effective_type, row.provider_category, row.merchant)
             ):
                 income += row.amount

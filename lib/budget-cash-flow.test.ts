@@ -34,10 +34,11 @@ describe("budget-based cash flow", () => {
     }
   });
 
-  it("counts only positive classified income outside budget categories", () => {
+  it("counts positive classified income even when an old budget link remains", () => {
     expect(budgetCashFlowAmounts(row({ type: "income", budget_category_id: null, amount: "4000", ignored_from_budget: true }))).toEqual({ income: 4000, expenses: 0 });
+    expect(budgetCashFlowAmounts(row({ type: "income", amount: "4000" }))).toEqual({ income: 4000, expenses: 0 });
     for (const transaction of [row({ type: "transfer", budget_category_id: null, amount: "4000" }),
-      row({ type: "income", budget_category_id: null, amount: "-4000" }), row({ type: "income", amount: "4000" })]) {
+      row({ type: "income", budget_category_id: null, amount: "-4000" })]) {
       expect(budgetCashFlowAmounts(transaction).income).toBe(0);
     }
   });

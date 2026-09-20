@@ -41,7 +41,9 @@ def test_budget_cashflow_uses_classified_income_and_categorized_net_spending():
     category_id = uuid4()
     history = ActivityHistory([date(2026, 8, 1)], [
         row("2026-08-01", "6000", "income"),
-        row("2026-08-02", "100", "income"),
+        # Legacy imports may retain a budget assignment on a row whose
+        # authoritative type is income. The assignment cannot suppress it.
+        row("2026-08-02", "100", "income", budget_category_id=category_id),
         row("2026-08-03", "-2000", budget_category_id=category_id),
         row("2026-08-04", "200", budget_category_id=category_id),
         row("2026-08-05", "-500"),

@@ -15,7 +15,10 @@ export function budgetCashFlowAmounts(
   const categorized = transaction.budget_category_id != null
     && (!activeCategoryIds || activeCategoryIds.has(transaction.budget_category_id));
   return {
-    income: transaction.type === "income" && !transaction.budget_category_id && amount > 0 ? amount : 0,
+    // The transaction type is authoritative for income. Older imports can
+    // retain a stale budget-category assignment, but income never contributes
+    // to budget spending and that stale link must not hide it from cash flow.
+    income: transaction.type === "income" && amount > 0 ? amount : 0,
     expenses: categorized && !transaction.ignored_from_budget
       && (transaction.type === "expense" || transaction.type === "transfer") ? -amount : 0,
   };
