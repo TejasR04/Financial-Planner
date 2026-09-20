@@ -68,5 +68,9 @@ async def test_context_adds_only_activity_selected_for_the_question(monkeypatch)
 
     assert payload["requested_activity"] == selected
     selector.assert_awaited_once_with(
-        ANY, user.id, "Show the Named merchant transaction last month", snapshot.as_of
+        ANY,
+        user.id,
+        "Show the Named merchant transaction last month",
+        snapshot.as_of,
+        [],
     )

@@ -29,9 +29,12 @@ _BROAD_DETAIL_REQUEST = re.compile(
     r"(?:\b(?:my|show|list|recent|latest|all)\b.{0,30}\b(?:transactions?|purchases?|charges?|deposits?)\b)"
     r"|(?:\b(?:transactions?|purchases?|charges?|deposits?)\b.{0,20}\b(?:recent|latest|last|this)\b)"
 )
-_BUDGET_WORDS = re.compile(r"\b(budget|category|categories|spent|spend|spending)\b")
+_BUDGET_WORDS = re.compile(
+    r"\b(budget|category|categories|spent|spend|spending|expenditure|expenditures)\b"
+)
 _COMPARISON_WORDS = re.compile(
-    r"\b(compare|comparison|histor(?:y|ical)|trend|previous months?|prior months?|other months?|month over month)\b"
+    r"\b(compare|comparison|histor(?:y|ical)|trend|average|previous months?|prior months?|"
+    r"past months?|other months?|month over month)\b"
 )
 _GENERIC_MERCHANT_WORDS = {
     "payment", "purchase", "online", "transfer", "transaction", "debit", "credit",
@@ -146,15 +149,25 @@ async def build_relevant_activity_context(
     user_id: UUID,
     message: str,
     reference: date | None = None,
+    completed_history_months: list[date] | None = None,
 ) -> dict | None:
     """Return only ledger facts selected by the user's current question."""
     today = reference or date.today()
     lowered = " ".join(message.lower().split())
-    explicit_period = _requested_period(lowered, today)
+    current_message = message.split("\nPrior user request:", 1)[0]
+    current_lowered = " ".join(current_message.lower().split())
+    explicit_period = _requested_period(current_lowered, today) or _requested_period(lowered, today)
     comparison_request = bool(_COMPARISON_WORDS.search(lowered))
     categories = [row for row in await BudgetRepository(session).list_categories(user_id) if row.active]
     normalized_question = " ".join(re.findall(r"[a-z0-9]+", lowered.replace("&", " and ")))
-    matched_categories = [
+    normalized_current = " ".join(
+        re.findall(r"[a-z0-9]+", current_lowered.replace("&", " and "))
+    )
+    current_categories = [
+        row for row in categories
+        if _category_is_mentioned(row.name, normalized_current)
+    ]
+    matched_categories = current_categories or [
         row for row in categories
         if _category_is_mentioned(row.name, normalized_question)
     ]
@@ -179,7 +192,12 @@ async def build_relevant_activity_context(
     ledger, ledger_total = await TransactionRepository(session).list_for_user(
         user_id, since=lookup_start, until=lookup_end, limit=2000
     )
-    matched_merchants = sorted({row.merchant for row in ledger if _merchant_is_mentioned(row.merchant, message)})
+    current_merchants = sorted({
+        row.merchant for row in ledger if _merchant_is_mentioned(row.merchant, current_message)
+    })
+    matched_merchants = current_merchants or sorted({
+        row.merchant for row in ledger if _merchant_is_mentioned(row.merchant, message)
+    })
     broad_detail_request = bool(_BROAD_DETAIL_REQUEST.search(lowered))
     detail_request = bool(
         matched_merchants or amounts or broad_detail_request
@@ -242,14 +260,35 @@ async def build_relevant_activity_context(
                 totals = monthly_totals[(row.budget_category_id, month)]
                 totals.spent += -row.amount
                 totals.transactions += 1
-            months: list[date] = []
-            month = start.replace(day=1)
-            while month <= end.replace(day=1):
-                months.append(month)
-                month = shift_month(month, 1)
+            if completed_history_months is not None:
+                completed_months = [
+                    month for month in completed_history_months
+                    if start <= month <= end
+                ]
+                months = [*completed_months]
+                current_month = today.replace(day=1)
+                if start <= current_month <= end and current_month not in months:
+                    months.append(current_month)
+            else:
+                months = []
+                month = start.replace(day=1)
+                while month <= end.replace(day=1):
+                    months.append(month)
+                    month = shift_month(month, 1)
+                completed_months = [month for month in months if month != today.replace(day=1)]
             payload["budget_category_monthly_history"] = [
                 {
                     "name": category.name,
+                    "average_monthly_spending_completed_months": _money(
+                        sum(
+                            (
+                                monthly_totals[(category.id, month)].spent
+                                for month in completed_months
+                            ),
+                            Decimal("0"),
+                        ) / max(1, len(completed_months))
+                    ) if completed_months else None,
+                    "completed_month_count": len(completed_months),
                     "months": [
                         {
                             "month": month.isoformat()[:7],

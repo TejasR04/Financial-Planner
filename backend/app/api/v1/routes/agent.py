@@ -59,24 +59,26 @@ class AgentConversationResponse(BaseModel):
 
 chat_rate_limiter = SlidingWindowRateLimiter(limit=10, window_seconds=60)
 chat_concurrency_limiter = PerKeyConcurrencyLimiter(limit=1)
+_FOLLOW_UP_WORDS = re.compile(
+    r"\b(compare|comparison|previous|prior|past months?|other months?|what about|how about|"
+    r"same|that|those|instead|trend|histor(?:y|ical))\b",
+    re.IGNORECASE,
+)
 
 
 def _activity_selection_query(message: str, history: list[dict[str, str]]) -> str:
-    """Carry the prior user topic into short comparison/follow-up requests."""
-    follow_up = bool(
-        re.search(
-            r"\b(compare|comparison|previous|prior|other months?|what about|how about|same|that|those|instead)\b",
-            message,
-            re.IGNORECASE,
-        )
-    )
-    if not follow_up:
+    """Carry a user topic through a chain of comparison/follow-up requests."""
+    if not _FOLLOW_UP_WORDS.search(message):
         return message
-    prior = next(
-        (item["content"] for item in reversed(history) if item.get("role") == "user"),
-        None,
-    )
-    return f"{message}\nPrior user request: {prior}" if prior else message
+    parts = [message]
+    for item in reversed(history):
+        if item.get("role") != "user":
+            continue
+        prior = item["content"]
+        parts.append(f"Prior user request: {prior}")
+        if not _FOLLOW_UP_WORDS.search(prior):
+            break
+    return "\n".join(parts)
 
 
 def _conversation_title(message: str) -> str:

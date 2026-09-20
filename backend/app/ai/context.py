@@ -117,7 +117,7 @@ async def build_user_financial_context(
     }
     if message:
         requested_activity = await build_relevant_activity_context(
-            session, snapshot.user.id, message, snapshot.as_of
+            session, snapshot.user.id, message, snapshot.as_of, history.months
         )
         if requested_activity:
             payload["requested_activity"] = requested_activity

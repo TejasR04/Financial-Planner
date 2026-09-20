@@ -139,3 +139,36 @@ async def test_follow_up_comparison_includes_monthly_category_history(activity_r
         "month_to_date": True,
     }
     assert "transactions" not in result
+
+
+@pytest.mark.asyncio
+async def test_average_past_expenditure_uses_completed_category_months(activity_repositories) -> None:
+    result = await relevant_activity.build_relevant_activity_context(
+        object(),
+        uuid4(),
+        "Look at my average transaction expenditure in past months\n"
+        "Prior user request: spending on Groceries",
+        date(2026, 9, 20),
+        [date(2026, 8, 1)],
+    )
+
+    history = result["budget_category_monthly_history"][0]
+    assert history["name"] == "Groceries"
+    assert history["average_monthly_spending_completed_months"] == "80.00"
+    assert history["completed_month_count"] == 1
+    assert [month["month"] for month in history["months"]] == ["2026-08", "2026-09"]
+
+
+@pytest.mark.asyncio
+async def test_current_category_overrides_prior_follow_up_topic(activity_repositories) -> None:
+    result = await relevant_activity.build_relevant_activity_context(
+        object(),
+        uuid4(),
+        "Compare Dining over past months\nPrior user request: spending on Groceries",
+        date(2026, 9, 20),
+        [date(2026, 8, 1)],
+    )
+
+    assert [row["name"] for row in result["budget_category_monthly_history"]] == [
+        "Drinks & Dining"
+    ]
