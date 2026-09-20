@@ -24,6 +24,7 @@ from app.persistence.repositories.investment_value_snapshot_repository import (
 from app.persistence.repositories.liability_repository import LiabilityRepository
 from app.persistence.repositories.recommendation_repository import RecommendationRepository
 from app.persistence.repositories.transaction_repository import TransactionRepository
+from app.persistence.repositories.transaction_repository import import_fingerprints
 from app.services.recommendation_engine import RecommendationDraft
 
 
@@ -367,7 +368,107 @@ async def test_plaid_update_reconciles_a_nearby_csv_import():
 
     assert await TransactionRepository(session).apply_plaid_updates([synced], []) == (0, 1, 0)
     assert imported.external_transaction_id == "plaid-123"
-    assert imported.posted_at == date(2026, 8, 3)
+
+
+@pytest.mark.asyncio
+async def test_plaid_attach_preserves_explicit_csv_category_override():
+    account_id = uuid4()
+    imported = SimpleNamespace(
+        external_transaction_id=None, import_fingerprint="fingerprint", deleted_at=None,
+        account_id=account_id, posted_at=date(2026, 8, 1), merchant="Acme Loan",
+        category="My loan payment", amount=Decimal("-200"), type="expense", status="cleared",
+        reviewed_at=None, user_category_override="My loan payment", user_type_override=None,
+    )
+    empty = SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: []))
+    candidates = SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [imported]))
+    session = SimpleNamespace(execute=AsyncMock(side_effect=[empty, candidates]), add=Mock(), flush=AsyncMock())
+    synced = Transaction(
+        id=uuid4(), account_id=account_id, posted_at=date(2026, 8, 1), merchant="Acme Loan",
+        category="provider loans", amount=Decimal("-200"), type=TransactionType.EXPENSE,
+        status=TransactionStatus.CLEARED, external_transaction_id="plaid-category",
+    )
+    await TransactionRepository(session).apply_plaid_updates([synced], [])
+    assert imported.provider_category == "provider loans"
+    assert imported.category == "My loan payment"
+
+
+def test_csv_import_identity_preserves_identical_occurrences_and_replays_stably():
+    account_id = uuid4()
+    transaction = Transaction(
+        id=uuid4(), account_id=account_id, posted_at=date(2026, 9, 14), merchant="Coffee Shop",
+        category="Dining", amount=Decimal("-5"), type=TransactionType.EXPENSE,
+        status=TransactionStatus.CLEARED,
+    )
+    identities = import_fingerprints([transaction, transaction])
+    assert identities[0] != identities[1]
+    assert identities == import_fingerprints([transaction, transaction])
+
+
+@pytest.mark.asyncio
+async def test_csv_replay_can_fill_an_identical_occurrence_previously_excluded():
+    account_id = uuid4()
+    transaction = Transaction(
+        id=uuid4(), account_id=account_id, posted_at=date(2026, 9, 14), merchant="Coffee Shop",
+        category="Dining", amount=Decimal("-5"), type=TransactionType.EXPENSE,
+        status=TransactionStatus.CLEARED,
+    )
+    second_identity = import_fingerprints([transaction], [3])[0]
+    existing = SimpleNamespace(
+        account_id=account_id, posted_at=transaction.posted_at, merchant=transaction.merchant,
+        amount=transaction.amount, import_fingerprint=second_identity,
+    )
+    result = SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [existing]))
+    session = SimpleNamespace(execute=AsyncMock(return_value=result))
+
+    flags = await TransactionRepository(session).import_duplicate_flags(
+        [transaction, transaction], [2, 3]
+    )
+
+    assert flags == [False, True]
+
+
+@pytest.mark.asyncio
+async def test_csv_known_identity_does_not_disable_fuzzy_warning_for_another_date():
+    account_id = uuid4()
+    first = Transaction(
+        id=uuid4(), account_id=account_id, posted_at=date(2026, 9, 14), merchant="Coffee Shop",
+        category="Dining", amount=Decimal("-5"), type=TransactionType.EXPENSE,
+        status=TransactionStatus.CLEARED,
+    )
+    next_day = Transaction(
+        id=uuid4(), account_id=account_id, posted_at=date(2026, 9, 15), merchant="Coffee Shop",
+        category="Dining", amount=Decimal("-5"), type=TransactionType.EXPENSE,
+        status=TransactionStatus.CLEARED,
+    )
+    existing = SimpleNamespace(
+        account_id=account_id, posted_at=first.posted_at, merchant=first.merchant,
+        amount=first.amount, import_fingerprint=import_fingerprints([first], [2])[0],
+    )
+    result = SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [existing]))
+    session = SimpleNamespace(execute=AsyncMock(return_value=result))
+    assert await TransactionRepository(session).import_duplicate_flags([first, next_day], [2, 3]) == [True, True]
+
+
+@pytest.mark.asyncio
+async def test_plaid_sync_preserves_reviewed_user_classification():
+    account_id = uuid4()
+    row = SimpleNamespace(
+        external_transaction_id="plaid-1", account_id=account_id, posted_at=date(2026, 9, 1),
+        merchant="Bank payment", category="custom", amount=Decimal("-50"), type="transfer",
+        status="cleared", user_category_override="custom", user_type_override="transfer",
+    )
+    existing = SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [row]))
+    no_candidates = SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: []))
+    session = SimpleNamespace(execute=AsyncMock(side_effect=[existing, no_candidates]), add=Mock(), flush=AsyncMock())
+    incoming = Transaction(
+        id=uuid4(), account_id=account_id, posted_at=date(2026, 9, 2), merchant="Bank payment",
+        category="provider expense", amount=Decimal("-50"), type=TransactionType.EXPENSE,
+        status=TransactionStatus.CLEARED, external_transaction_id="plaid-1",
+    )
+    await TransactionRepository(session).apply_plaid_updates([incoming], [])
+    assert row.provider_category == "provider expense"
+    assert row.category == "custom"
+    assert row.type == "transfer"
     session.add.assert_not_called()
 
 

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from datetime import date
 from uuid import UUID, uuid4
 
 from sqlalchemy import select
@@ -55,20 +54,10 @@ class UserRepository(BaseRepository[UserModel]):
         result = await self.session.execute(select(UserModel.id).where(UserModel.archived_at.is_(None)))
         return list(result.scalars().all())
 
-    async def update(
-        self,
-        user_id: UUID,
-        full_name: str | None = None,
-        base_currency: str | None = None,
-        date_of_birth: date | None = None,
-    ) -> User:
+    async def update(self, user_id: UUID, **fields: object) -> User:
         row = await self._get_or_raise("User", user_id)
-        if full_name is not None:
-            row.full_name = full_name
-        if base_currency is not None:
-            row.base_currency = base_currency
-        if date_of_birth is not None:
-            row.date_of_birth = date_of_birth
+        for key, value in fields.items():
+            setattr(row, key, value)
         await self.session.flush()
         return _to_domain(row)
 
@@ -93,8 +82,7 @@ class UserRepository(BaseRepository[UserModel]):
         )
         row = result.scalar_one()
         for key, value in fields.items():
-            if value is not None:
-                setattr(row, key, value)
+            setattr(row, key, value)
         await self.session.flush()
         return PlanningProfile(
             user_id=row.user_id,

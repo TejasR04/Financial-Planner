@@ -24,6 +24,7 @@ from app.schemas.transaction import (
     TransactionUpdateRequest,
 )
 from app.schemas.budget import TransactionBudgetAssignmentRequest
+from app.services.loan_balance_automation_service import LoanBalanceAutomationService
 
 router = APIRouter(prefix="/transactions", tags=["transactions"])
 
@@ -141,6 +142,7 @@ async def create_transaction(
         status=body.status,
     )
     created = await TransactionRepository(db).create(body.account_id, transaction)
+    await LoanBalanceAutomationService(db).apply(current_user.id)
     await db.commit()
     return TransactionResponse.model_validate(created, from_attributes=True)
 
@@ -158,6 +160,7 @@ async def update_transaction(
     updated = await TransactionRepository(db).update_for_user(
         current_user.id, transaction_id, **fields
     )
+    await LoanBalanceAutomationService(db).apply(current_user.id)
     await db.commit()
     return TransactionResponse.model_validate(updated, from_attributes=True)
 
@@ -169,6 +172,7 @@ async def delete_transaction(
     db: AsyncSession = Depends(get_db),
 ) -> None:
     await TransactionRepository(db).delete_for_user(current_user.id, transaction_id)
+    await LoanBalanceAutomationService(db).apply(current_user.id)
     await db.commit()
 
 
@@ -229,7 +233,7 @@ async def preview_csv_import(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     duplicate_flags = await TransactionRepository(db).import_duplicate_flags(
-        [row.transaction for row in parsed]
+        [row.transaction for row in parsed], [row.row_number for row in parsed]
     )
     rows = [
         CSVImportPreviewRow(
@@ -267,8 +271,11 @@ async def import_csv(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
+    overrides = {override.row_number: override for override in body.overrides}
     created, skipped = await TransactionRepository(db).bulk_create_deduplicated(
-        [row.transaction for row in parsed]
+        [row.transaction for row in parsed],
+        [overrides[row.row_number].force_import if row.row_number in overrides else False for row in parsed],
+        [row.row_number for row in parsed],
     )
     await db.commit()
     return CSVImportResponse(

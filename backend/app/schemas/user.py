@@ -3,7 +3,7 @@ from decimal import Decimal
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class UserResponse(BaseModel):
@@ -20,6 +20,13 @@ class UserUpdateRequest(BaseModel):
     full_name: str | None = None
     base_currency: Literal["USD"] | None = None
     date_of_birth: date | None = None
+
+    @model_validator(mode="after")
+    def required_fields_cannot_be_cleared(self):
+        for field in ("full_name", "base_currency"):
+            if field in self.model_fields_set and getattr(self, field) is None:
+                raise ValueError(f"{field} cannot be null")
+        return self
 
 
 class PlanningProfileResponse(BaseModel):
@@ -44,3 +51,11 @@ class PlanningProfileUpdateRequest(BaseModel):
     inflation_rate: Decimal | None = None
     target_savings_rate: Decimal | None = None
     cash_reserve_target: Decimal | None = None
+
+    @model_validator(mode="after")
+    def required_fields_cannot_be_cleared(self):
+        nullable = {"target_savings_rate", "cash_reserve_target"}
+        for field in self.model_fields_set - nullable:
+            if getattr(self, field) is None:
+                raise ValueError(f"{field} cannot be null")
+        return self

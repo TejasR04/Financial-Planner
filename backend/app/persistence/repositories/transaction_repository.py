@@ -6,7 +6,7 @@ import hashlib
 import re
 from uuid import UUID, uuid4
 
-from sqlalchemy import case, delete, func, select
+from sqlalchemy import case, func, select, update
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from app.core.exceptions import NotFoundError, ValidationError
@@ -188,10 +188,16 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         await self.session.flush()
         return [_to_domain(row) for row in rows]
 
-    async def bulk_create_deduplicated(self, transactions: list[Transaction]) -> tuple[list[Transaction], int]:
-        """Insert CSV rows unless a likely copy already exists."""
+    async def bulk_create_deduplicated(
+        self, transactions: list[Transaction], force_import: list[bool] | None = None,
+        identity_numbers: list[int] | None = None,
+    ) -> tuple[list[Transaction], int]:
+        """Insert occurrence-aware CSV rows while keeping file replays idempotent."""
         if not transactions:
             return [], 0
+        force_import = force_import or [False] * len(transactions)
+        if len(force_import) != len(transactions):
+            raise ValueError("force_import must align with transactions")
         account_ids = {transaction.account_id for transaction in transactions}
         first_date = min(transaction.posted_at for transaction in transactions) - timedelta(days=IMPORT_DATE_TOLERANCE_DAYS)
         last_date = max(transaction.posted_at for transaction in transactions) + timedelta(days=IMPORT_DATE_TOLERANCE_DAYS)
@@ -208,26 +214,27 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         for row in existing:
             existing_by_account_amount.setdefault((row.account_id, row.amount), []).append(row)
 
-        accepted: list[Transaction] = []
-        accepted_by_account_amount: dict[tuple[UUID, Decimal], list[Transaction]] = {}
+        identities = import_fingerprints(transactions, identity_numbers)
+        existing_identities = {row.import_fingerprint for row in existing if row.import_fingerprint}
+        known_bases = {identity.split(":", 1)[0] for identity in existing_identities if ":" in identity}
+        legacy_identities = {identity for identity in existing_identities if ":" not in identity}
+        accepted: list[tuple[Transaction, str]] = []
         skipped = 0
-        for transaction in transactions:
+        for transaction, identity, forced in zip(transactions, identities, force_import, strict=True):
             key = (transaction.account_id, transaction.amount)
+            base_identity = identity.split(":", 1)[0]
+            exact_reimport = identity in existing_identities or base_identity in legacy_identities
+            if base_identity in legacy_identities:
+                legacy_identities.remove(base_identity)
             duplicate_existing = any(
                 abs((row.posted_at - transaction.posted_at).days) <= IMPORT_DATE_TOLERANCE_DAYS
                 and merchants_likely_match(row.merchant, transaction.merchant)
                 for row in existing_by_account_amount.get(key, [])
             )
-            duplicate_in_file = any(
-                abs((row.posted_at - transaction.posted_at).days) <= IMPORT_DATE_TOLERANCE_DAYS
-                and merchants_likely_match(row.merchant, transaction.merchant)
-                for row in accepted_by_account_amount.get(key, [])
-            )
-            if duplicate_existing or duplicate_in_file:
+            if exact_reimport or (duplicate_existing and not forced and base_identity not in known_bases):
                 skipped += 1
             else:
-                accepted.append(transaction)
-                accepted_by_account_amount.setdefault(key, []).append(transaction)
+                accepted.append((transaction, identity))
         if not accepted:
             return [], skipped
         values = [
@@ -241,9 +248,9 @@ class TransactionRepository(BaseRepository[TransactionModel]):
                 "type": transaction.type.value,
                 "status": transaction.status.value,
                 "external_transaction_id": transaction.external_transaction_id,
-                "import_fingerprint": import_fingerprint(transaction),
+                "import_fingerprint": identity,
             }
-            for transaction in accepted
+            for transaction, identity in accepted
         ]
         result = await self.session.execute(
             pg_insert(TransactionModel)
@@ -255,7 +262,9 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         await self.session.flush()
         return [_to_domain(row) for row in rows], skipped + len(accepted) - len(rows)
 
-    async def import_duplicate_flags(self, transactions: list[Transaction]) -> list[bool]:
+    async def import_duplicate_flags(
+        self, transactions: list[Transaction], identity_numbers: list[int] | None = None
+    ) -> list[bool]:
         """Return likely-duplicate decisions without changing the database."""
         if not transactions:
             return []
@@ -273,19 +282,24 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         existing_by_account_amount: dict[tuple[UUID, Decimal], list[TransactionModel | Transaction]] = {}
         for row in existing:
             existing_by_account_amount.setdefault((row.account_id, row.amount), []).append(row)
-        seen: list[Transaction] = []
+        identities = import_fingerprints(transactions, identity_numbers)
+        existing_identities = {row.import_fingerprint for row in existing if row.import_fingerprint}
+        known_bases = {identity.split(":", 1)[0] for identity in existing_identities if ":" in identity}
+        legacy_identities = {identity for identity in existing_identities if ":" not in identity}
         flags: list[bool] = []
-        for transaction in transactions:
+        for transaction, identity in zip(transactions, identities, strict=True):
             key = (transaction.account_id, transaction.amount)
             duplicate = any(
                 abs((row.posted_at - transaction.posted_at).days) <= IMPORT_DATE_TOLERANCE_DAYS
                 and merchants_likely_match(row.merchant, transaction.merchant)
                 for row in existing_by_account_amount.get(key, [])
             )
-            flags.append(duplicate)
-            if not duplicate:
-                seen.append(transaction)
-                existing_by_account_amount.setdefault(key, []).append(transaction)
+            base_identity = identity.split(":", 1)[0]
+            flags.append(
+                identity in existing_identities or base_identity in legacy_identities
+                or (duplicate and base_identity not in known_bases)
+            )
+            legacy_identities.discard(base_identity)
         return flags
 
     async def apply_plaid_updates(
@@ -351,11 +365,17 @@ class TransactionRepository(BaseRepository[TransactionModel]):
                 if len(matches) == 1:
                     row = matches[0]
                     import_candidates.remove(row)
+                    if getattr(row, "reviewed_at", None) is not None and getattr(row, "user_category_override", None) is None:
+                        row.user_category_override = row.category
+                    if getattr(row, "reviewed_at", None) is not None and getattr(row, "user_type_override", None) is None:
+                        row.user_type_override = row.type
                     row.posted_at = transaction.posted_at
                     row.merchant = transaction.merchant
-                    row.category = transaction.category
                     row.amount = transaction.amount
-                    row.type = transaction.type.value
+                    row.provider_category = transaction.category
+                    row.provider_type = transaction.type.value
+                    row.category = getattr(row, "user_category_override", None) or transaction.category
+                    row.type = getattr(row, "user_type_override", None) or transaction.type.value
                     row.status = transaction.status.value
                     row.external_transaction_id = external_id
                     updated += 1
@@ -370,6 +390,8 @@ class TransactionRepository(BaseRepository[TransactionModel]):
                     type=transaction.type.value,
                     status=transaction.status.value,
                     external_transaction_id=external_id,
+                    provider_category=transaction.category,
+                    provider_type=transaction.type.value,
                 )
                 self.session.add(row)
                 created += 1
@@ -377,20 +399,26 @@ class TransactionRepository(BaseRepository[TransactionModel]):
                 row.account_id = transaction.account_id
                 row.posted_at = transaction.posted_at
                 row.merchant = transaction.merchant
-                row.category = transaction.category
                 row.amount = transaction.amount
-                row.type = transaction.type.value
+                row.provider_category = transaction.category
+                row.provider_type = transaction.type.value
+                row.category = getattr(row, "user_category_override", None) or transaction.category
+                row.type = getattr(row, "user_type_override", None) or transaction.type.value
+                if getattr(row, "user_type_override", None) is None and row.type not in {"expense", "transfer"}:
+                    row.budget_category_id = None
+                    row.ignored_from_budget = False
                 row.status = transaction.status.value
                 updated += 1
 
         removed = 0
         if removed_external_transaction_ids:
             result = await self.session.execute(
-                delete(TransactionModel)
+                update(TransactionModel)
                 .where(
                     TransactionModel.external_transaction_id.in_(removed_external_transaction_ids),
                     TransactionModel.deleted_at.is_(None),
                 )
+                .values(deleted_at=datetime.now(timezone.utc))
                 .returning(TransactionModel.id)
             )
             removed = len(result.scalars().all())
@@ -416,13 +444,17 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         row = result.scalar_one_or_none()
         if row is None:
             raise NotFoundError("Transaction", str(transaction_id))
-        account = await self.session.get(AccountModel, row.account_id)
-        linked = account is not None and account.institution_id is not None
+        linked = row.external_transaction_id is not None
         if linked and any(key != "category" for key in fields):
             raise ValidationError("Linked transaction details are managed by the institution; only category can be edited.")
         for key, value in fields.items():
             if value is not None:
-                setattr(row, key, value.value if hasattr(value, "value") else value)
+                normalized = value.value if hasattr(value, "value") else value
+                if key == "category":
+                    row.user_category_override = normalized
+                if key == "type":
+                    row.user_type_override = normalized
+                setattr(row, key, normalized)
         await self.session.flush()
         return _to_domain(row)
 
@@ -474,6 +506,7 @@ class TransactionRepository(BaseRepository[TransactionModel]):
         row = result.scalar_one_or_none()
         if row is None:
             raise NotFoundError("Transaction", str(transaction_id))
+        row.user_type_override = transaction_type.value
         row.type = transaction_type.value
         if transaction_type in {
             TransactionType.TRANSFER, TransactionType.INCOME, TransactionType.CREDIT_CARD_PAYMENT
@@ -576,6 +609,22 @@ def import_fingerprint(transaction: Transaction) -> str:
         _normalized_merchant(transaction.merchant),
     ))
     return hashlib.sha256(identity.encode("utf-8")).hexdigest()
+
+
+def import_fingerprints(
+    transactions: list[Transaction], identity_numbers: list[int] | None = None
+) -> list[str]:
+    if identity_numbers is not None:
+        if len(identity_numbers) != len(transactions):
+            raise ValueError("identity_numbers must align with transactions")
+        return [f"{import_fingerprint(transaction)}:{number}" for transaction, number in zip(transactions, identity_numbers, strict=True)]
+    occurrences: dict[str, int] = {}
+    result: list[str] = []
+    for transaction in transactions:
+        base = import_fingerprint(transaction)
+        occurrences[base] = occurrences.get(base, 0) + 1
+        result.append(f"{base}:{occurrences[base]}")
+    return result
 
 
 def _to_domain(

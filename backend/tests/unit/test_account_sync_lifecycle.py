@@ -14,7 +14,7 @@ from app.providers.plaid_client import RawPlaidAccount
 from app.providers.plaid_provider import PlaidProvider
 from app.persistence.repositories.account_repository import AccountRepository
 from app.schemas.account import AccountCreateRequest
-from app.schemas.user import UserUpdateRequest
+from app.schemas.user import PlanningProfileUpdateRequest, UserUpdateRequest
 
 
 class _AsyncContext:
@@ -43,6 +43,18 @@ def test_usd_is_the_only_accepted_user_and_manual_account_currency():
         UserUpdateRequest(base_currency="EUR")
     with pytest.raises(PydanticValidationError):
         AccountCreateRequest(name="Cash", type=AccountType.DEPOSITORY, balance="10", currency="CAD")
+
+
+def test_nullable_profile_goals_can_clear_but_required_settings_cannot():
+    request = PlanningProfileUpdateRequest(target_savings_rate=None, cash_reserve_target=None)
+    assert request.model_dump(exclude_unset=True) == {
+        "target_savings_rate": None, "cash_reserve_target": None,
+    }
+    with pytest.raises(PydanticValidationError):
+        PlanningProfileUpdateRequest(expected_return=None)
+    with pytest.raises(PydanticValidationError):
+        UserUpdateRequest(full_name=None)
+    assert UserUpdateRequest(date_of_birth=None).model_dump(exclude_unset=True) == {"date_of_birth": None}
 
 
 def test_liability_grouping_is_type_based_not_balance_sign_based():
@@ -98,7 +110,10 @@ async def test_refresh_archives_removed_accounts_and_tolerates_missing_holdings(
         available_balance=Decimal("100"),
     )
     provider = object.__new__(PlaidProvider)
-    provider.session = SimpleNamespace(begin_nested=lambda: _AsyncContext())
+    empty_result = SimpleNamespace(all=lambda: [])
+    provider.session = SimpleNamespace(
+        begin_nested=lambda: _AsyncContext(), execute=AsyncMock(return_value=empty_result), flush=AsyncMock()
+    )
     provider._institutions = SimpleNamespace(
         lock_for_sync=AsyncMock(return_value=institution),
         get_decrypted_access_token=AsyncMock(return_value="access-token"),

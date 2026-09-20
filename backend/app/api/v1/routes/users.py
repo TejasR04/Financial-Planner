@@ -26,10 +26,7 @@ async def update_me(
     db: AsyncSession = Depends(get_db),
 ) -> UserResponse:
     updated = await UserRepository(db).update(
-        current_user.id,
-        full_name=body.full_name,
-        base_currency=body.base_currency,
-        date_of_birth=body.date_of_birth,
+        current_user.id, **body.model_dump(exclude_unset=True)
     )
     await db.commit()
     return UserResponse.model_validate(updated, from_attributes=True)

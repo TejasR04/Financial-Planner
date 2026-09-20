@@ -4,7 +4,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import delete, select
 
-from app.core.exceptions import NotFoundError
+from app.core.exceptions import NotFoundError, ValidationError
 from app.domain.entities import Holding
 from app.domain.enums import AssetClass
 from app.domain.holding_valuation import holding_asset_class
@@ -49,6 +49,9 @@ class HoldingRepository(BaseRepository[HoldingModel]):
         row = await self.session.scalar(select(HoldingModel).join(AccountModel).where(HoldingModel.id == holding_id, AccountModel.user_id == user_id, AccountModel.archived_at.is_(None)))
         if row is None:
             raise NotFoundError("Holding", str(holding_id))
+        account = await self.session.get(AccountModel, row.account_id)
+        if account is not None and account.institution_id is not None:
+            raise ValidationError("Linked holdings are managed by the institution.")
         for key, value in fields.items():
             setattr(row, key, value)
         await self.session.flush()
@@ -58,6 +61,9 @@ class HoldingRepository(BaseRepository[HoldingModel]):
         row = await self.session.scalar(select(HoldingModel).join(AccountModel).where(HoldingModel.id == holding_id, AccountModel.user_id == user_id, AccountModel.archived_at.is_(None)))
         if row is None:
             raise NotFoundError("Holding", str(holding_id))
+        account = await self.session.get(AccountModel, row.account_id)
+        if account is not None and account.institution_id is not None:
+            raise ValidationError("Linked holdings are managed by the institution.")
         await self.session.delete(row)
         await self.session.flush()
 

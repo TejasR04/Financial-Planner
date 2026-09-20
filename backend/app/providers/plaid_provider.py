@@ -257,6 +257,8 @@ class PlaidProvider(FinancialDataProvider):
             # Persist applicable user merchant rules for newly synced
             # expenses, so their custom category is visible everywhere.
             await self._budgets.apply_category_defaults_for_user(user_id)
+            from app.services.loan_balance_automation_service import LoanBalanceAutomationService
+            await LoanBalanceAutomationService(self.session).apply(user_id)
 
             # Investment holdings are optional for a Transactions-linked Item.
             # A bank without Investments support must still sync balances and

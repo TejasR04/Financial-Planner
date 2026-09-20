@@ -58,6 +58,7 @@ class TransactionClassificationRequest(BaseModel):
 class CSVImportRowOverride(BaseModel):
     row_number: int = Field(ge=2)
     include: bool = True
+    force_import: bool = False
     posted_at: date | None = None
     merchant: str | None = Field(default=None, min_length=1, max_length=255)
     category: str | None = Field(default=None, max_length=100)

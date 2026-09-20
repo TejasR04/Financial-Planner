@@ -8,7 +8,7 @@ import uuid
 from datetime import date, datetime, timezone
 from decimal import Decimal
 
-from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, func
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, Numeric, String, Text, UniqueConstraint, func, text
 from sqlalchemy.dialects.postgresql import JSONB, UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -182,7 +182,11 @@ class TransactionModel(Base):
     # Stable identity for rows created through CSV import. It lets later
     # provider syncs reconcile with the imported row without confusing it
     # with a manually entered transaction.
-    import_fingerprint: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    import_fingerprint: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    provider_category: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    provider_type: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    user_category_override: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    user_type_override: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # A user-owned budget assignment. The provider's `category` remains
     # untouched so the original financial-data classification is retained.
     budget_category_id: Mapped[uuid.UUID | None] = mapped_column(
@@ -265,24 +269,38 @@ class LoanBalanceRuleModel(Base):
     merchant_pattern: Mapped[str | None] = mapped_column(String(255), nullable=True)
     active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class LoanBalanceAdjustmentModel(Base):
     __tablename__ = "loan_balance_adjustments"
     __table_args__ = (
-        UniqueConstraint("rule_id", "event_key", name="uq_loan_balance_adjustments_rule_event"),
+        Index(
+            "uq_loan_adjustments_active_account_transaction", "account_id", "transaction_id",
+            unique=True, postgresql_where=text("transaction_id IS NOT NULL AND reversed_at IS NULL"),
+        ),
+        Index(
+            "uq_loan_adjustments_active_scheduled_event", "rule_id", "event_key",
+            unique=True, postgresql_where=text("transaction_id IS NULL AND reversed_at IS NULL"),
+        ),
     )
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     rule_id: Mapped[uuid.UUID] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("loan_balance_rules.id", ondelete="CASCADE"), index=True
     )
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
     transaction_id: Mapped[uuid.UUID | None] = mapped_column(
         PGUUID(as_uuid=True), ForeignKey("transactions.id", ondelete="SET NULL"), nullable=True
     )
     event_key: Mapped[str] = mapped_column(String(255))
     amount_applied: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    source_amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
     applied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    reversed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    reversal_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
 
 
 class ScenarioModel(Base):
