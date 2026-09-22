@@ -34,19 +34,31 @@ jobs:
       # a one-off Cloud Run Job, rather than running migrations in each API
       # instance at startup, so scale-out cannot race schema changes.
       - name: Migrate production database
+        shell: bash
         run: |
-          gcloud run jobs deploy meridian-db-migrate \
-            --source backend \
-            --command python \
-            --args=-m,alembic,upgrade,head \
-            --region us-east1 \
-            --project "${{ vars.GCP_PROJECT_ID }}" \
-            --set-env-vars "ENVIRONMENT=production,FRONTEND_URL=${{ vars.FRONTEND_URL }},CORS_ALLOW_ORIGINS=[\"${{ vars.FRONTEND_URL }}\"],REFRESH_COOKIE_SECURE=true,REFRESH_COOKIE_SAMESITE=none,PLAID_ENV=${{ vars.PLAID_ENV }},PLAID_AUTO_SYNC_ENABLED=false,DATABASE_POOL_SIZE=3,DATABASE_MAX_OVERFLOW=2,DATABASE_POOL_RECYCLE_SECONDS=300" \
-            --set-secrets "DATABASE_URL=database-url:latest,JWT_SECRET_KEY=jwt-secret-key:latest,PLAID_CLIENT_ID=plaid-client-id:latest,PLAID_SECRET=plaid-secret:latest,PLAID_TOKEN_ENCRYPTION_KEY=plaid-token-encryption-key:latest,GEMINI_API_KEY=gemini-api-key:latest"
-          gcloud run jobs execute meridian-db-migrate \
-            --region us-east1 \
-            --project "${{ vars.GCP_PROJECT_ID }}" \
-            --wait
+          set +e
+          set -o pipefail
+          (
+            set -e
+            gcloud run jobs deploy meridian-db-migrate \
+              --source backend \
+              --command python \
+              --args=-m,alembic,upgrade,head \
+              --region us-east1 \
+              --project "${{ vars.GCP_PROJECT_ID }}" \
+              --set-env-vars "ENVIRONMENT=production,FRONTEND_URL=${{ vars.FRONTEND_URL }},CORS_ALLOW_ORIGINS=[\"${{ vars.FRONTEND_URL }}\"],REFRESH_COOKIE_SECURE=true,REFRESH_COOKIE_SAMESITE=none,PLAID_ENV=${{ vars.PLAID_ENV }},PLAID_AUTO_SYNC_ENABLED=false,DATABASE_POOL_SIZE=3,DATABASE_MAX_OVERFLOW=2,DATABASE_POOL_RECYCLE_SECONDS=300" \
+              --set-secrets "DATABASE_URL=database-url:latest,JWT_SECRET_KEY=jwt-secret-key:latest,PLAID_CLIENT_ID=plaid-client-id:latest,PLAID_SECRET=plaid-secret:latest,PLAID_TOKEN_ENCRYPTION_KEY=plaid-token-encryption-key:latest,GEMINI_API_KEY=gemini-api-key:latest"
+            gcloud run jobs execute meridian-db-migrate \
+              --region us-east1 \
+              --project "${{ vars.GCP_PROJECT_ID }}" \
+              --wait
+          ) 2>&1 | tee migration.log
+          status=${PIPESTATUS[0]}
+          if (( status != 0 )); then
+            summary=$(tail -n 30 migration.log | paste -sd ' ' -)
+            echo "::error::$summary"
+          fi
+          exit "$status"
 
       - name: Deploy FastAPI to Cloud Run
         id: deploy
