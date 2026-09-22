@@ -46,7 +46,7 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
   }, [account, debt, ruleMode, merchantPattern, selectedMerchant]);
 
   useEffect(() => {
-    setValues({});
+    setValues({ pricing_mode: "manual", as_of: new Date().toISOString().slice(0, 10) });
     setHoldings([]);
     setLoadedAccountId(null);
     if (!account) return;
@@ -94,10 +94,11 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
           market_value: values.market_value,
           asset_class: (values.asset_class || "equity") as ApiHolding["asset_class"],
           as_of: values.as_of,
+          pricing_mode: (values.pricing_mode || "manual") as ApiHolding["pricing_mode"],
         });
         if (accountIdRef.current !== savingAccountId) return;
         setHoldings([...holdings, row]);
-        setValues({});
+        setValues({ pricing_mode: "manual", as_of: new Date().toISOString().slice(0, 10) });
         refresh();
         return;
       }
@@ -132,12 +133,12 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
   return (
     <DialogShell onClose={onClose} ariaLabelledBy="financial-details-title" panelClassName="max-w-lg rounded-lg bg-card p-4">
       <h2 id="financial-details-title" className="text-sm font-semibold">{debt ? "Debt details" : "Manual holdings"} · {account.name}</h2>
-      <p className="mt-1 text-xs text-muted-foreground">{debt ? "All debt details are optional. Add only what you know; these fields do not change net worth." : "Positions explain allocation; their values are not added again to the account balance."}</p>
+      <p className="mt-1 text-xs text-muted-foreground">{debt ? "All debt details are optional. Add only what you know; these fields do not change net worth." : "Positions explain allocation. Automatic ticker updates change the account balance only by that position’s gain or loss."}</p>
       {holdingAccount && account.institutionId ? (
         <p className="mt-4 text-xs text-warning">Linked holdings are managed by the institution and cannot be edited here.</p>
       ) : (
         <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {debt ? <>{field("principal", "Original principal (optional)")}<label className="relative"><input className={`${input} pr-7`} type="number" inputMode="decimal" step="0.01" value={values.interest_rate ?? ""} onChange={(event) => setValues({ ...values, interest_rate: event.target.value })} placeholder="APR (optional)" /><span className="pointer-events-none absolute right-2 top-2 text-xs text-muted-foreground">%</span></label>{field("term_months", "Term months (optional)")}{field("minimum_payment", "Minimum payment (optional)")}{field("origination_date", "Origination date", "date")}</> : <>{field("symbol", "Symbol", "text")}{field("quantity", "Quantity")}{field("cost_basis", "Cost basis")}{field("market_value", "Market value")}<select className={input} value={values.asset_class ?? "equity"} onChange={(event) => setValues({ ...values, asset_class: event.target.value })}>{["equity", "fixed_income", "real_estate", "cash", "alternatives"].map((assetClass) => <option key={assetClass}>{assetClass}</option>)}</select>{field("as_of", "As of", "date")}</>}
+          {debt ? <>{field("principal", "Original principal (optional)")}<label className="relative"><input className={`${input} pr-7`} type="number" inputMode="decimal" step="0.01" value={values.interest_rate ?? ""} onChange={(event) => setValues({ ...values, interest_rate: event.target.value })} placeholder="APR (optional)" /><span className="pointer-events-none absolute right-2 top-2 text-xs text-muted-foreground">%</span></label>{field("term_months", "Term months (optional)")}{field("minimum_payment", "Minimum payment (optional)")}{field("origination_date", "Origination date", "date")}</> : <>{field("symbol", "Ticker symbol", "text")}{field("quantity", "Quantity")}{field("cost_basis", "Cost basis")}{field("market_value", "Current market value")}<select className={input} value={values.asset_class ?? "equity"} onChange={(event) => setValues({ ...values, asset_class: event.target.value })}>{["equity", "fixed_income", "real_estate", "cash", "alternatives"].map((assetClass) => <option key={assetClass}>{assetClass}</option>)}</select>{field("as_of", "As of", "date")}<label className="col-span-full flex items-start gap-2 rounded-md border border-border p-3 text-xs"><input className="mt-0.5" type="checkbox" checked={values.pricing_mode === "automatic"} onChange={(event) => setValues({ ...values, pricing_mode: event.target.checked ? "automatic" : "manual" })} /><span><span className="block font-medium text-foreground">Update from ticker during sync</span><span className="mt-0.5 block text-muted-foreground">Uses the latest completed market close. The current value above is retained if pricing fails.</span></span></label></>}
         </div>
       )}
       {debt && !account.institutionId && (
@@ -164,7 +165,7 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
       )}
       {!debt && holdings.map((holding) => (
         <div key={holding.id} className="mt-2 flex justify-between text-xs">
-          <span>{holding.symbol} · ${Number(holding.market_value).toLocaleString()}</span>
+          <span>{holding.symbol} · ${Number(holding.market_value).toLocaleString()} {holding.pricing_mode === "automatic" ? `· automatic${holding.last_price ? ` at $${Number(holding.last_price).toLocaleString()}` : ""}` : "· manual"}</span>
           {!account.institutionId && <button className="text-destructive" onClick={async () => { await api.accounts.deleteHolding(holding.id); setHoldings(holdings.filter((row) => row.id !== holding.id)); refresh(); }}>Remove</button>}
         </div>
       ))}

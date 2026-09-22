@@ -14,6 +14,7 @@ from app.api.v1.routes import (
     recommendations,
     scenarios,
     simulations,
+    sync,
     transactions,
     users,
 )
@@ -33,4 +34,5 @@ api_router.include_router(recommendations.router)
 api_router.include_router(insights.router)
 api_router.include_router(financial_health.router)
 api_router.include_router(financial_inputs.router)
+api_router.include_router(sync.router)
 api_router.include_router(agent.router)

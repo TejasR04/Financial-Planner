@@ -1,8 +1,9 @@
 from datetime import date
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from app.domain.enums import AssetClass
 
@@ -45,6 +46,12 @@ class HoldingInput(BaseModel):
     market_value: Decimal = Field(ge=0)
     asset_class: AssetClass
     as_of: date
+    pricing_mode: Literal["manual", "automatic"] = "manual"
+
+    @field_validator("symbol")
+    @classmethod
+    def normalize_symbol(cls, value: str) -> str:
+        return value.strip().upper()
 
 
 class HoldingUpdate(BaseModel):
@@ -54,8 +61,10 @@ class HoldingUpdate(BaseModel):
     market_value: Decimal | None = Field(default=None, ge=0)
     asset_class: AssetClass | None = None
     as_of: date | None = None
+    pricing_mode: Literal["manual", "automatic"] | None = None
 
 
 class HoldingResponse(HoldingInput):
     id: UUID
     account_id: UUID
+    last_price: Decimal | None = None

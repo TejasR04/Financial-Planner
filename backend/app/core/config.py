@@ -39,6 +39,7 @@ class Settings(BaseSettings):
     plaid_env: str = "sandbox"
     plaid_auto_sync_enabled: bool = True
     plaid_auto_sync_interval_minutes: int = 1440
+    tiingo_api_key: str | None = None
     # Fernet key (32 url-safe base64-encoded bytes) used to encrypt Plaid
     # access tokens at rest. Generate a real one with:
     #   python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"

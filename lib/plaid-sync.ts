@@ -1,13 +1,13 @@
 import { api } from "@/lib/api-client";
 
-let activePlaidRefresh: ReturnType<typeof api.plaid.refresh> | null = null;
+let activeDataRefresh: ReturnType<typeof api.sync.all> | null = null;
 
-/** Deduplicate full Plaid refreshes across the top bar and Accounts page. */
-export function requestPlaidRefresh() {
-  if (activePlaidRefresh === null) {
-    activePlaidRefresh = api.plaid.refresh().finally(() => {
-      activePlaidRefresh = null;
+/** Deduplicate full financial-data refreshes across the top bar and Accounts page. */
+export function requestDataRefresh() {
+  if (activeDataRefresh === null) {
+    activeDataRefresh = api.sync.all().finally(() => {
+      activeDataRefresh = null;
     });
   }
-  return activePlaidRefresh;
+  return activeDataRefresh;
 }

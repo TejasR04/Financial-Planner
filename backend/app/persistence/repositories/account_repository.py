@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
+from decimal import Decimal
 from uuid import UUID, uuid4
 
 from sqlalchemy import delete, func, select, update
@@ -166,6 +167,15 @@ class AccountRepository(BaseRepository[AccountModel]):
     async def update_manual_for_user(self, user_id: UUID, account_id: UUID, **fields) -> Account:
         """Backward-compatible name for callers that only update manual rows."""
         return await self.update_for_user(user_id, account_id, **fields)
+
+    async def adjust_manual_balance(self, user_id: UUID, account_id: UUID, delta: Decimal) -> Account:
+        row = await self._row_for_user(user_id, account_id)
+        if row.institution_id is not None:
+            raise ValidationError("Linked account balances are managed by the institution.")
+        row.balance += delta
+        row.updated_at = datetime.now(timezone.utc)
+        await self.session.flush()
+        return _to_domain(row)
 
     async def rename_for_user(self, user_id: UUID, account_id: UUID, name: str) -> Account:
         """Rename an account locally, including accounts managed by a provider."""

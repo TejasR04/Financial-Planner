@@ -8,8 +8,8 @@ import { PlaidLinkButton } from "@/components/plaid-link-button";
 import { KeyboardShortcut } from "@/components/keyboard-shortcut";
 import { useTheme } from "@/components/theme-provider";
 import { ApiError } from "@/lib/api-client";
-import { useDataRefresh, useInstitutionsData } from "@/lib/data-provider";
-import { requestPlaidRefresh } from "@/lib/plaid-sync";
+import { useDataRefresh } from "@/lib/data-provider";
+import { requestDataRefresh } from "@/lib/plaid-sync";
 import { useState } from "react";
 
 const titles: Record<string, string> = {
@@ -27,7 +27,6 @@ export function Topbar({ onOpenCommand, onOpenNavigation }: { onOpenCommand: () 
   const { isDemo, toggleDemo } = useAuth();
   const pathname = usePathname();
   const { theme, toggle } = useTheme();
-  const institutions = useInstitutionsData();
   const refreshData = useDataRefresh();
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
@@ -37,15 +36,15 @@ export function Topbar({ onOpenCommand, onOpenNavigation }: { onOpenCommand: () 
     setSyncing(true);
     setSyncMessage(null);
     try {
-      const result = await requestPlaidRefresh();
-      const failures = result.data.filter((institution) => institution.error);
+      const result = await requestDataRefresh();
+      const failures = result.institutions.filter((institution) => institution.error).length + Object.keys(result.market.errors).length;
       refreshData();
       setSyncMessage(
-        failures.length
-          ? `${failures.length} need attention`
-          : result.data.length
-            ? `Synced ${result.data.length}`
-            : "Nothing linked",
+        failures
+          ? `${failures} need attention`
+          : result.institutions.length || result.market.holdings_updated
+            ? `Synced ${result.institutions.length} linked · ${result.market.holdings_updated} tickers`
+            : "Nothing to sync",
       );
     } catch (error) {
       setSyncMessage(error instanceof ApiError ? error.message : "Sync failed");
@@ -86,11 +85,11 @@ export function Topbar({ onOpenCommand, onOpenNavigation }: { onOpenCommand: () 
         <Button
           variant="ghost"
           size="icon-sm"
-          aria-label="Sync all linked institutions"
+          aria-label="Sync all financial data"
           className="size-11 md:size-7"
-          title={institutions.length ? "Sync all linked institutions" : "No linked institutions"}
+          title="Sync linked institutions and automatic ticker prices"
           onClick={() => void syncAll()}
-          disabled={isDemo || syncing || institutions.length === 0}
+          disabled={isDemo || syncing}
         >
           <RefreshCw className={syncing ? "animate-spin" : undefined} />
         </Button>

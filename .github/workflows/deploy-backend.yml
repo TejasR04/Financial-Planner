@@ -75,6 +75,7 @@ jobs:
             PLAID_CLIENT_ID=plaid-client-id:latest
             PLAID_SECRET=plaid-secret:latest
             PLAID_TOKEN_ENCRYPTION_KEY=plaid-token-encryption-key:latest
+            TIINGO_API_KEY=tiingo-api-key:latest
             GEMINI_API_KEY=gemini-api-key:latest
           flags: >-
             --port=8000

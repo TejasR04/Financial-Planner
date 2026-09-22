@@ -31,9 +31,9 @@ function seed() {
     { id: "early", name: "Retire earlier", description: "Save more to retire at 60", is_baseline: false, retirement_age: 60, savings_rate: "0.3", monthly_contribution: "2200", expected_return: "0.06", inflation_rate: "0.025", withdrawal_rate: "0.035", desired_monthly_income_today: "4000", created_at: now(), updated_at: now() },
   ];
   const holdings: ApiHolding[] = [
-    { id: "holding-1", account_id: "brokerage", symbol: "VTI", quantity: "200", cost_basis: "42000", market_value: "58000", asset_class: "equity", as_of: now().slice(0, 10) },
-    { id: "holding-2", account_id: "brokerage", symbol: "BND", quantity: "270", cost_basis: "19500", market_value: "20000", asset_class: "fixed_income", as_of: now().slice(0, 10) },
-    { id: "holding-3", account_id: "retirement", symbol: "VT", quantity: "1000", cost_basis: "115000", market_value: "146000", asset_class: "equity", as_of: now().slice(0, 10) },
+    { id: "holding-1", account_id: "brokerage", symbol: "VTI", quantity: "200", cost_basis: "42000", market_value: "58000", asset_class: "equity", as_of: now().slice(0, 10), pricing_mode: "manual", last_price: null },
+    { id: "holding-2", account_id: "brokerage", symbol: "BND", quantity: "270", cost_basis: "19500", market_value: "20000", asset_class: "fixed_income", as_of: now().slice(0, 10), pricing_mode: "manual", last_price: null },
+    { id: "holding-3", account_id: "retirement", symbol: "VT", quantity: "1000", cost_basis: "115000", market_value: "146000", asset_class: "equity", as_of: now().slice(0, 10), pricing_mode: "manual", last_price: null },
   ];
   return { accounts, transactions, categories, scenarios, holdings, archived: [] as ApiAccount[],
     user: { id: "demo-user", full_name: "Tejas Ravi", email: "tejas.ravi04@gmail.com", base_currency: "USD", date_of_birth: `${new Date().getFullYear() - 34}-03-12` },

@@ -73,7 +73,7 @@ export type ApiLoanBalanceRule = {
   active: boolean;
   created_at: string;
 };
-export type ApiHolding = { id: string; account_id: string; symbol: string; quantity: string; cost_basis: string; market_value: string; asset_class: "equity" | "fixed_income" | "real_estate" | "cash" | "alternatives"; as_of: string };
+export type ApiHolding = { id: string; account_id: string; symbol: string; quantity: string; cost_basis: string; market_value: string; asset_class: "equity" | "fixed_income" | "real_estate" | "cash" | "alternatives"; as_of: string; pricing_mode: "manual" | "automatic"; last_price: string | null };
 export type ApiCashFlowOutlook = { series: { month_index: number; income: string; expenses: string; net: string }[]; average_monthly_surplus: string; projected_savings_rate: string; income_source: string; expense_source: string };
 export type ApiActivitySummary = { history_start: string | null; months: string[]; month_count: number; period_start: string | null; period_end: string | null; label: string; average_monthly_income: string | null; average_monthly_expenses: string | null; average_monthly_surplus: string | null };
 export type ApiDebtPlan = { strategy: "avalanche" | "snowball"; months_to_debt_free: number; total_interest_paid: string; payoff_order: string[]; paid_off: boolean; warning: string | null };
@@ -138,6 +138,16 @@ export type ApiPlaidRefreshInstitution = {
 
 export type ApiPlaidRefreshResponse = {
   data: ApiPlaidRefreshInstitution[];
+};
+
+export type ApiFinancialDataRefreshResponse = {
+  institutions: ApiPlaidRefreshInstitution[];
+  market: {
+    symbols_updated: number;
+    holdings_updated: number;
+    accounts_updated: number;
+    errors: Record<string, string>;
+  };
 };
 
 export type ApiAccountList = {
@@ -472,11 +482,14 @@ export const api = {
       post<ApiLoanBalanceRule>(`/accounts/${id}/balance-rules`, body),
     deleteBalanceRule: (accountId: string, ruleId: string) => del<void>(`/accounts/${accountId}/balance-rules/${ruleId}`),
     holdings: (id: string) => get<ApiHolding[]>(`/accounts/${id}/holdings`),
-    addHolding: (id: string, body: Omit<ApiHolding, "id" | "account_id">) => post<ApiHolding>(`/accounts/${id}/holdings`, body),
+    addHolding: (id: string, body: Omit<ApiHolding, "id" | "account_id" | "last_price">) => post<ApiHolding>(`/accounts/${id}/holdings`, body),
     deleteHolding: (id: string) => del<void>(`/holdings/${id}`),
   },
   investments: {
     dashboard: () => get<ApiInvestmentDashboard>("/investments/dashboard"),
+  },
+  sync: {
+    all: () => post<ApiFinancialDataRefreshResponse>("/sync"),
   },
   plaid: {
     // Never returns or logs anything token-related — the backend keeps the

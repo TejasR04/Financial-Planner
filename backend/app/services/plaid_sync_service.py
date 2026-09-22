@@ -7,6 +7,8 @@ from app.core.config import get_settings
 from app.persistence.repositories.user_repository import UserRepository
 from app.persistence.session import AsyncSessionLocal
 from app.providers.plaid_provider import PlaidProvider
+from app.providers.market_data_provider import TiingoMarketDataProvider
+from app.services.market_price_sync_service import MarketPriceSyncService
 
 logger = logging.getLogger("meridian.plaid_sync")
 SYNC_LOCK_ID = 0x4D4552494449414E
@@ -39,4 +41,43 @@ async def sync_all_linked_institutions() -> int:
                 await session.rollback()
                 failures += 1
                 logger.exception("plaid_sync_user_failed", extra={"user_id": str(user_id)})
+    return failures
+
+
+async def sync_all_financial_data() -> int:
+    """Run both provider-linked and manual ticker refreshes for every user."""
+    settings = get_settings()
+    failures = 0
+    market_provider = TiingoMarketDataProvider(settings.tiingo_api_key)
+    async with AsyncSessionLocal() as session:
+        user_ids = await UserRepository(session).list_active_ids()
+        for user_id in user_ids:
+            if settings.plaid_client_id and settings.plaid_secret:
+                try:
+                    results = await PlaidProvider(
+                        session, settings.plaid_client_id, settings.plaid_secret, settings.plaid_env
+                    ).refresh(user_id)
+                    await session.commit()
+                    failures += sum(result.status == "error" for result in results)
+                except Exception:
+                    await session.rollback()
+                    failures += 1
+                    logger.exception("plaid_sync_user_failed", extra={"user_id": str(user_id)})
+
+            try:
+                market = await MarketPriceSyncService(session, market_provider).sync_user(user_id)
+                await session.commit()
+                failures += len(market.errors)
+                logger.info(
+                    "market_sync_user_completed",
+                    extra={
+                        "user_id": str(user_id),
+                        "holdings_updated": market.holdings_updated,
+                        "ticker_errors": len(market.errors),
+                    },
+                )
+            except Exception:
+                await session.rollback()
+                failures += 1
+                logger.exception("market_sync_user_failed", extra={"user_id": str(user_id)})
     return failures

@@ -2,6 +2,9 @@ from __future__ import annotations
 
 from uuid import UUID, uuid4
 
+from datetime import date
+from decimal import Decimal, ROUND_HALF_UP
+
 from sqlalchemy import delete, select
 
 from app.core.exceptions import NotFoundError, ValidationError
@@ -30,6 +33,41 @@ class HoldingRepository(BaseRepository[HoldingModel]):
         )
         return [_to_domain(row) for row in result.scalars().all()]
 
+    async def list_automatic_for_user(self, user_id: UUID) -> list[Holding]:
+        result = await self.session.execute(
+            select(HoldingModel)
+            .join(AccountModel, AccountModel.id == HoldingModel.account_id)
+            .where(
+                AccountModel.user_id == user_id,
+                AccountModel.archived_at.is_(None),
+                AccountModel.institution_id.is_(None),
+                HoldingModel.pricing_mode == "automatic",
+            )
+        )
+        return [_to_domain(row) for row in result.scalars().all()]
+
+    async def apply_market_price_for_user(
+        self, user_id: UUID, holding_id: UUID, price: Decimal, as_of: date
+    ) -> Holding:
+        row = await self.session.scalar(
+            select(HoldingModel)
+            .join(AccountModel, AccountModel.id == HoldingModel.account_id)
+            .where(
+                HoldingModel.id == holding_id,
+                AccountModel.user_id == user_id,
+                AccountModel.archived_at.is_(None),
+                AccountModel.institution_id.is_(None),
+                HoldingModel.pricing_mode == "automatic",
+            )
+        )
+        if row is None:
+            raise NotFoundError("Automatically priced holding", str(holding_id))
+        row.last_price = price
+        row.market_value = (price * row.quantity).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        row.as_of = as_of
+        await self.session.flush()
+        return _to_domain(row)
+
     async def create(self, holding: Holding) -> Holding:
         row = HoldingModel(
             id=holding.id or uuid4(),
@@ -40,6 +78,8 @@ class HoldingRepository(BaseRepository[HoldingModel]):
             market_value=holding.market_value,
             asset_class=holding.asset_class.value,
             as_of=holding.as_of,
+            pricing_mode=holding.pricing_mode,
+            last_price=holding.last_price,
         )
         self.session.add(row)
         await self.session.flush()
@@ -86,6 +126,8 @@ class HoldingRepository(BaseRepository[HoldingModel]):
                 market_value=holding.market_value,
                 asset_class=holding.asset_class.value,
                 as_of=holding.as_of,
+                pricing_mode=holding.pricing_mode,
+                last_price=holding.last_price,
             )
             for holding in holdings
         ]
@@ -104,4 +146,6 @@ def _to_domain(row: HoldingModel) -> Holding:
         market_value=row.market_value,
         asset_class=holding_asset_class(row.symbol, AssetClass(row.asset_class)),
         as_of=row.as_of,
+        pricing_mode=getattr(row, "pricing_mode", "manual"),
+        last_price=getattr(row, "last_price", None),
     )

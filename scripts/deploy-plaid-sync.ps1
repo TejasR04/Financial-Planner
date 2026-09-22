@@ -35,7 +35,7 @@ try {
     --service-account=$RuntimeServiceAccount --command=python '--args=-m,app.jobs.plaid_sync' `
     --tasks=1 --parallelism=1 --max-retries=1 --task-timeout=1800s --memory=512Mi --cpu=1 `
     "--env-vars-file=$($environmentFile.FullName)" `
-    '--set-secrets=DATABASE_URL=database-url:latest,JWT_SECRET_KEY=jwt-secret-key:latest,PLAID_CLIENT_ID=plaid-client-id:latest,PLAID_SECRET=plaid-secret:latest,PLAID_TOKEN_ENCRYPTION_KEY=plaid-token-encryption-key:latest' --quiet
+    '--set-secrets=DATABASE_URL=database-url:latest,JWT_SECRET_KEY=jwt-secret-key:latest,PLAID_CLIENT_ID=plaid-client-id:latest,PLAID_SECRET=plaid-secret:latest,PLAID_TOKEN_ENCRYPTION_KEY=plaid-token-encryption-key:latest,TIINGO_API_KEY=tiingo-api-key:latest' --quiet
 } finally {
     Remove-Item -LiteralPath $environmentFile.FullName
 }

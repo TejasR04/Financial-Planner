@@ -31,6 +31,7 @@ jwt-secret-key
 plaid-client-id
 plaid-secret
 plaid-token-encryption-key
+tiingo-api-key
 gemini-api-key
 ```
 
@@ -58,7 +59,7 @@ service account only the roles needed to build/deploy Cloud Run and use the
 runtime service account.
 
 The Cloud Run runtime identity needs `Secret Manager Secret Accessor` for the
-six secrets. Source deployments also require the documented Cloud Build and
+configured secrets. Source deployments also require the documented Cloud Build and
 Artifact Registry permissions.
 
 ## 4. Database migration
@@ -100,9 +101,9 @@ Invoke-RestMethod https://YOUR-CLOUD-RUN-SERVICE.run.app/health
 Invoke-RestMethod https://YOUR-CLOUD-RUN-SERVICE.run.app/health/ready
 ```
 
-## Plaid scheduling
+## Financial data scheduling
 
-The API deployment disables the in-process Plaid loop because Cloud Run may
+The API deployment disables the in-process sync loop because Cloud Run may
 scale to zero. The one-shot runner is `python -m app.jobs.plaid_sync`. Deploy it
 as a private Cloud Run Job with Cloud Scheduler at **8 AM and 8 PM Eastern**
 (`America/New_York`, including daylight-saving changes). It uses the same
@@ -113,7 +114,7 @@ This is an explicit release step; committing this code does **not** activate
 the schedule. First deploy the backend revision containing the runner. Enable
 the Cloud Scheduler API, and provision two service accounts:
 
-- Runtime account: Secret Accessor for the five secrets referenced by the script.
+- Runtime account: Secret Accessor for the secrets referenced by the script.
 - Scheduler account: only needs Cloud Run Invoker on this job (script grants it).
 
 The operator needs Cloud Run deployment/IAM and Cloud Scheduler management
@@ -141,7 +142,10 @@ an alert on failed executions. To pause without deleting anything:
 gcloud scheduler jobs pause meridian-plaid-sync --location=us-east1 --project=YOUR_PROJECT_ID
 ```
 
-This imports Plaid's latest available transactions/accounts/holdings. It does
+This imports Plaid's latest available transactions/accounts/holdings and
+refreshes manual holdings that have automatic ticker pricing enabled. It does
 not force a bank fetch through the separately enabled Transactions Refresh
-add-on. See [Plaid freshness](https://plaid.com/docs/transactions/) and
+add-on. Ticker pricing uses Tiingo's latest completed end-of-day close; create
+the `tiingo-api-key` Secret Manager secret before redeploying the API and job.
+See [Plaid freshness](https://plaid.com/docs/transactions/) and
 [Cloud Run scheduled jobs](https://docs.cloud.google.com/run/docs/execute/jobs-on-schedule).

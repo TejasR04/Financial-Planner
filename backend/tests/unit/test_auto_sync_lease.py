@@ -60,7 +60,7 @@ async def test_auto_sync_refreshes_immediately_after_acquiring_lease(monkeypatch
     monkeypatch.setattr(main, "engine", engine)
     monkeypatch.setattr(main, "_try_acquire_plaid_auto_sync_lease", AsyncMock(return_value=True))
     monkeypatch.setattr(main, "_release_plaid_auto_sync_lease", AsyncMock())
-    monkeypatch.setattr(main, "_sync_all_linked_institutions", sync_all)
+    monkeypatch.setattr(main, "_sync_all_financial_data", sync_all)
     monkeypatch.setattr(main.asyncio, "sleep", stop_after_first_sleep)
 
     with pytest.raises(asyncio.CancelledError):

@@ -99,6 +99,8 @@ class Holding:
     market_value: Decimal
     asset_class: AssetClass
     as_of: date
+    pricing_mode: str = "manual"
+    last_price: Decimal | None = None
 
 
 @dataclass(slots=True)

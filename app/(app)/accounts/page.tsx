@@ -14,7 +14,7 @@ import { PlaidLinkButton } from "@/components/plaid-link-button";
 import { formatCurrency, type Account, type Institution } from "@/lib/data";
 import { ApiError, api } from "@/lib/api-client";
 import { useAccountsData, useDataRefresh, useInstitutionsData } from "@/lib/data-provider";
-import { requestPlaidRefresh } from "@/lib/plaid-sync";
+import { requestDataRefresh } from "@/lib/plaid-sync";
 
 type SyncFeedback = { tone: "success" | "error"; message: string } | null;
 
@@ -57,15 +57,20 @@ export default function AccountsPage() {
     setSyncing(true);
     setSyncFeedback(null);
     try {
-      const result = await requestPlaidRefresh();
+      const result = await requestDataRefresh();
       refreshData();
-      const failures = result.data.filter((institution) => institution.error);
-      if (failures.length > 0) {
-        setSyncFeedback({ tone: "error", message: `${failures.length} institution${failures.length === 1 ? "" : "s"} need attention. Open the institution section below to reconnect each one.` });
-      } else if (result.data.length === 0) {
-        setSyncFeedback({ tone: "success", message: "No linked institutions to sync. Add a manual account or link a U.S. institution." });
+      const institutionFailures = result.institutions.filter((institution) => institution.error);
+      const tickerFailures = Object.keys(result.market.errors);
+      if (institutionFailures.length > 0 || tickerFailures.length > 0) {
+        const details = [
+          institutionFailures.length ? `${institutionFailures.length} institution${institutionFailures.length === 1 ? "" : "s"}` : "",
+          tickerFailures.length ? `${tickerFailures.length} ticker${tickerFailures.length === 1 ? "" : "s"}` : "",
+        ].filter(Boolean).join(" and ");
+        setSyncFeedback({ tone: "error", message: `${details} could not be updated. Previous values were retained.` });
+      } else if (result.institutions.length === 0 && result.market.holdings_updated === 0) {
+        setSyncFeedback({ tone: "success", message: "No linked institutions or automatic ticker holdings to sync." });
       } else {
-        setSyncFeedback({ tone: "success", message: `Synced ${result.data.length} linked institution${result.data.length === 1 ? "" : "s"}.` });
+        setSyncFeedback({ tone: "success", message: `Synced ${result.institutions.length} linked institution${result.institutions.length === 1 ? "" : "s"} and ${result.market.holdings_updated} ticker holding${result.market.holdings_updated === 1 ? "" : "s"}.` });
       }
     } catch (error) {
       setSyncFeedback({ tone: "error", message: error instanceof ApiError ? error.message : "Couldn't sync your linked institutions. Try again." });

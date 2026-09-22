@@ -21,7 +21,7 @@ async def test_job_lease_failure_status_and_cleanup(monkeypatch, acquired, failu
     monkeypatch.setattr(job, "_fernet", Mock())
     monkeypatch.setattr(job, "try_acquire_sync_lease", AsyncMock(return_value=acquired))
     monkeypatch.setattr(job, "release_sync_lease", AsyncMock())
-    monkeypatch.setattr(job, "sync_all_linked_institutions", AsyncMock(
+    monkeypatch.setattr(job, "sync_all_financial_data", AsyncMock(
         side_effect=failures if isinstance(failures, Exception) else None, return_value=failures))
     if isinstance(failures, Exception):
         with pytest.raises(RuntimeError, match="failed"):
@@ -30,10 +30,10 @@ async def test_job_lease_failure_status_and_cleanup(monkeypatch, acquired, failu
         assert await job.run_once() == expected
     engine.dispose.assert_awaited_once()
     if acquired:
-        job.sync_all_linked_institutions.assert_awaited_once()
+        job.sync_all_financial_data.assert_awaited_once()
         job.release_sync_lease.assert_awaited_once_with(connection)
     else:
-        job.sync_all_linked_institutions.assert_not_awaited()
+        job.sync_all_financial_data.assert_not_awaited()
         job.release_sync_lease.assert_not_awaited()
 
 

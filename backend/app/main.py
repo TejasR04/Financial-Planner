@@ -22,7 +22,7 @@ from app.core.exceptions import (
 )
 from app.persistence.session import AsyncSessionLocal, engine
 from app.services.plaid_sync_service import (
-    sync_all_linked_institutions as _sync_all_linked_institutions,
+    sync_all_financial_data as _sync_all_financial_data,
     try_acquire_sync_lease as _try_acquire_plaid_auto_sync_lease,
     release_sync_lease as _release_plaid_auto_sync_lease,
 )
@@ -103,7 +103,7 @@ async def _plaid_auto_sync_loop() -> None:
                     while True:
                         # Detect a lost lease connection immediately before work.
                         await lease_connection.execute(text("SELECT 1"))
-                        await _sync_all_linked_institutions()
+                        await _sync_all_financial_data()
                         # Sleep after the refresh so a restart cannot postpone
                         # autosync indefinitely by resetting the interval.
                         await asyncio.sleep(interval_seconds)

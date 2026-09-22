@@ -148,6 +148,8 @@ class HoldingModel(Base):
     market_value: Mapped[Decimal] = mapped_column(Numeric(18, 2))
     asset_class: Mapped[str] = mapped_column(String(20))
     as_of: Mapped[date] = mapped_column(Date)
+    pricing_mode: Mapped[str] = mapped_column(String(20), default="manual", server_default="manual")
+    last_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
 
     account: Mapped["AccountModel"] = relationship(back_populates="holdings")
 
