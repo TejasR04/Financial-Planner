@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 
 import pytest
 from httpx import AsyncClient
@@ -16,7 +17,7 @@ async def test_income_sources_are_owned_and_do_not_change_account_balances(clien
     assert source.status_code == 201
     assert (await client.patch(f"/api/v1/income-sources/{source.json()['id']}", headers=other, json={"annual_amount": "1"})).status_code == 404
     accounts = await client.get("/api/v1/accounts", headers=owner)
-    assert accounts.json()["data"][0]["balance"] == account.json()["balance"]
+    assert Decimal(accounts.json()["data"][0]["balance"]) == Decimal(account.json()["balance"])
 
 
 @pytest.mark.asyncio
@@ -67,4 +68,4 @@ async def test_manual_transaction_fields_can_be_corrected(client: AsyncClient) -
     edited = await client.patch(f"/api/v1/transactions/{row.json()['id']}", headers=headers, json={"merchant": "Corrected", "amount": "-12", "type": "expense"})
     assert edited.status_code == 200, edited.text
     assert edited.json()["merchant"] == "Corrected"
-    assert edited.json()["amount"] == "-12.00"
+    assert Decimal(edited.json()["amount"]) == Decimal("-12.00")
