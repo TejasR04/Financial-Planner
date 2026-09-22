@@ -55,6 +55,9 @@ jobs:
           python-version: "3.12"
           cache: pip
           cache-dependency-path: backend/requirements-dev.txt
+      # pip-tools relies on pip internals. Keep lock verification on the
+      # newest pip release explicitly supported by the pinned pip-tools.
+      - run: python -m pip install pip==25.3
       - run: pip install -r requirements-dev.txt
       - run: python -m piptools compile --strip-extras --resolver=backtracking --output-file=requirements.txt pyproject.toml
       - run: python -m piptools compile --strip-extras --resolver=backtracking --extra=dev --output-file=requirements-dev.txt pyproject.toml
