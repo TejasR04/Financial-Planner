@@ -60,7 +60,20 @@ jobs:
       - run: python -m ruff check app tests
       - run: python -m mypy
       - run: python -m alembic upgrade head
-      - run: python -m pytest -q --cov=app --cov-branch --cov-report=term-missing:skip-covered --cov-fail-under=60
+      - name: Run backend tests
+        shell: bash
+        run: |
+          set -o pipefail
+          python -m pytest -q --cov=app --cov-branch --cov-report=term-missing:skip-covered --cov-fail-under=60 2>&1 | tee pytest.log
+          status=${PIPESTATUS[0]}
+          if (( status != 0 )); then
+            summary=$(grep -E '^(FAILED|ERROR) ' pytest.log | paste -sd ';' -)
+            if [[ -z "$summary" ]]; then
+              summary=$(tail -n 5 pytest.log | paste -sd ' ' -)
+            fi
+            echo "::error::$summary"
+          fi
+          exit "$status"
 
   e2e:
     runs-on: ubuntu-latest
