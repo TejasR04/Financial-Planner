@@ -1,5 +1,5 @@
 // Isolated, tab-memory sample data. No demo request ever falls through to the server.
-import type { ApiAccount, ApiTransaction, ApiBudgetCategory, ApiScenario, ApiHolding } from "@/lib/api-client";
+import type { ApiAccount, ApiTransaction, ApiBudgetCategory, ApiScenario, ApiHolding, ApiInvestmentContributionRule } from "@/lib/api-client";
 import { cashFlowAmounts, isCardPayment } from "@/lib/cash-flow";
 import { budgetCashFlowAmounts } from "@/lib/budget-cash-flow";
 
@@ -40,7 +40,7 @@ function seed() {
     profile: { target_retirement_age: 65, target_equity_allocation: "0.8", default_withdrawal_rate: "0.04", include_social_security: false, expected_return: "0.06", inflation_rate: "0.025", target_savings_rate: "0.2", cash_reserve_target: "24000" },
     income: [{ id: "salary", name: "Sample salary", annual_amount: "86400", growth_rate: "0.03", active: true }],
     recommendations: [{ id: "rec-1", title: "Build your emergency reserve", body: "Keep six months of living expenses in accessible savings.", category: "Savings", impact_value: "1200", effort: "low", confidence: 0.9, status: "new", generated_at: now() }],
-    rules: [] as Record<string, unknown>[], liabilities: {} as Record<string, unknown>, balanceRules: [] as Record<string, unknown>[],
+    rules: [] as Record<string, unknown>[], liabilities: {} as Record<string, unknown>, balanceRules: [] as Record<string, unknown>[], contributionRules: [] as ApiInvestmentContributionRule[],
   };
 }
 let db = seed();
@@ -132,13 +132,25 @@ export function demoRequest(path: string, options: RequestInit = {}): unknown {
       holdings: holdings.map(h => ({ ...h, cost_basis: Number(h.cost_basis) > 0 ? h.cost_basis : null, account_name: db.accounts.find(a => a.id === h.account_id)?.name ?? "Sample account", gain_loss: eligible.includes(h) ? money(Number(h.market_value) - Number(h.cost_basis)) : null })),
       allocation: breakdown, history: Array.from({ length: 12 }, (_, i) => { const date = new Date(); date.setMonth(date.getMonth() - 11 + i); return { date: date.toISOString().slice(0, 10), value: money(value * (0.85 + i * 0.15 / 11)) }; }) };
   }
-  const accountMatch = p.match(/^\/accounts\/([^/]+)\/(liability|holdings|balance-rules|restore|name)(?:\/([^/]+))?$/);
+  const accountMatch = p.match(/^\/accounts\/([^/]+)\/(liability|holdings|balance-rules|contribution-rules|restore|name)(?:\/([^/]+))?$/);
   if (accountMatch) {
     const [, accountId, resource, childId] = accountMatch;
     if (resource === "restore") { const row = db.archived.find(a => a.id === accountId); if (row) { db.accounts.push(row); db.archived = db.archived.filter(a => a.id !== accountId); } return row; }
     if (resource === "name") { const row = db.accounts.find(a => a.id === accountId); if (row) Object.assign(row, body); return row; }
     if (resource === "liability") { if (method === "PUT") db.liabilities[accountId] = { ...body, id: accountId, account_id: accountId }; return db.liabilities[accountId] ?? { id: accountId, account_id: accountId, principal: "18500", interest_rate: "0.045", minimum_payment: "250", term_months: 84, origination_date: null }; }
     if (resource === "holdings") { if (method === "POST") { const row = { ...body, id: id(), account_id: accountId }; db.holdings.push(row); return row; } return db.holdings.filter(h => h.account_id === accountId); }
+    if (resource === "contribution-rules") {
+      if (method === "DELETE") db.contributionRules = db.contributionRules.filter(rule => rule.id !== childId);
+      if (method === "POST") {
+        const next = new Date();
+        next.setDate(Number(body.day_of_month));
+        if (next < new Date()) next.setMonth(next.getMonth() + 1);
+        const row = { ...body, id: id(), account_id: accountId, next_run_date: next.toISOString().slice(0, 10), active: true, created_at: now() } as ApiInvestmentContributionRule;
+        db.contributionRules.push(row);
+        return row;
+      }
+      return db.contributionRules.filter(rule => rule.account_id === accountId);
+    }
     if (method === "DELETE") db.balanceRules = db.balanceRules.filter(r => r.id !== childId);
     if (method === "POST") { const row = { ...body, id: id(), account_id: accountId, active: true, created_at: now() }; db.balanceRules.push(row); return row; }
     return db.balanceRules.filter(r => r.account_id === accountId);

@@ -32,6 +32,7 @@ from app.schemas.financial_health import (
 )
 from app.services.portfolio_allocation_service import PortfolioAllocationService
 from app.services.loan_balance_automation_service import LoanBalanceAutomationService
+from app.services.investment_contribution_service import InvestmentContributionService
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 allocation_service = PortfolioAllocationService()
@@ -101,7 +102,8 @@ async def list_accounts(
     db: AsyncSession = Depends(get_db),
 ) -> AccountListResponse:
     applied = await LoanBalanceAutomationService(db).apply(current_user.id)
-    if applied:
+    contributions_applied = await InvestmentContributionService(db).apply(current_user.id)
+    if applied or contributions_applied:
         await db.commit()
     accounts = await AccountRepository(db).list_for_user(current_user.id, type)
     institutions = {institution.id: institution for institution in await InstitutionRepository(db).list_for_user(current_user.id)}

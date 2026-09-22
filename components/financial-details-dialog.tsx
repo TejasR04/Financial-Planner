@@ -3,11 +3,12 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { DialogShell } from "@/components/ui/dialog-shell";
-import { api, ApiHolding, ApiLoanBalanceRule } from "@/lib/api-client";
+import { api, ApiHolding, ApiInvestmentContributionRule, ApiLoanBalanceRule } from "@/lib/api-client";
 import type { Account } from "@/lib/data";
 import { useDataRefresh } from "@/lib/data-provider";
 
 const input = "h-8 w-full rounded-md border border-border bg-background px-2.5 text-xs";
+const ordinal = (day: number) => `${day}${day % 10 === 1 && day % 100 !== 11 ? "st" : day % 10 === 2 && day % 100 !== 12 ? "nd" : day % 10 === 3 && day % 100 !== 13 ? "rd" : "th"}`;
 
 export function FinancialDetailsDialog({ account, onClose }: { account: Account | null; onClose: () => void }) {
   const refresh = useDataRefresh();
@@ -17,6 +18,10 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
   const [holdings, setHoldings] = useState<ApiHolding[]>([]);
   const [error, setError] = useState("");
   const [rules, setRules] = useState<ApiLoanBalanceRule[]>([]);
+  const [contributionRules, setContributionRules] = useState<ApiInvestmentContributionRule[]>([]);
+  const [contributionAmount, setContributionAmount] = useState("");
+  const [contributionDay, setContributionDay] = useState("15");
+  const [savingContribution, setSavingContribution] = useState(false);
   const [ruleMode, setRuleMode] = useState<"scheduled" | "merchant">("scheduled");
   const [ruleAmount, setRuleAmount] = useState("");
   const [ruleFrequency, setRuleFrequency] = useState<"once" | "monthly">("monthly");
@@ -53,6 +58,10 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
     let current = true;
     setError("");
     setRules([]);
+    setContributionRules([]);
+    setContributionAmount("");
+    setContributionDay("15");
+    setSavingContribution(false);
     setSavingRule(false);
     setMerchantPattern("");
     setSelectedMerchant("");
@@ -66,7 +75,10 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
       } : {}); setLoadedAccountId(account.id); }).catch(() => { if (current) setError("Couldn't load debt details."); });
       if (!account.institutionId) api.accounts.balanceRules(account.id).then((rows) => { if (current) setRules(rows); }).catch(() => { if (current) setRules([]); });
     }
-    if (holdingAccount) api.accounts.holdings(account.id).then((rows) => { if (current) { setHoldings(rows); setLoadedAccountId(account.id); } }).catch(() => { if (current) setError("Couldn't load holdings."); });
+    if (holdingAccount) {
+      api.accounts.holdings(account.id).then((rows) => { if (current) { setHoldings(rows); setLoadedAccountId(account.id); } }).catch(() => { if (current) setError("Couldn't load holdings."); });
+      if (!account.institutionId) api.accounts.contributionRules(account.id).then((rows) => { if (current) setContributionRules(rows); }).catch(() => { if (current) setError("Couldn't load recurring contributions."); });
+    }
     return () => { current = false; };
   }, [account, debt, holdingAccount]);
 
@@ -130,6 +142,27 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
     }
   }
 
+  async function addContributionRule() {
+    if (savingContribution || !contributionAmount) return;
+    const savingAccountId = account!.id;
+    setSavingContribution(true);
+    try {
+      setError("");
+      const row = await api.accounts.createContributionRule(account!.id, {
+        amount: contributionAmount,
+        day_of_month: Number(contributionDay),
+      });
+      if (accountIdRef.current !== savingAccountId) return;
+      setContributionRules([...contributionRules, row].sort((left, right) => left.day_of_month - right.day_of_month));
+      setContributionAmount("");
+      refresh();
+    } catch (cause) {
+      if (accountIdRef.current === savingAccountId) setError(cause instanceof Error ? cause.message : "Unable to add recurring contribution.");
+    } finally {
+      if (accountIdRef.current === savingAccountId) setSavingContribution(false);
+    }
+  }
+
   return (
     <DialogShell onClose={onClose} ariaLabelledBy="financial-details-title" panelClassName="max-w-lg rounded-lg bg-card p-4">
       <h2 id="financial-details-title" className="text-sm font-semibold">{debt ? "Debt details" : "Manual holdings"} · {account.name}</h2>
@@ -138,7 +171,7 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
         <p className="mt-4 text-xs text-warning">Linked holdings are managed by the institution and cannot be edited here.</p>
       ) : (
         <div className="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-2">
-          {debt ? <>{field("principal", "Original principal (optional)")}<label className="relative"><input className={`${input} pr-7`} type="number" inputMode="decimal" step="0.01" value={values.interest_rate ?? ""} onChange={(event) => setValues({ ...values, interest_rate: event.target.value })} placeholder="APR (optional)" /><span className="pointer-events-none absolute right-2 top-2 text-xs text-muted-foreground">%</span></label>{field("term_months", "Term months (optional)")}{field("minimum_payment", "Minimum payment (optional)")}{field("origination_date", "Origination date", "date")}</> : <>{field("symbol", "Ticker symbol", "text")}{field("quantity", "Quantity")}{field("cost_basis", "Cost basis")}{field("market_value", "Current market value")}<select className={input} value={values.asset_class ?? "equity"} onChange={(event) => setValues({ ...values, asset_class: event.target.value })}>{["equity", "fixed_income", "real_estate", "cash", "alternatives"].map((assetClass) => <option key={assetClass}>{assetClass}</option>)}</select>{field("as_of", "As of", "date")}<label className="col-span-full flex items-start gap-2 rounded-md border border-border p-3 text-xs"><input className="mt-0.5" type="checkbox" checked={values.pricing_mode === "automatic"} onChange={(event) => setValues({ ...values, pricing_mode: event.target.checked ? "automatic" : "manual" })} /><span><span className="block font-medium text-foreground">Update from ticker during sync</span><span className="mt-0.5 block text-muted-foreground">Uses the latest completed market close. The current value above is retained if pricing fails.</span></span></label></>}
+          {debt ? <>{field("principal", "Original principal (optional)")}<label className="relative"><input className={`${input} pr-7`} type="number" inputMode="decimal" step="0.01" value={values.interest_rate ?? ""} onChange={(event) => setValues({ ...values, interest_rate: event.target.value })} placeholder="APR (optional)" /><span className="pointer-events-none absolute right-2 top-2 text-xs text-muted-foreground">%</span></label>{field("term_months", "Term months (optional)")}{field("minimum_payment", "Minimum payment (optional)")}{field("origination_date", "Origination date", "date")}</> : <>{field("symbol", "Ticker symbol", "text")}{field("quantity", "Quantity")}{field("cost_basis", "Total cost basis")}{field("market_value", "Total position value")}<select className={input} value={values.asset_class ?? "equity"} onChange={(event) => setValues({ ...values, asset_class: event.target.value })}>{["equity", "fixed_income", "real_estate", "cash", "alternatives"].map((assetClass) => <option key={assetClass}>{assetClass}</option>)}</select>{field("as_of", "As of", "date")}<label className="col-span-full flex items-start gap-2 rounded-md border border-border p-3 text-xs"><input className="mt-0.5" type="checkbox" checked={values.pricing_mode === "automatic"} onChange={(event) => setValues({ ...values, pricing_mode: event.target.checked ? "automatic" : "manual" })} /><span><span className="block font-medium text-foreground">Update from ticker during sync</span><span className="mt-0.5 block text-muted-foreground">Uses the latest completed market close. The total position value above is retained if pricing fails.</span></span></label></>}
         </div>
       )}
       {debt && !account.institutionId && (
@@ -169,6 +202,26 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
           {!account.institutionId && <button className="text-destructive" onClick={async () => { await api.accounts.deleteHolding(holding.id); setHoldings(holdings.filter((row) => row.id !== holding.id)); refresh(); }}>Remove</button>}
         </div>
       ))}
+      {holdingAccount && !account.institutionId && (
+        <section className="mt-5 border-t border-border pt-4">
+          <h3 className="text-xs font-semibold">Recurring account contributions</h3>
+          <p className="mt-1 text-xs text-muted-foreground">Add a fixed amount to this account balance every month. This tracks incoming contributions; it does not buy shares or change a holding’s quantity or cost basis.</p>
+          {contributionRules.map((rule) => (
+            <div key={rule.id} className="mt-2 flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-xs">
+              <span>${Number(rule.amount).toFixed(2)} on the {ordinal(rule.day_of_month)} · next {rule.next_run_date}</span>
+              <button type="button" className="text-destructive" onClick={async () => { await api.accounts.deleteContributionRule(account.id, rule.id); setContributionRules(contributionRules.filter((item) => item.id !== rule.id)); }}>Remove</button>
+            </div>
+          ))}
+          <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <input aria-label="Contribution amount" className={input} type="number" inputMode="decimal" min="0.01" step="0.01" value={contributionAmount} onChange={(event) => setContributionAmount(event.target.value)} placeholder="Contribution amount" />
+            <select aria-label="Contribution day" className={input} value={contributionDay} onChange={(event) => setContributionDay(event.target.value)}>
+              {Array.from({ length: 31 }, (_, index) => index + 1).map((day) => <option key={day} value={day}>{ordinal(day)} of each month</option>)}
+            </select>
+          </div>
+          <p className="mt-2 text-[11px] text-muted-foreground">For two monthly contributions, add two rules. Dates such as the 30th or 31st run on the final day of shorter months.</p>
+          <Button className="mt-2" variant="outline" size="sm" type="button" onClick={() => void addContributionRule()} disabled={savingContribution || !contributionAmount}>{savingContribution ? "Adding…" : "Add recurring contribution"}</Button>
+        </section>
+      )}
       {error && <p className="mt-2 text-xs text-destructive">{error}</p>}
       <div className="mt-4 flex justify-end gap-2">
         <Button variant="outline" size="sm" onClick={onClose}>Close</Button>

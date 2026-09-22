@@ -166,6 +166,39 @@ class InvestmentValueSnapshotModel(Base):
     value: Mapped[Decimal] = mapped_column(Numeric(18, 2))
 
 
+class InvestmentContributionRuleModel(Base):
+    __tablename__ = "investment_contribution_rules"
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    day_of_month: Mapped[int] = mapped_column(Integer)
+    next_run_date: Mapped[date] = mapped_column(Date, index=True)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class InvestmentContributionAdjustmentModel(Base):
+    __tablename__ = "investment_contribution_adjustments"
+    __table_args__ = (
+        UniqueConstraint("rule_id", "scheduled_for", name="uq_investment_contribution_rule_date"),
+    )
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    rule_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("investment_contribution_rules.id", ondelete="CASCADE"), index=True
+    )
+    account_id: Mapped[uuid.UUID] = mapped_column(
+        PGUUID(as_uuid=True), ForeignKey("accounts.id", ondelete="CASCADE"), index=True
+    )
+    scheduled_for: Mapped[date] = mapped_column(Date, index=True)
+    amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    applied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
 class TransactionModel(Base):
     __tablename__ = "transactions"
     __table_args__ = (

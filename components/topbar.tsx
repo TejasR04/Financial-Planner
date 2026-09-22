@@ -42,8 +42,8 @@ export function Topbar({ onOpenCommand, onOpenNavigation }: { onOpenCommand: () 
       setSyncMessage(
         failures
           ? `${failures} need attention`
-          : result.institutions.length || result.market.holdings_updated
-            ? `Synced ${result.institutions.length} linked · ${result.market.holdings_updated} tickers`
+          : result.institutions.length || result.market.holdings_updated || result.contributions_applied
+            ? `Synced ${result.institutions.length} linked · ${result.market.holdings_updated} tickers · ${result.contributions_applied} contributions`
             : "Nothing to sync",
       );
     } catch (error) {

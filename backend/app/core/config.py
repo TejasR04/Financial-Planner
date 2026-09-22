@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     log_level: str = "INFO"
     api_v1_prefix: str = "/api/v1"
+    financial_timezone: str = "America/New_York"
 
     database_url: str = "postgresql+asyncpg://meridian:meridian@localhost:5432/meridian"
     database_pool_size: int = 5

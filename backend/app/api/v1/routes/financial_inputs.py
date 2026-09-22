@@ -12,6 +12,11 @@ from app.persistence.repositories.income_source_repository import IncomeSourceRe
 from app.persistence.repositories.liability_repository import LiabilityRepository
 from app.schemas.financial_inputs import *
 from app.schemas.loan_balance_rule import LoanBalanceRuleCreate, LoanBalanceRuleResponse
+from app.schemas.investment_contribution import (
+    InvestmentContributionRuleCreate,
+    InvestmentContributionRuleResponse,
+)
+from app.services.investment_contribution_service import InvestmentContributionService
 from app.services.loan_balance_automation_service import LoanBalanceAutomationService
 
 router = APIRouter(tags=["financial-inputs"])
@@ -87,6 +92,47 @@ async def create_balance_rule(account_id: UUID, body: LoanBalanceRuleCreate, cur
 @router.delete("/accounts/{account_id}/balance-rules/{rule_id}", status_code=204)
 async def delete_balance_rule(account_id: UUID, rule_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     await LoanBalanceAutomationService(db).delete_rule(current_user.id, account_id, rule_id)
+    await db.commit()
+
+
+@router.get(
+    "/accounts/{account_id}/contribution-rules",
+    response_model=list[InvestmentContributionRuleResponse],
+)
+async def list_contribution_rules(
+    account_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    return await InvestmentContributionService(db).list_rules(current_user.id, account_id)
+
+
+@router.post(
+    "/accounts/{account_id}/contribution-rules",
+    response_model=InvestmentContributionRuleResponse,
+    status_code=201,
+)
+async def create_contribution_rule(
+    account_id: UUID,
+    body: InvestmentContributionRuleCreate,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    rule = await InvestmentContributionService(db).create_rule(
+        current_user.id, account_id, body.amount, body.day_of_month
+    )
+    await db.commit()
+    return rule
+
+
+@router.delete("/accounts/{account_id}/contribution-rules/{rule_id}", status_code=204)
+async def delete_contribution_rule(
+    account_id: UUID,
+    rule_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    await InvestmentContributionService(db).delete_rule(current_user.id, account_id, rule_id)
     await db.commit()
 
 

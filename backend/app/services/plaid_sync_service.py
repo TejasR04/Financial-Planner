@@ -9,6 +9,7 @@ from app.persistence.session import AsyncSessionLocal
 from app.providers.plaid_provider import PlaidProvider
 from app.providers.market_data_provider import TiingoMarketDataProvider
 from app.services.market_price_sync_service import MarketPriceSyncService
+from app.services.investment_contribution_service import InvestmentContributionService
 
 logger = logging.getLogger("meridian.plaid_sync")
 SYNC_LOCK_ID = 0x4D4552494449414E
@@ -63,6 +64,18 @@ async def sync_all_financial_data() -> int:
                     await session.rollback()
                     failures += 1
                     logger.exception("plaid_sync_user_failed", extra={"user_id": str(user_id)})
+
+            try:
+                contributions_applied = await InvestmentContributionService(session).apply(user_id)
+                await session.commit()
+                logger.info(
+                    "investment_contributions_user_completed",
+                    extra={"user_id": str(user_id), "contributions_applied": contributions_applied},
+                )
+            except Exception:
+                await session.rollback()
+                failures += 1
+                logger.exception("investment_contributions_user_failed", extra={"user_id": str(user_id)})
 
             try:
                 market = await MarketPriceSyncService(session, market_provider).sync_user(user_id)

@@ -1,5 +1,7 @@
 from datetime import date
 from decimal import Decimal
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import pytest
 from httpx import AsyncClient
@@ -69,3 +71,30 @@ async def test_manual_transaction_fields_can_be_corrected(client: AsyncClient) -
     assert edited.status_code == 200, edited.text
     assert edited.json()["merchant"] == "Corrected"
     assert Decimal(edited.json()["amount"]) == Decimal("-12.00")
+
+
+@pytest.mark.asyncio
+async def test_due_manual_investment_contribution_is_applied_once(client: AsyncClient) -> None:
+    headers = await register_and_authorize(client, "investment-contribution@example.com")
+    account = await client.post(
+        "/api/v1/accounts",
+        headers=headers,
+        json={"name": "401(k)", "type": "retirement", "balance": "1000"},
+    )
+    rule = await client.post(
+        f"/api/v1/accounts/{account.json()['id']}/contribution-rules",
+        headers=headers,
+        json={"amount": "250", "day_of_month": datetime.now(ZoneInfo("America/New_York")).day},
+    )
+    assert rule.status_code == 201, rule.text
+
+    first = await client.get("/api/v1/accounts", headers=headers)
+    second = await client.get("/api/v1/accounts", headers=headers)
+    assert Decimal(first.json()["data"][0]["balance"]) == Decimal("1250")
+    assert Decimal(second.json()["data"][0]["balance"]) == Decimal("1250")
+
+    removed = await client.delete(
+        f"/api/v1/accounts/{account.json()['id']}/contribution-rules/{rule.json()['id']}",
+        headers=headers,
+    )
+    assert removed.status_code == 204

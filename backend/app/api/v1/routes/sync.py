@@ -9,6 +9,7 @@ from app.providers.plaid_provider import PlaidProvider
 from app.schemas.plaid import PlaidRefreshInstitutionResponse
 from app.schemas.sync import FinancialDataRefreshResponse, MarketRefreshResponse
 from app.services.market_price_sync_service import MarketPriceSyncService
+from app.services.investment_contribution_service import InvestmentContributionService
 
 router = APIRouter(prefix="/sync", tags=["sync"])
 
@@ -27,6 +28,7 @@ async def refresh_financial_data(
         ).refresh(current_user.id)
         await db.commit()
 
+    contributions_applied = await InvestmentContributionService(db).apply(current_user.id)
     market_result = await MarketPriceSyncService(
         db, TiingoMarketDataProvider(settings.tiingo_api_key)
     ).sync_user(current_user.id)
@@ -52,4 +54,5 @@ async def refresh_financial_data(
             accounts_updated=market_result.accounts_updated,
             errors=market_result.errors,
         ),
+        contributions_applied=contributions_applied,
     )

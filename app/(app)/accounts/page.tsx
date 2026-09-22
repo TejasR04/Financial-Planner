@@ -67,10 +67,10 @@ export default function AccountsPage() {
           tickerFailures.length ? `${tickerFailures.length} ticker${tickerFailures.length === 1 ? "" : "s"}` : "",
         ].filter(Boolean).join(" and ");
         setSyncFeedback({ tone: "error", message: `${details} could not be updated. Previous values were retained.` });
-      } else if (result.institutions.length === 0 && result.market.holdings_updated === 0) {
-        setSyncFeedback({ tone: "success", message: "No linked institutions or automatic ticker holdings to sync." });
+      } else if (result.institutions.length === 0 && result.market.holdings_updated === 0 && result.contributions_applied === 0) {
+        setSyncFeedback({ tone: "success", message: "No linked institutions, automatic ticker holdings, or due contributions to sync." });
       } else {
-        setSyncFeedback({ tone: "success", message: `Synced ${result.institutions.length} linked institution${result.institutions.length === 1 ? "" : "s"} and ${result.market.holdings_updated} ticker holding${result.market.holdings_updated === 1 ? "" : "s"}.` });
+        setSyncFeedback({ tone: "success", message: `Synced ${result.institutions.length} linked institution${result.institutions.length === 1 ? "" : "s"}, ${result.market.holdings_updated} ticker holding${result.market.holdings_updated === 1 ? "" : "s"}, and ${result.contributions_applied} due contribution${result.contributions_applied === 1 ? "" : "s"}.` });
       }
     } catch (error) {
       setSyncFeedback({ tone: "error", message: error instanceof ApiError ? error.message : "Couldn't sync your linked institutions. Try again." });

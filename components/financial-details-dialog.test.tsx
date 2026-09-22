@@ -50,3 +50,26 @@ it("does not let a late debt response populate a different account", async () =>
   await waitFor(() => expect(screen.getByPlaceholderText("Original principal (optional)")).toHaveValue(null));
   expect(screen.getByText(/Second loan/)).toBeVisible();
 });
+
+it("adds a monthly contribution rule to a manual retirement account", async () => {
+  vi.spyOn(api.accounts, "holdings").mockResolvedValue([]);
+  vi.spyOn(api.accounts, "contributionRules").mockResolvedValue([]);
+  const save = vi.spyOn(api.accounts, "createContributionRule").mockResolvedValue({
+    id: "contribution-rule",
+    account_id: "retirement",
+    amount: "250",
+    day_of_month: 30,
+    next_run_date: "2026-09-30",
+    active: true,
+    created_at: "2026-09-22T00:00:00Z",
+  });
+  const user = userEvent.setup();
+  render(<FinancialDetailsDialog account={{ id: "retirement", name: "401(k)", type: "Retirement", mask: "", balance: 1000, status: "manual", updated: "Today" }} onClose={vi.fn()} />);
+
+  await user.type(await screen.findByRole("spinbutton", { name: "Contribution amount" }), "250");
+  await user.selectOptions(screen.getByRole("combobox", { name: "Contribution day" }), "30");
+  await user.click(screen.getByRole("button", { name: "Add recurring contribution" }));
+
+  await waitFor(() => expect(save).toHaveBeenCalledWith("retirement", { amount: "250", day_of_month: 30 }));
+  expect(await screen.findByText(/\$250\.00 on the 30th/)).toBeInTheDocument();
+});

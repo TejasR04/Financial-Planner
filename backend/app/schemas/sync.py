@@ -13,3 +13,4 @@ class MarketRefreshResponse(BaseModel):
 class FinancialDataRefreshResponse(BaseModel):
     institutions: list[PlaidRefreshInstitutionResponse] = Field(default_factory=list)
     market: MarketRefreshResponse
+    contributions_applied: int = 0

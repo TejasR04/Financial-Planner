@@ -73,6 +73,15 @@ export type ApiLoanBalanceRule = {
   active: boolean;
   created_at: string;
 };
+export type ApiInvestmentContributionRule = {
+  id: string;
+  account_id: string;
+  amount: string;
+  day_of_month: number;
+  next_run_date: string;
+  active: boolean;
+  created_at: string;
+};
 export type ApiHolding = { id: string; account_id: string; symbol: string; quantity: string; cost_basis: string; market_value: string; asset_class: "equity" | "fixed_income" | "real_estate" | "cash" | "alternatives"; as_of: string; pricing_mode: "manual" | "automatic"; last_price: string | null };
 export type ApiCashFlowOutlook = { series: { month_index: number; income: string; expenses: string; net: string }[]; average_monthly_surplus: string; projected_savings_rate: string; income_source: string; expense_source: string };
 export type ApiActivitySummary = { history_start: string | null; months: string[]; month_count: number; period_start: string | null; period_end: string | null; label: string; average_monthly_income: string | null; average_monthly_expenses: string | null; average_monthly_surplus: string | null };
@@ -148,6 +157,7 @@ export type ApiFinancialDataRefreshResponse = {
     accounts_updated: number;
     errors: Record<string, string>;
   };
+  contributions_applied: number;
 };
 
 export type ApiAccountList = {
@@ -481,6 +491,12 @@ export const api = {
     createBalanceRule: (id: string, body: { mode: "scheduled" | "merchant"; amount?: string; frequency?: "once" | "monthly"; next_run_date?: string; merchant_pattern?: string }) =>
       post<ApiLoanBalanceRule>(`/accounts/${id}/balance-rules`, body),
     deleteBalanceRule: (accountId: string, ruleId: string) => del<void>(`/accounts/${accountId}/balance-rules/${ruleId}`),
+    contributionRules: (id: string) =>
+      get<ApiInvestmentContributionRule[]>(`/accounts/${id}/contribution-rules`),
+    createContributionRule: (id: string, body: { amount: string; day_of_month: number }) =>
+      post<ApiInvestmentContributionRule>(`/accounts/${id}/contribution-rules`, body),
+    deleteContributionRule: (accountId: string, ruleId: string) =>
+      del<void>(`/accounts/${accountId}/contribution-rules/${ruleId}`),
     holdings: (id: string) => get<ApiHolding[]>(`/accounts/${id}/holdings`),
     addHolding: (id: string, body: Omit<ApiHolding, "id" | "account_id" | "last_price">) => post<ApiHolding>(`/accounts/${id}/holdings`, body),
     deleteHolding: (id: string) => del<void>(`/holdings/${id}`),
