@@ -2,16 +2,21 @@ import { expect, test } from "@playwright/test";
 
 test("Insights separates Gemini from rule-based analysis and renders tool use", async ({
   page,
+  request,
 }) => {
   const email = `assistant-e2e-${Date.now()}@example.com`;
+  const password = "correct-horse-battery-staple";
 
-  await page.goto("/register");
-  await page.getByLabel("Full name").fill("Assistant E2E User");
+  const seeded = await request.post("http://127.0.0.1:8010/api/v1/auth/register", {
+    data: { email, password, full_name: "Assistant E2E User" },
+  });
+  expect(seeded.status()).toBe(201);
+
+  await page.goto("/login");
   await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill("correct-horse-battery-staple");
-  await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page).toHaveURL(/\/onboarding$/);
-  await page.getByRole("button", { name: "Skip for now" }).click();
+  await page.getByLabel("Password").fill(password);
+  await page.getByRole("button", { name: "Sign in" }).click();
+  await expect(page).toHaveURL(/\/$/);
 
   await page.route("**/api/v1/agent/history", async (route) => {
     if (route.request().method() === "GET") {

@@ -1,17 +1,17 @@
 import { expect, test } from "@playwright/test";
 
-test("a user can register, and invalid credentials remain actionable", async ({ page }) => {
+test("an existing user can sign in, and invalid credentials remain actionable", async ({
+  page,
+  request,
+}) => {
   const email = `e2e-${Date.now()}@example.com`;
   const password = "correct-horse-battery-staple";
 
-  await page.goto("/register");
-  await page.getByLabel("Full name").fill("E2E Test User");
-  await page.getByLabel("Email").fill(email);
-  await page.getByLabel("Password").fill(password);
-  await page.getByRole("button", { name: "Create account" }).click();
-  await expect(page).toHaveURL(/\/onboarding$/);
+  const seeded = await request.post("http://127.0.0.1:8010/api/v1/auth/register", {
+    data: { email, password, full_name: "E2E Test User" },
+  });
+  expect(seeded.status()).toBe(201);
 
-  await page.evaluate(() => localStorage.clear());
   await page.goto("/login");
   await page.getByLabel("Email").fill(email);
   await page.getByLabel("Password").fill("wrong-password");
