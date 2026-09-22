@@ -108,7 +108,7 @@ passlib==1.7.4
     # via meridian-backend (pyproject.toml)
 pathspec==1.1.1
     # via mypy
-pip-tools==7.5.0
+pip-tools==7.5.2
     # via meridian-backend (pyproject.toml)
 plaid-python==42.0.0
     # via meridian-backend (pyproject.toml)

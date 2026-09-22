@@ -23,7 +23,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "mypy>=1.14",
-    "pip-tools==7.5.0",
+    "pip-tools==7.5.2",
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
     "pytest-cov>=6.0",
