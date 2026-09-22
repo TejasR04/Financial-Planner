@@ -87,4 +87,15 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npx playwright install --with-deps chromium
-      - run: npm run test:e2e
+      - name: Run browser tests
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          npm run test:e2e 2>&1 | tee playwright.log
+          status=${PIPESTATUS[0]}
+          if (( status != 0 )); then
+            summary=$(tail -n 20 playwright.log | paste -sd ' ' -)
+            echo "::error::$summary"
+          fi
+          exit "$status"
