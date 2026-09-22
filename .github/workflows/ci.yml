@@ -63,6 +63,7 @@ jobs:
       - name: Run backend tests
         shell: bash
         run: |
+          set +e
           set -o pipefail
           python -m pytest -q --cov=app --cov-branch --cov-report=term-missing:skip-covered --cov-fail-under=60 2>&1 | tee pytest.log
           status=${PIPESTATUS[0]}
