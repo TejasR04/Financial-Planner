@@ -18,7 +18,7 @@ test("Insights separates Gemini from rule-based analysis and renders tool use", 
   await page.getByRole("button", { name: "Sign in" }).click();
   await expect(page).toHaveURL(/\/$/);
 
-  await page.route("**/api/v1/agent/history", async (route) => {
+  await page.route("**/api/v1/agent/conversations", async (route) => {
     if (route.request().method() === "GET") {
       await route.fulfill({ status: 200, contentType: "application/json", body: "[]" });
       return;
@@ -30,6 +30,7 @@ test("Insights separates Gemini from rule-based analysis and renders tool use", 
       status: 200,
       contentType: "application/json",
       body: JSON.stringify({
+        conversation_id: "e2e-conversation",
         reply: "Your projection was calculated with Meridian's retirement model.",
         tool_calls: [{ tool: "forecast_retirement", arguments: {} }],
         structured_results: [{ tool: "forecast_retirement", result: {} }],
@@ -37,7 +38,8 @@ test("Insights separates Gemini from rule-based analysis and renders tool use", 
     });
   });
 
-  await page.goto("/insights");
+  await page.getByRole("link", { name: "Insights" }).click();
+  await expect(page).toHaveURL(/\/insights$/);
   await expect(
     page.getByRole("heading", { name: "Gemini financial assistant" }),
   ).toBeVisible();
