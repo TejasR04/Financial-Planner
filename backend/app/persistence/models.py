@@ -121,6 +121,8 @@ class AccountModel(Base):
     mask: Mapped[str | None] = mapped_column(String(8), nullable=True)
     currency: Mapped[str] = mapped_column(String(3), default="USD")
     balance: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    reported_cash_balance: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
+    reported_cash_is_liquid: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
     apy: Mapped[Decimal | None] = mapped_column(Numeric(5, 2), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="manual")
     external_account_id: Mapped[str | None] = mapped_column(String(255), nullable=True)

@@ -247,6 +247,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           type: ACCOUNT_TYPE_LABEL[a.type],
           mask: a.mask ?? "—",
           balance: parseFloat(a.balance),
+          reportedCashBalance: a.reported_cash_balance == null ? null : parseFloat(a.reported_cash_balance),
+          reportedCashIsLiquid: a.reported_cash_is_liquid,
           apy: a.apy != null ? parseFloat(a.apy) : undefined,
           status: a.institution_status === "error" || a.institution_status === "action_required" ? "attention" : a.status,
           updated: formatTimestamp(a.institution_last_synced_at ?? a.updated_at),
@@ -297,16 +299,19 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         // --- kpis (all values are based on the selected trailing window)
         const netWorthToday = parseFloat(accountList.net_worth);
         const taxableInvestmentIds = new Set(
-          (investmentDashboard?.accounts ?? [])
-            .filter((account) => account.type === "investment")
+          accountList.data
+            .filter((account) => account.type === "investment" && account.reported_cash_balance == null)
             .map((account) => account.id),
         );
         const cashHoldings = (investmentDashboard?.holdings ?? [])
           .filter((holding) => holding.asset_class === "cash" && taxableInvestmentIds.has(holding.account_id))
           .reduce((sum, holding) => sum + parseFloat(holding.market_value), 0);
+        const reportedLiquidCash = accountList.data
+          .filter((account) => (account.type === "investment" || account.type === "retirement") && account.reported_cash_is_liquid && account.reported_cash_balance != null)
+          .reduce((sum, account) => sum + Math.max(0, Number(account.reported_cash_balance)), 0);
         const liquidAssets = accountList.data
           .filter((a) => a.type === "depository" && parseFloat(a.balance) > 0)
-          .reduce((s, a) => s + parseFloat(a.balance), 0) + cashHoldings;
+          .reduce((s, a) => s + parseFloat(a.balance), 0) + cashHoldings + reportedLiquidCash;
         const savingsRate = averageMonthlyIncome != null && averageMonthlyIncome > 0 && averageMonthlySurplus != null ? (averageMonthlySurplus / averageMonthlyIncome) * 100 : null;
         const rangeLabel = activitySummary?.label ?? "No completed months available";
         const kpis: Kpi[] = [

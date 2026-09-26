@@ -92,6 +92,8 @@ export type ApiAccount = {
   name: string;
   type: "investment" | "depository" | "retirement" | "credit" | "loan" | "property";
   balance: string;
+  reported_cash_balance: string | null;
+  reported_cash_is_liquid: boolean;
   currency: "USD";
   mask: string | null;
   apy: string | null;
@@ -470,6 +472,8 @@ export const api = {
     }) => post<ApiAccount>("/accounts", body),
     update: (accountId: string, body: { name?: string; balance?: string; mask?: string | null; apy?: string | null }) =>
       patch<ApiAccount>(`/accounts/${accountId}`, body),
+    saveReportedCash: (accountId: string, body: { balance: string | null; is_liquid: boolean }) =>
+      put<ApiAccount>(`/accounts/${accountId}/reported-cash`, body),
     rename: (accountId: string, name: string) =>
       patch<ApiAccount>(`/accounts/${accountId}/name`, { name }),
     /** Archive an account; the backend retains its history for recovery. */
@@ -499,6 +503,7 @@ export const api = {
       del<void>(`/accounts/${accountId}/contribution-rules/${ruleId}`),
     holdings: (id: string) => get<ApiHolding[]>(`/accounts/${id}/holdings`),
     addHolding: (id: string, body: Omit<ApiHolding, "id" | "account_id" | "last_price">) => post<ApiHolding>(`/accounts/${id}/holdings`, body),
+    updateHolding: (id: string, body: Partial<Pick<ApiHolding, "pricing_mode">>) => patch<ApiHolding>(`/holdings/${id}`, body),
     deleteHolding: (id: string) => del<void>(`/holdings/${id}`),
   },
   investments: {

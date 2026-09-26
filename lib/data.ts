@@ -99,6 +99,8 @@ export type Account = {
     | "Property";
   mask: string;
   balance: number;
+  reportedCashBalance?: number | null;
+  reportedCashIsLiquid?: boolean;
   // No balance-history table exists yet, so day-over-day % change is
   // optional and omitted rather than fabricated (see HANDOFF.md).
   change?: number;

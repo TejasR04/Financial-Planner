@@ -75,3 +75,47 @@ it("adds a monthly contribution rule to a manual retirement account", async () =
   await waitFor(() => expect(save).toHaveBeenCalledWith("retirement", { amount: "250", day_of_month: 30 }));
   expect(await screen.findByText(/\$250\.00 on the 30th/)).toBeInTheDocument();
 });
+
+it("saves a linked investment account's cash without creating a holding", async () => {
+  vi.spyOn(api.accounts, "holdings").mockResolvedValue([]);
+  const saveCash = vi.spyOn(api.accounts, "saveReportedCash").mockResolvedValue({
+    id: "brokerage", name: "Brokerage", type: "investment", balance: "10000",
+    reported_cash_balance: "750.00", reported_cash_is_liquid: true,
+    currency: "USD", mask: null, apy: null, status: "connected",
+    institution: "Broker", institution_id: "institution", institution_status: "healthy",
+    institution_last_synced_at: null, updated_at: null,
+  });
+  const addHolding = vi.spyOn(api.accounts, "addHolding");
+  const user = userEvent.setup();
+  render(<FinancialDetailsDialog account={{
+    id: "brokerage", name: "Brokerage", type: "Investment", institutionId: "institution",
+    mask: "", balance: 10000, status: "connected", updated: "Today",
+  }} onClose={vi.fn()} />);
+  await user.type(screen.getByRole("spinbutton", { name: "Cash balance" }), "750");
+  await user.click(screen.getByRole("checkbox", { name: /Count this cash as a liquid asset/ }));
+  await user.click(await screen.findByRole("button", { name: "Save cash balance" }));
+  await waitFor(() => expect(saveCash).toHaveBeenCalledWith("brokerage", { balance: "750", is_liquid: true }));
+  expect(addHolding).not.toHaveBeenCalled();
+});
+
+it("enables ticker pricing for an existing manual holding", async () => {
+  const holding = {
+    id: "position", account_id: "retirement", symbol: "VTI", quantity: "10",
+    cost_basis: "2000", market_value: "2500", asset_class: "equity" as const,
+    as_of: "2026-09-25", pricing_mode: "manual" as const, last_price: null,
+  };
+  vi.spyOn(api.accounts, "holdings").mockResolvedValue([holding]);
+  vi.spyOn(api.accounts, "contributionRules").mockResolvedValue([]);
+  const update = vi.spyOn(api.accounts, "updateHolding").mockResolvedValue({ ...holding, pricing_mode: "automatic" });
+  const user = userEvent.setup();
+  render(<FinancialDetailsDialog account={{
+    id: "retirement", name: "401(k)", type: "Retirement", mask: "", balance: 2500,
+    status: "manual", updated: "Today",
+  }} onClose={vi.fn()} />);
+
+  const autoUpdate = await screen.findByRole("checkbox", { name: "Update VTI from ticker during sync" });
+  expect(autoUpdate).not.toBeChecked();
+  await user.click(autoUpdate);
+  await waitFor(() => expect(update).toHaveBeenCalledWith("position", { pricing_mode: "automatic" }));
+  await waitFor(() => expect(autoUpdate).toBeChecked());
+});

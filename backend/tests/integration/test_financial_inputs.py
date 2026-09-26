@@ -42,6 +42,30 @@ async def test_liability_terms_and_manual_holdings_follow_source_rules(client: A
 
 
 @pytest.mark.asyncio
+async def test_reported_investment_cash_is_separate_from_holdings_and_user_owned(client: AsyncClient) -> None:
+    owner = await register_and_authorize(client, "cash-owner@example.com")
+    other = await register_and_authorize(client, "cash-other@example.com")
+    brokerage = await client.post("/api/v1/accounts", headers=owner, json={
+        "name": "Brokerage", "type": "investment", "balance": "10000",
+    })
+    account_id = brokerage.json()["id"]
+    route = f"/api/v1/accounts/{account_id}/reported-cash"
+    assert (await client.put(route, headers=other, json={"balance": "500", "is_liquid": True})).status_code == 404
+    saved = await client.put(route, headers=owner, json={"balance": "500", "is_liquid": True})
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["reported_cash_balance"] == "500.00"
+    assert saved.json()["reported_cash_is_liquid"] is True
+    assert saved.json()["balance"] == "10000.00"
+    assert (await client.get(f"/api/v1/accounts/{account_id}/holdings", headers=owner)).json() == []
+    dashboard = await client.get("/api/v1/investments/dashboard", headers=owner)
+    assert dashboard.status_code == 200, dashboard.text
+    assert dashboard.json()["holdings"] == []
+    cleared = await client.put(route, headers=owner, json={"balance": None, "is_liquid": True})
+    assert cleared.json()["reported_cash_balance"] is None
+    assert cleared.json()["reported_cash_is_liquid"] is False
+
+
+@pytest.mark.asyncio
 async def test_cash_flow_outlook_uses_saved_income_and_completed_month_expenses(client: AsyncClient) -> None:
     headers = await register_and_authorize(client, "outlook@example.com")
     account = await client.post("/api/v1/accounts", headers=headers, json={"name": "Checking", "type": "depository", "balance": "1000"})

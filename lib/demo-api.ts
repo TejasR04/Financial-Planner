@@ -14,7 +14,7 @@ function seed() {
     ["retirement", "Workplace 401(k)", "retirement", "146000"],
     ["credit", "Rewards card", "credit", "1250"],
     ["loan", "Student loan", "loan", "18500"],
-  ].map(([key, name, type, balance], i) => ({ id: key, name, type: type as ApiAccount["type"], balance, currency: "USD", mask: `${4100 + i}`, apy: type === "depository" ? "0.04" : null, status: "manual", institution: "Sample Bank", institution_id: null, institution_status: null, institution_last_synced_at: null, updated_at: now() }));
+  ].map(([key, name, type, balance], i) => ({ id: key, name, type: type as ApiAccount["type"], balance, reported_cash_balance: null, reported_cash_is_liquid: false, currency: "USD", mask: `${4100 + i}`, apy: type === "depository" ? "0.04" : null, status: "manual", institution: "Sample Bank", institution_id: null, institution_status: null, institution_last_synced_at: null, updated_at: now() }));
   const categories: ApiBudgetCategory[] = [["Housing", "2200"], ["Groceries", "650"], ["Dining", "350"], ["Transport", "300"], ["Utilities", "250"], ["Shopping", "300"]].map(([name, monthly_limit], i) => ({ id: `budget-${i}`, name, monthly_limit, group_name: "Living expenses", sort_order: i, active: true }));
   const transactions: ApiTransaction[] = [];
   for (let month = 0; month < 12; month++) {
@@ -132,11 +132,12 @@ export function demoRequest(path: string, options: RequestInit = {}): unknown {
       holdings: holdings.map(h => ({ ...h, cost_basis: Number(h.cost_basis) > 0 ? h.cost_basis : null, account_name: db.accounts.find(a => a.id === h.account_id)?.name ?? "Sample account", gain_loss: eligible.includes(h) ? money(Number(h.market_value) - Number(h.cost_basis)) : null })),
       allocation: breakdown, history: Array.from({ length: 12 }, (_, i) => { const date = new Date(); date.setMonth(date.getMonth() - 11 + i); return { date: date.toISOString().slice(0, 10), value: money(value * (0.85 + i * 0.15 / 11)) }; }) };
   }
-  const accountMatch = p.match(/^\/accounts\/([^/]+)\/(liability|holdings|balance-rules|contribution-rules|restore|name)(?:\/([^/]+))?$/);
+  const accountMatch = p.match(/^\/accounts\/([^/]+)\/(liability|holdings|balance-rules|contribution-rules|restore|name|reported-cash)(?:\/([^/]+))?$/);
   if (accountMatch) {
     const [, accountId, resource, childId] = accountMatch;
     if (resource === "restore") { const row = db.archived.find(a => a.id === accountId); if (row) { db.accounts.push(row); db.archived = db.archived.filter(a => a.id !== accountId); } return row; }
     if (resource === "name") { const row = db.accounts.find(a => a.id === accountId); if (row) Object.assign(row, body); return row; }
+    if (resource === "reported-cash") { const row = db.accounts.find(a => a.id === accountId); if (row) { row.reported_cash_balance = body.balance == null ? null : money(Number(body.balance)); row.reported_cash_is_liquid = row.reported_cash_balance !== null && Boolean(body.is_liquid); } return row; }
     if (resource === "liability") { if (method === "PUT") db.liabilities[accountId] = { ...body, id: accountId, account_id: accountId }; return db.liabilities[accountId] ?? { id: accountId, account_id: accountId, principal: "18500", interest_rate: "0.045", minimum_payment: "250", term_months: 84, origination_date: null }; }
     if (resource === "holdings") { if (method === "POST") { const row = { ...body, id: id(), account_id: accountId }; db.holdings.push(row); return row; } return db.holdings.filter(h => h.account_id === accountId); }
     if (resource === "contribution-rules") {

@@ -18,6 +18,7 @@ from app.schemas.account import (
     AccountRenameRequest,
     AccountResponse,
     AccountUpdateRequest,
+    ReportedCashUpdateRequest,
     InstitutionResponse,
     DisconnectedDataDeleteResponse,
     DisconnectedDataSummary,
@@ -239,6 +240,20 @@ async def rename_account(
     }
     await db.commit()
     return _to_response(updated, institutions)
+
+
+@router.put("/{account_id}/reported-cash", response_model=AccountResponse)
+async def update_reported_cash(
+    account_id: UUID,
+    body: ReportedCashUpdateRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> AccountResponse:
+    updated = await AccountRepository(db).set_reported_cash_for_user(
+        current_user.id, account_id, body.balance, body.is_liquid
+    )
+    await db.commit()
+    return _to_response(updated, {})
 
 
 @router.post("/{account_id}/sync", response_model=PlaidRefreshInstitutionResponse)

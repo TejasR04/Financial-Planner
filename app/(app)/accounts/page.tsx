@@ -60,13 +60,14 @@ export default function AccountsPage() {
       const result = await requestDataRefresh();
       refreshData();
       const institutionFailures = result.institutions.filter((institution) => institution.error);
-      const tickerFailures = Object.keys(result.market.errors);
+      const tickerFailures = Object.entries(result.market.errors);
       if (institutionFailures.length > 0 || tickerFailures.length > 0) {
         const details = [
           institutionFailures.length ? `${institutionFailures.length} institution${institutionFailures.length === 1 ? "" : "s"}` : "",
           tickerFailures.length ? `${tickerFailures.length} ticker${tickerFailures.length === 1 ? "" : "s"}` : "",
         ].filter(Boolean).join(" and ");
-        setSyncFeedback({ tone: "error", message: `${details} could not be updated. Previous values were retained.` });
+        const tickerDetails = tickerFailures.slice(0, 3).map(([symbol, reason]) => `${symbol}: ${reason}`).join("; ");
+        setSyncFeedback({ tone: "error", message: `${details} could not be updated. Previous values were retained.${tickerDetails ? ` ${tickerDetails}${tickerFailures.length > 3 ? "; more tickers also failed." : ""}` : ""}` });
       } else if (result.institutions.length === 0 && result.market.holdings_updated === 0 && result.contributions_applied === 0) {
         setSyncFeedback({ tone: "success", message: "No linked institutions, automatic ticker holdings, or due contributions to sync." });
       } else {

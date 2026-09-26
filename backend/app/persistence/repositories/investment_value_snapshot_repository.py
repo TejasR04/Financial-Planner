@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select
+from sqlalchemy import select
 
 from app.domain.entities import Account
 from app.domain.enums import AccountType
@@ -55,10 +55,27 @@ class InvestmentValueSnapshotRepository(BaseRepository[InvestmentValueSnapshotMo
 
     async def daily_totals_for_user(self, user_id: UUID) -> list[tuple[date, Decimal]]:
         result = await self.session.execute(
-            select(InvestmentValueSnapshotModel.as_of, func.sum(InvestmentValueSnapshotModel.value))
+            select(
+                InvestmentValueSnapshotModel.account_id,
+                InvestmentValueSnapshotModel.as_of,
+                InvestmentValueSnapshotModel.value,
+            )
             .join(AccountModel, AccountModel.id == InvestmentValueSnapshotModel.account_id)
-            .where(AccountModel.user_id == user_id, AccountModel.archived_at.is_(None))
-            .group_by(InvestmentValueSnapshotModel.as_of)
-            .order_by(InvestmentValueSnapshotModel.as_of)
+            .where(
+                AccountModel.user_id == user_id,
+                AccountModel.archived_at.is_(None),
+                AccountModel.type.in_((AccountType.INVESTMENT.value, AccountType.RETIREMENT.value)),
+            )
+            .order_by(InvestmentValueSnapshotModel.as_of, InvestmentValueSnapshotModel.account_id)
         )
-        return [(as_of, Decimal(value)) for as_of, value in result.all()]
+        latest_values: dict[UUID, Decimal] = {}
+        totals: list[tuple[date, Decimal]] = []
+        current_date: date | None = None
+        for account_id, as_of, value in result.all():
+            if current_date is not None and as_of != current_date:
+                totals.append((current_date, sum(latest_values.values(), Decimal("0"))))
+            latest_values[account_id] = Decimal(value)
+            current_date = as_of
+        if current_date is not None:
+            totals.append((current_date, sum(latest_values.values(), Decimal("0"))))
+        return totals

@@ -170,6 +170,17 @@ class AccountRepository(BaseRepository[AccountModel]):
         await self.session.flush()
         return _to_domain(row)
 
+    async def set_reported_cash_for_user(
+        self, user_id: UUID, account_id: UUID, balance: Decimal | None, is_liquid: bool
+    ) -> Account:
+        row = await self._row_for_user(user_id, account_id)
+        if row.type not in {AccountType.INVESTMENT.value, AccountType.RETIREMENT.value}:
+            raise ValidationError("Reported cash is only available for investment and retirement accounts.")
+        row.reported_cash_balance = balance
+        row.reported_cash_is_liquid = is_liquid if balance is not None else False
+        await self.session.flush()
+        return _to_domain(row)
+
     async def update_manual_for_user(self, user_id: UUID, account_id: UUID, **fields) -> Account:
         """Backward-compatible name for callers that only update manual rows."""
         return await self.update_for_user(user_id, account_id, **fields)
@@ -375,4 +386,6 @@ def _to_domain(row: AccountModel) -> Account:
         archived_at=row.archived_at,
         user_archived_at=getattr(row, "user_archived_at", None),
         provider_archived_at=getattr(row, "provider_archived_at", None),
+        reported_cash_balance=getattr(row, "reported_cash_balance", None),
+        reported_cash_is_liquid=getattr(row, "reported_cash_is_liquid", False),
     )

@@ -83,6 +83,8 @@ class Account:
     archived_at: datetime | None = None
     user_archived_at: datetime | None = None
     provider_archived_at: datetime | None = None
+    reported_cash_balance: Decimal | None = None
+    reported_cash_is_liquid: bool = False
 
     @property
     def is_liability(self) -> bool:
@@ -189,17 +191,26 @@ class FinancialSnapshot:
             (a.balance for a in self.accounts if a.type == AT.DEPOSITORY and a.balance > 0),
             Decimal("0"),
         )
-        accessible_investment_ids = {
-            account.id for account in self.accounts if account.type == AT.INVESTMENT
+        investment_accounts = {
+            account.id: account for account in self.accounts
+            if account.type in (AT.INVESTMENT, AT.RETIREMENT)
         }
         brokerage_cash = sum(
             (
                 holding.market_value
                 for holding in self.holdings
-                if holding.account_id in accessible_investment_ids
+                if holding.account_id in investment_accounts
+                and investment_accounts[holding.account_id].type == AT.INVESTMENT
+                and investment_accounts[holding.account_id].reported_cash_balance is None
                 and holding.asset_class == AssetClass.CASH
                 and holding.market_value > 0
             ),
             Decimal("0"),
         )
-        return depository_cash + brokerage_cash
+        reported_cash = sum(
+            (account.reported_cash_balance for account in investment_accounts.values()
+             if account.reported_cash_is_liquid and account.reported_cash_balance is not None
+             and account.reported_cash_balance > 0),
+            Decimal("0"),
+        )
+        return depository_cash + brokerage_cash + reported_cash

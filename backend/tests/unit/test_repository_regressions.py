@@ -543,3 +543,29 @@ async def test_daily_snapshots_prefetch_existing_rows_once():
 
     assert session.execute.await_count == 1
     assert session.add.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_investment_history_carries_manual_balances_across_plaid_sync_dates():
+    plaid_id, manual_401k_id, manual_hsa_id = uuid4(), uuid4(), uuid4()
+    rows = [
+        (plaid_id, date(2026, 9, 1), Decimal("10000")),
+        (plaid_id, date(2026, 9, 2), Decimal("10100")),
+        (manual_401k_id, date(2026, 9, 2), Decimal("50000")),
+        (manual_hsa_id, date(2026, 9, 2), Decimal("3000")),
+        (plaid_id, date(2026, 9, 3), Decimal("10200")),
+        (manual_hsa_id, date(2026, 9, 4), Decimal("3100")),
+        (plaid_id, date(2026, 9, 5), Decimal("10300")),
+    ]
+    result = SimpleNamespace(all=lambda: rows)
+    session = SimpleNamespace(execute=AsyncMock(return_value=result))
+
+    totals = await InvestmentValueSnapshotRepository(session).daily_totals_for_user(uuid4())
+
+    assert totals == [
+        (date(2026, 9, 1), Decimal("10000")),
+        (date(2026, 9, 2), Decimal("63100")),
+        (date(2026, 9, 3), Decimal("63200")),
+        (date(2026, 9, 4), Decimal("63300")),
+        (date(2026, 9, 5), Decimal("63400")),
+    ]

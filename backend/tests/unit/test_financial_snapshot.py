@@ -32,3 +32,31 @@ def test_liquid_assets_include_taxable_brokerage_cash_but_not_retirement_cash():
     )
 
     assert snapshot.liquid_assets == Decimal("12000")
+
+
+def test_reported_cash_respects_liquidity_choice_and_replaces_position_cash():
+    user = User(id=uuid4(), email="person@example.com", full_name="Person")
+    brokerage = Account(
+        id=uuid4(), user_id=user.id, name="Brokerage", type=AccountType.INVESTMENT,
+        balance=Decimal("25000"), reported_cash_balance=Decimal("8000"),
+        reported_cash_is_liquid=True,
+    )
+    hsa = Account(
+        id=uuid4(), user_id=user.id, name="HSA", type=AccountType.RETIREMENT,
+        balance=Decimal("7000"), reported_cash_balance=Decimal("7000"),
+        reported_cash_is_liquid=False,
+    )
+    holdings = [Holding(
+        uuid4(), brokerage.id, "CASH", Decimal("1"), Decimal("10000"),
+        Decimal("10000"), AssetClass.CASH, date.today(),
+    )]
+    snapshot = FinancialSnapshot(
+        user=user, profile=PlanningProfile(user.id),
+        accounts=[brokerage, hsa], holdings=holdings,
+    )
+    assert snapshot.liquid_assets == Decimal("8000")
+
+    hsa.reported_cash_is_liquid = True
+    assert snapshot.liquid_assets == Decimal("15000")
+    brokerage.reported_cash_is_liquid = False
+    assert snapshot.liquid_assets == Decimal("7000")

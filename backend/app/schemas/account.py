@@ -15,6 +15,8 @@ class AccountResponse(BaseModel):
     name: str
     type: AccountType
     balance: Decimal
+    reported_cash_balance: Decimal | None = None
+    reported_cash_is_liquid: bool = False
     currency: Literal["USD"]
     mask: str | None
     apy: Decimal | None
@@ -53,6 +55,11 @@ class AccountRenameRequest(BaseModel):
         if not normalized:
             raise ValueError("Account name cannot be blank.")
         return normalized
+
+
+class ReportedCashUpdateRequest(BaseModel):
+    balance: Decimal | None = Field(default=None, ge=0)
+    is_liquid: bool = False
 
 
 class InstitutionResponse(BaseModel):
