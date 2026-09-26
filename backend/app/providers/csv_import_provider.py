@@ -24,6 +24,7 @@ class ParsedCSVRow:
     row_number: int
     transaction: Transaction
     warnings: list[str]
+    identity_number: int | None = None
 
 
 class CSVImportProvider(FinancialDataProvider):
@@ -82,6 +83,9 @@ class CSVImportProvider(FinancialDataProvider):
                 raise ValueError(f"Row {line_number}: Category must be 100 characters or fewer")
             normalized_category = " ".join(category.lower().replace("_", " ").split())
             warnings: list[str] = []
+            # Generic bank flow labels treat positive values as magnitudes.
+            # Other categories retain their source sign, so a positive
+            # explicitly typed expense can represent a refund.
             if normalized_category in {"withdrawal", "debit"}:
                 amount = -abs(amount)
             elif normalized_category in {"credit", "money in", "interest payment", "deposit"}:
@@ -94,8 +98,8 @@ class CSVImportProvider(FinancialDataProvider):
                     transaction_type = TransactionType(explicit_type)
                 except ValueError as exc:
                     raise ValueError(f"Row {line_number}: Unrecognized type: {row.get('type')!r}") from exc
-                expected_positive = transaction_type in {TransactionType.INCOME, TransactionType.CONTRIBUTION}
-                amount = abs(amount) if expected_positive else -abs(amount) if transaction_type == TransactionType.EXPENSE else amount
+                if transaction_type in {TransactionType.INCOME, TransactionType.CONTRIBUTION}:
+                    amount = abs(amount)
             elif normalized_category == "transfer":
                 transaction_type = TransactionType.TRANSFER
             elif "credit card payment" in normalized_category:

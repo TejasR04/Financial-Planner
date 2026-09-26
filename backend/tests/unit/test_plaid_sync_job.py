@@ -50,3 +50,60 @@ async def test_sync_continues_after_user_failure_and_reports_institution_errors(
     assert refresh.await_count == 3
     assert session.commit.await_count == 2
     session.rollback.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("plaid_configured", [False, True])
+async def test_background_financial_sync_applies_loan_automation(monkeypatch, plaid_configured):
+    session = AsyncMock()
+    context = AsyncMock()
+    context.__aenter__.return_value = session
+    monkeypatch.setattr(service, "AsyncSessionLocal", lambda: context)
+    monkeypatch.setattr(
+        service,
+        "UserRepository",
+        lambda _: SimpleNamespace(list_active_ids=AsyncMock(return_value=["user"])),
+    )
+    monkeypatch.setattr(
+        service,
+        "get_settings",
+        lambda: SimpleNamespace(
+            plaid_client_id="client" if plaid_configured else "",
+            plaid_secret="secret" if plaid_configured else "",
+            plaid_env="sandbox",
+            tiingo_api_key="",
+        ),
+    )
+    if plaid_configured:
+        monkeypatch.setattr(
+            service,
+            "PlaidProvider",
+            lambda *args: SimpleNamespace(refresh=AsyncMock(return_value=[])),
+        )
+    loan_apply = AsyncMock(return_value=1)
+    contribution_apply = AsyncMock(return_value=0)
+    market_sync = AsyncMock(return_value=SimpleNamespace(
+        errors=[], holdings_updated=0, symbols_updated=0, accounts_updated=0,
+    ))
+    monkeypatch.setattr(
+        service,
+        "LoanBalanceAutomationService",
+        lambda _: SimpleNamespace(apply=loan_apply),
+    )
+    monkeypatch.setattr(
+        service,
+        "InvestmentContributionService",
+        lambda _: SimpleNamespace(apply=contribution_apply),
+    )
+    monkeypatch.setattr(service, "TiingoMarketDataProvider", lambda _: object())
+    monkeypatch.setattr(
+        service,
+        "MarketPriceSyncService",
+        lambda *_: SimpleNamespace(sync_user=market_sync),
+    )
+
+    assert await service.sync_all_financial_data() == 0
+
+    loan_apply.assert_awaited_once_with("user")
+    contribution_apply.assert_awaited_once_with("user")
+    market_sync.assert_awaited_once_with("user")

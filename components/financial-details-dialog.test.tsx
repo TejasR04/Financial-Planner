@@ -21,12 +21,14 @@ it("selects a merchant from transaction history before saving a future payment r
   });
   const user = userEvent.setup();
   render(<FinancialDetailsDialog account={{ id: "loan", name: "Auto loan", type: "Loan", mask: "", balance: -500, status: "manual", updated: "Today" }} onClose={vi.fn()} />);
-  await user.selectOptions(screen.getAllByRole("combobox")[0], "merchant");
+  expect(screen.getByRole("textbox", { name: "Search payment merchants" })).toBeVisible();
   const add = screen.getByRole("button", { name: "Add automatic payment" });
   expect(add).toBeDisabled();
-  await user.type(screen.getByRole("textbox", { name: "Search payment merchants" }), "Acme");
-  await waitFor(() => expect(search).toHaveBeenCalledWith("Acme", expect.any(AbortSignal)));
+  await user.type(screen.getByRole("textbox", { name: "Search payment merchants" }), "A");
+  await waitFor(() => expect(search).toHaveBeenCalledWith("A", expect.any(AbortSignal)));
+  expect(add).toBeDisabled();
   await user.click(await screen.findByRole("button", { name: "Acme Auto Loan" }));
+  expect(screen.getByRole("status")).toHaveTextContent("Selected transaction merchant: Acme Auto Loan");
   expect(add).toBeEnabled();
   await user.click(add);
   await waitFor(() => expect(save).toHaveBeenCalledWith("loan", { mode: "merchant", merchant_pattern: "Acme Auto Loan" }));

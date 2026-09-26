@@ -450,6 +450,59 @@ async def test_csv_known_identity_does_not_disable_fuzzy_warning_for_another_dat
 
 
 @pytest.mark.asyncio
+async def test_csv_replay_recognizes_legacy_physical_line_fingerprints_after_shift():
+    account_id = uuid4()
+    transaction = Transaction(
+        id=uuid4(), account_id=account_id, posted_at=date(2026, 9, 14), merchant="Coffee Shop",
+        category="Dining", amount=Decimal("-5"), type=TransactionType.EXPENSE,
+        status=TransactionStatus.CLEARED,
+    )
+    base_identity = import_fingerprints([transaction])[0].split(":", 1)[0]
+    legacy_row = SimpleNamespace(
+        account_id=account_id, posted_at=transaction.posted_at, merchant=transaction.merchant,
+        amount=transaction.amount, import_fingerprint=f"{base_identity}:2", deleted_at=None,
+    )
+    result = SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [legacy_row]))
+
+    preview_session = SimpleNamespace(execute=AsyncMock(return_value=result))
+    assert await TransactionRepository(preview_session).import_duplicate_flags([transaction], [1]) == [True]
+
+    import_session = SimpleNamespace(execute=AsyncMock(return_value=result), flush=AsyncMock())
+    created, skipped = await TransactionRepository(import_session).bulk_create_deduplicated(
+        [transaction], force_import=[False], identity_numbers=[1]
+    )
+    assert created == []
+    assert skipped == 1
+
+
+@pytest.mark.asyncio
+async def test_forced_identical_csv_occurrence_allocates_next_stable_identity():
+    account_id = uuid4()
+    transaction = Transaction(
+        id=uuid4(), account_id=account_id, posted_at=date(2026, 9, 14), merchant="Coffee Shop",
+        category="Dining", amount=Decimal("-5"), type=TransactionType.EXPENSE,
+        status=TransactionStatus.CLEARED,
+    )
+    existing = SimpleNamespace(
+        account_id=account_id, posted_at=transaction.posted_at, merchant=transaction.merchant,
+        amount=transaction.amount, import_fingerprint=import_fingerprints([transaction])[0], deleted_at=None,
+    )
+    existing_result = SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [existing]))
+    insert_result = SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: []))
+    session = SimpleNamespace(
+        execute=AsyncMock(side_effect=[existing_result, insert_result]), flush=AsyncMock()
+    )
+
+    await TransactionRepository(session).bulk_create_deduplicated(
+        [transaction], force_import=[True], identity_numbers=[1]
+    )
+
+    insert_statement = session.execute.await_args_list[1].args[0]
+    params = insert_statement.compile(dialect=postgresql.dialect()).params
+    assert any(isinstance(value, str) and value.endswith(":occurrence:2") for value in params.values())
+
+
+@pytest.mark.asyncio
 async def test_plaid_sync_preserves_reviewed_user_classification():
     account_id = uuid4()
     row = SimpleNamespace(

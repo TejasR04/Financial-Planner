@@ -10,6 +10,7 @@ from app.providers.plaid_provider import PlaidProvider
 from app.providers.market_data_provider import TiingoMarketDataProvider
 from app.services.market_price_sync_service import MarketPriceSyncService
 from app.services.investment_contribution_service import InvestmentContributionService
+from app.services.loan_balance_automation_service import LoanBalanceAutomationService
 
 logger = logging.getLogger("meridian.plaid_sync")
 SYNC_LOCK_ID = 0x4D4552494449414E
@@ -64,6 +65,18 @@ async def sync_all_financial_data() -> int:
                     await session.rollback()
                     failures += 1
                     logger.exception("plaid_sync_user_failed", extra={"user_id": str(user_id)})
+
+            try:
+                loan_adjustments_applied = await LoanBalanceAutomationService(session).apply(user_id)
+                await session.commit()
+                logger.info(
+                    "loan_balance_automation_user_completed",
+                    extra={"user_id": str(user_id), "adjustments_applied": loan_adjustments_applied},
+                )
+            except Exception:
+                await session.rollback()
+                failures += 1
+                logger.exception("loan_balance_automation_user_failed", extra={"user_id": str(user_id)})
 
             try:
                 contributions_applied = await InvestmentContributionService(session).apply(user_id)

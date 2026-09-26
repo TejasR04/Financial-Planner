@@ -66,25 +66,41 @@ export default function OnboardingPage() {
     e.preventDefault();
     setSaving(true);
     setError(null);
-    try {
-      await Promise.all([
-        api.users.updateMe({
-          full_name: fullName,
-          base_currency: "USD",
-          date_of_birth: dob || undefined,
-        }),
-        api.users.updatePlanningProfile({
-          target_retirement_age: retirementAge,
-          target_equity_allocation: String(equityAllocation / 100),
-          default_withdrawal_rate: String(withdrawalRate / 100),
-          include_social_security: includeSS,
-        }),
-      ]);
+    const [aboutResult, planningResult] = await Promise.allSettled([
+      api.users.updateMe({
+        full_name: fullName,
+        base_currency: "USD",
+        date_of_birth: dob || undefined,
+      }),
+      api.users.updatePlanningProfile({
+        target_retirement_age: retirementAge,
+        target_equity_allocation: String(equityAllocation / 100),
+        default_withdrawal_rate: String(withdrawalRate / 100),
+        include_social_security: includeSS,
+      }),
+    ]);
+
+    if (aboutResult.status === "fulfilled" && planningResult.status === "fulfilled") {
       router.push("/");
-    } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Couldn't save your details.");
-      setSaving(false);
+      return;
     }
+
+    const describeFailure = (result: PromiseSettledResult<unknown>) =>
+      result.status === "rejected"
+        ? result.reason instanceof ApiError
+          ? result.reason.message
+          : "request failed"
+        : null;
+    const failures = [
+      aboutResult.status === "fulfilled"
+        ? "About you saved"
+        : `About you couldn't be saved (${describeFailure(aboutResult)})`,
+      planningResult.status === "fulfilled"
+        ? "retirement plan saved"
+        : `retirement plan couldn't be saved (${describeFailure(planningResult)})`,
+    ];
+    setError(`${failures.join("; ")}. You can retry Save and continue safely.`);
+    setSaving(false);
   }
 
   if (status !== "authenticated" || loading) {

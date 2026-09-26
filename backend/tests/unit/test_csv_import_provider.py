@@ -1,10 +1,15 @@
 from datetime import date
 from decimal import Decimal
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
 from uuid import uuid4
 
 import pytest
 
 from app.domain.enums import TransactionType
+from app.api.v1.routes.transactions import _normalized_import_rows
+from app.persistence.repositories.transaction_repository import TransactionRepository, import_fingerprints
+from app.schemas.transaction import CSVImportRequest, CSVImportRowOverride
 from app.providers.csv_import_provider import CSVImportProvider
 
 
@@ -52,6 +57,97 @@ async def test_import_honors_an_explicit_type_column():
     rows = await CSVImportProvider(uuid4(), text).get_transactions(uuid4(), date(1970, 1, 1))
     assert rows[0].type == TransactionType.CREDIT_CARD_PAYMENT
     assert rows[0].amount == Decimal("50.00")
+
+
+@pytest.mark.asyncio
+async def test_explicit_expense_type_preserves_positive_refund_amount():
+    text = "date,merchant,category,amount,type\n08/01/2026,Store,Returns,25.00,expense\n"
+    rows = await CSVImportProvider(uuid4(), text).get_transactions(uuid4(), date(1970, 1, 1))
+    assert rows[0].type == TransactionType.EXPENSE
+    assert rows[0].amount == Decimal("25.00")
+
+
+@pytest.mark.asyncio
+async def test_explicit_expense_keeps_positive_debit_magnitude_convention():
+    text = "date,merchant,category,amount,type\n08/01/2026,Store,Debit,25.00,expense\n"
+    rows = await CSVImportProvider(uuid4(), text).get_transactions(uuid4(), date(1970, 1, 1))
+    assert rows[0].type == TransactionType.EXPENSE
+    assert rows[0].amount == Decimal("-25.00")
+
+
+@pytest.mark.asyncio
+async def test_preview_expense_override_preserves_positive_refund_amount():
+    account_id = uuid4()
+    body = CSVImportRequest(
+        account_id=account_id,
+        csv_text="date,merchant,category,amount\n08/01/2026,Store,Returns,25.00\n",
+        overrides=[CSVImportRowOverride(row_number=2, type=TransactionType.EXPENSE, amount=Decimal("25.00"))],
+    )
+    rows = _normalized_import_rows(body)
+    assert rows[0].transaction.type == TransactionType.EXPENSE
+    assert rows[0].transaction.amount == Decimal("25.00")
+
+
+@pytest.mark.asyncio
+async def test_preview_signed_expense_override_beats_generic_debit_label():
+    body = CSVImportRequest(
+        account_id=uuid4(),
+        csv_text="date,merchant,category,amount,type\n08/01/2026,Store,Debit,25.00,expense\n",
+        overrides=[CSVImportRowOverride(row_number=2, type=TransactionType.EXPENSE, amount=Decimal("25.00"))],
+    )
+    rows = _normalized_import_rows(body)
+    assert rows[0].transaction.amount == Decimal("25.00")
+
+
+@pytest.mark.asyncio
+async def test_csv_replay_identity_survives_inserted_rows_and_excluded_occurrences():
+    account_id = uuid4()
+    original = CSVImportRequest(
+        account_id=account_id,
+        csv_text="date,merchant,category,amount\n08/01/2026,Store,Shopping,-25.00\n",
+    )
+    shifted = CSVImportRequest(
+        account_id=account_id,
+        csv_text="date,merchant,category,amount\n08/02/2026,Cafe,Food,-4.00\n08/01/2026,Store,Shopping,-25.00\n",
+    )
+    original_row = _normalized_import_rows(original)[0]
+    shifted_row = _normalized_import_rows(shifted)[1]
+    assert original_row.row_number != shifted_row.row_number
+    assert original_row.identity_number == shifted_row.identity_number == 1
+
+    existing_fingerprint = import_fingerprints(
+        [original_row.transaction], [original_row.identity_number]
+    )[0]
+    existing = SimpleNamespace(
+        account_id=account_id,
+        posted_at=original_row.transaction.posted_at,
+        merchant=original_row.transaction.merchant,
+        amount=original_row.transaction.amount,
+        import_fingerprint=existing_fingerprint,
+        deleted_at=None,
+    )
+    result = SimpleNamespace(scalars=lambda: SimpleNamespace(all=lambda: [existing]))
+    session = SimpleNamespace(execute=AsyncMock(return_value=result))
+    assert await TransactionRepository(session).import_duplicate_flags(
+        [shifted_row.transaction], [shifted_row.identity_number]
+    ) == [True]
+
+    duplicate_text = (
+        "date,merchant,category,amount\n"
+        "08/01/2026,Store,Shopping,-25.00\n"
+        "08/01/2026,Store,Shopping,-25.00\n"
+    )
+    excluded_body = CSVImportRequest(
+        account_id=account_id,
+        csv_text=duplicate_text,
+        overrides=[CSVImportRowOverride(row_number=2, include=False)],
+    )
+    remaining = _normalized_import_rows(excluded_body)
+    assert len(remaining) == 1
+    assert remaining[0].identity_number == 2
+    assert await TransactionRepository(session).import_duplicate_flags(
+        [remaining[0].transaction], [int(remaining[0].identity_number)]
+    ) == [False]
 
 
 def test_preview_warns_when_type_is_inferred_from_amount():

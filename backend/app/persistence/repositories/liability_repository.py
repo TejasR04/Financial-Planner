@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+from datetime import datetime
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 
 from app.domain.entities import Liability
 from app.core.exceptions import NotFoundError
+from app.core.config import get_settings
 from app.persistence.models import AccountModel, LiabilityModel
 from app.persistence.repositories.base import BaseRepository
 
@@ -56,8 +59,13 @@ class LiabilityRepository(BaseRepository[LiabilityModel]):
             row = LiabilityModel(id=uuid4(), account_id=account_id, **fields)
             self.session.add(row)
         else:
+            if "interest_rate" in fields and fields["interest_rate"] != row.interest_rate:
+                row.last_interest_accrual_date = datetime.now(ZoneInfo(get_settings().financial_timezone)).date()
             for key, value in fields.items():
                 setattr(row, key, value)
+        if row.last_interest_accrual_date is None:
+            # The saved balance has no known historical interest baseline.
+            row.last_interest_accrual_date = datetime.now(ZoneInfo(get_settings().financial_timezone)).date()
         await self.session.flush()
         return _to_domain(row)
 

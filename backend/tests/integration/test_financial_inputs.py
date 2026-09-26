@@ -8,6 +8,7 @@ from httpx import AsyncClient
 
 from .conftest import register_and_authorize
 from app.services.activity_history import shift_month
+from app.core.config import get_settings
 
 
 @pytest.mark.asyncio
@@ -98,3 +99,37 @@ async def test_due_manual_investment_contribution_is_applied_once(client: AsyncC
         headers=headers,
     )
     assert removed.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_same_day_cleared_payment_updates_only_its_matching_manual_loan(client: AsyncClient) -> None:
+    headers = await register_and_authorize(client, "two-loan-payments@example.com")
+    today = datetime.now(ZoneInfo(get_settings().financial_timezone)).date().isoformat()
+    checking = await client.post("/api/v1/accounts", headers=headers, json={
+        "name": "Checking", "type": "depository", "balance": "2000",
+    })
+    first = await client.post("/api/v1/accounts", headers=headers, json={
+        "name": "First loan", "type": "loan", "balance": "1000",
+    })
+    second = await client.post("/api/v1/accounts", headers=headers, json={
+        "name": "Second loan", "type": "loan", "balance": "2000",
+    })
+    first_id, second_id = first.json()["id"], second.json()["id"]
+    for loan_id, merchant in [(first_id, "First Servicer"), (second_id, "Second Servicer")]:
+        response = await client.post(f"/api/v1/accounts/{loan_id}/balance-rules", headers=headers, json={
+            "mode": "merchant", "merchant_pattern": merchant,
+        })
+        assert response.status_code == 201, response.text
+
+    for merchant, amount in [("First Servicer", "-100"), ("Second Servicer", "-250")]:
+        response = await client.post("/api/v1/transactions", headers=headers, json={
+            "account_id": checking.json()["id"], "posted_at": today,
+            "merchant": merchant, "category": "loan_payments", "amount": amount, "type": "transfer",
+        })
+        assert response.status_code == 201, response.text
+
+    for _ in range(2):
+        accounts = (await client.get("/api/v1/accounts", headers=headers)).json()["data"]
+        balances = {row["id"]: Decimal(row["balance"]) for row in accounts}
+        assert balances[first_id] == Decimal("-900")
+        assert balances[second_id] == Decimal("-1750")

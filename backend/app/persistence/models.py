@@ -286,6 +286,7 @@ class LiabilityModel(Base):
     term_months: Mapped[int | None] = mapped_column(Integer, nullable=True)
     minimum_payment: Mapped[Decimal | None] = mapped_column(Numeric(18, 2), nullable=True)
     origination_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    last_interest_accrual_date: Mapped[date | None] = mapped_column(Date, nullable=True)
 
     account: Mapped["AccountModel"] = relationship(back_populates="liability")
 

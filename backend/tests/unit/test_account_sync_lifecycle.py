@@ -11,6 +11,7 @@ from app.core.exceptions import ProviderError
 from app.domain.entities import Account, Institution
 from app.domain.enums import AccountStatus, AccountType, InstitutionStatus, ProviderType
 from app.providers.plaid_client import RawPlaidAccount
+from app.providers import plaid_provider
 from app.providers.plaid_provider import PlaidProvider
 from app.persistence.repositories.account_repository import AccountRepository
 from app.schemas.account import AccountCreateRequest
@@ -88,7 +89,7 @@ async def test_manual_credit_balance_is_normalized_to_the_liability_sign_convent
 
 
 @pytest.mark.asyncio
-async def test_refresh_archives_removed_accounts_and_tolerates_missing_holdings():
+async def test_refresh_archives_removed_accounts_and_tolerates_missing_holdings(monkeypatch):
     user_id = uuid4()
     institution_id = uuid4()
     institution = Institution(
@@ -136,9 +137,16 @@ async def test_refresh_archives_removed_accounts_and_tolerates_missing_holdings(
         get_holdings=AsyncMock(side_effect=ProviderError("Investments is unavailable")),
     )
     provider._account_id_map = AsyncMock(return_value={"plaid-account-1": uuid4()})
+    loan_apply = AsyncMock()
+    monkeypatch.setattr(
+        plaid_provider,
+        "LoanBalanceAutomationService",
+        lambda _: SimpleNamespace(apply=loan_apply),
+    )
 
     result = await provider._refresh_institution(user_id, institution)
     provider._budgets.apply_category_defaults_for_user.assert_awaited_once_with(user_id)
+    loan_apply.assert_awaited_once_with(user_id)
 
     assert result.status == "healthy"
     assert result.holdings_synced == 0
@@ -148,6 +156,43 @@ async def test_refresh_archives_removed_accounts_and_tolerates_missing_holdings(
     provider._investment_history.record_for_accounts.assert_awaited_once()
     provider._institutions.lock_for_sync.assert_awaited_once_with(user_id, institution_id, None)
     provider._institutions.mark_sync_success.assert_awaited_once_with(institution_id, "cursor-1")
+
+
+@pytest.mark.asyncio
+async def test_refresh_all_institutions_applies_loan_automation_after_every_patch(monkeypatch):
+    user_id = uuid4()
+    first = SimpleNamespace(id=uuid4())
+    second = SimpleNamespace(id=uuid4())
+    provider = object.__new__(PlaidProvider)
+    provider.session = object()
+    provider._institutions = SimpleNamespace(
+        list_plaid_for_user=AsyncMock(return_value=[first, second]),
+    )
+    events = []
+
+    async def refresh_one(_user_id, institution, *, apply_loan_automation=True):
+        events.append(("refresh", institution.id, apply_loan_automation))
+        return SimpleNamespace(status="healthy")
+
+    provider._refresh_institution = AsyncMock(side_effect=refresh_one)
+
+    async def apply_loans(applied_user_id):
+        events.append(("loan_apply", applied_user_id))
+
+    monkeypatch.setattr(
+        plaid_provider,
+        "LoanBalanceAutomationService",
+        lambda _: SimpleNamespace(apply=apply_loans),
+    )
+
+    results = await provider.refresh(user_id)
+
+    assert len(results) == 2
+    assert events == [
+        ("refresh", first.id, False),
+        ("refresh", second.id, False),
+        ("loan_apply", user_id),
+    ]
 
 
 @pytest.mark.asyncio

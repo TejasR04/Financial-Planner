@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.api.deps import get_current_user, get_db
 from app.domain.entities import Transaction, User
 from app.domain.enums import TransactionType
-from app.persistence.repositories.transaction_repository import TransactionRepository
+from app.persistence.repositories.transaction_repository import TransactionRepository, import_fingerprints
 from app.persistence.repositories.account_repository import AccountRepository
 from app.persistence.repositories.budget_repository import BudgetRepository
 from app.providers.csv_import_provider import CSVImportProvider
@@ -37,23 +37,33 @@ def _normalized_import_rows(body: CSVImportRequest):
     unknown_rows = set(overrides) - known_rows
     if unknown_rows:
         raise ValueError(f"Overrides reference rows that are not in the file: {sorted(unknown_rows)}")
-    selected = []
     for row in parsed:
         override = overrides.get(row.row_number)
-        if override is not None and not override.include:
-            continue
         transaction = row.transaction
         if override is not None:
             for field in ("posted_at", "merchant", "category", "amount", "type"):
                 value = getattr(override, field)
                 if value is not None:
                     setattr(transaction, field, value)
+            # An edited signed amount is authoritative: positive expenses are
+            # refunds, while income/contribution classifications stay inflows.
             if override.type is not None:
                 row.warnings = [warning for warning in row.warnings if not warning.startswith("Type was inferred")]
-                if override.type.value == "expense":
-                    transaction.amount = -abs(transaction.amount)
-                elif override.type.value in {"income", "contribution"}:
+                if override.type.value in {"income", "contribution"}:
                     transaction.amount = abs(transaction.amount)
+
+    # Use occurrence numbers within each normalized transaction identity,
+    # rather than physical CSV line numbers. Compute them before filtering
+    # excluded rows so an excluded occurrence keeps its place when retried.
+    for row, identity in zip(parsed, import_fingerprints([item.transaction for item in parsed]), strict=True):
+        row.identity_number = int(identity.rsplit(":", 1)[1])
+
+    selected = []
+    for row in parsed:
+        override = overrides.get(row.row_number)
+        if override is not None and not override.include:
+            continue
+        transaction = row.transaction
         if not transaction.merchant.strip():
             raise ValueError(f"Row {row.row_number}: Merchant is required")
         if transaction.amount == 0:
@@ -233,7 +243,7 @@ async def preview_csv_import(
     except ValueError as exc:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
     duplicate_flags = await TransactionRepository(db).import_duplicate_flags(
-        [row.transaction for row in parsed], [row.row_number for row in parsed]
+        [row.transaction for row in parsed], [int(row.identity_number) for row in parsed]
     )
     rows = [
         CSVImportPreviewRow(
@@ -275,8 +285,9 @@ async def import_csv(
     created, skipped = await TransactionRepository(db).bulk_create_deduplicated(
         [row.transaction for row in parsed],
         [overrides[row.row_number].force_import if row.row_number in overrides else False for row in parsed],
-        [row.row_number for row in parsed],
+        [int(row.identity_number) for row in parsed],
     )
+    await LoanBalanceAutomationService(db).apply(current_user.id)
     await db.commit()
     return CSVImportResponse(
         imported_count=len(created),

@@ -101,10 +101,9 @@ async def list_accounts(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> AccountListResponse:
-    applied = await LoanBalanceAutomationService(db).apply(current_user.id)
-    contributions_applied = await InvestmentContributionService(db).apply(current_user.id)
-    if applied or contributions_applied:
-        await db.commit()
+    await LoanBalanceAutomationService(db).apply(current_user.id)
+    await InvestmentContributionService(db).apply(current_user.id)
+    await db.commit()
     accounts = await AccountRepository(db).list_for_user(current_user.id, type)
     institutions = {institution.id: institution for institution in await InstitutionRepository(db).list_for_user(current_user.id)}
     assets = sum((a.balance for a in accounts if not a.is_liability), Decimal("0"))

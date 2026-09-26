@@ -51,7 +51,10 @@ class HoldingInput(BaseModel):
     @field_validator("symbol")
     @classmethod
     def normalize_symbol(cls, value: str) -> str:
-        return value.strip().upper()
+        normalized = value.strip().upper()
+        if not normalized:
+            raise ValueError("symbol must contain a non-whitespace character")
+        return normalized
 
 
 class HoldingUpdate(BaseModel):
@@ -62,6 +65,16 @@ class HoldingUpdate(BaseModel):
     asset_class: AssetClass | None = None
     as_of: date | None = None
     pricing_mode: Literal["manual", "automatic"] | None = None
+
+    @field_validator("symbol")
+    @classmethod
+    def normalize_symbol(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip().upper()
+        if not normalized:
+            raise ValueError("symbol must contain a non-whitespace character")
+        return normalized
 
 
 class HoldingResponse(HoldingInput):

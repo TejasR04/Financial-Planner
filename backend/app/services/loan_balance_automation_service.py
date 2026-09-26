@@ -2,9 +2,10 @@ from __future__ import annotations
 
 import calendar
 from datetime import date, datetime, timezone
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from typing import Any
 from uuid import UUID
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,8 +13,10 @@ from sqlalchemy.orm import aliased
 
 from app.domain.merchant_rules import merchant_matches_rule
 from app.core.exceptions import NotFoundError, ValidationError
+from app.core.config import get_settings
 from app.persistence.models import (
     AccountModel,
+    LiabilityModel,
     LoanBalanceAdjustmentModel,
     LoanBalanceRuleModel,
     TransactionModel,
@@ -63,7 +66,27 @@ class LoanBalanceAutomationService:
         await self.session.flush()
 
     async def apply(self, user_id: UUID, account_id: UUID | None = None) -> int:
-        await self.reconcile(user_id, account_id)
+        applied = await self.reconcile(user_id, account_id)
+        today = datetime.now(ZoneInfo(get_settings().financial_timezone)).date()
+        interest_query = (
+            select(LiabilityModel, AccountModel)
+            .join(AccountModel, AccountModel.id == LiabilityModel.account_id)
+            .where(
+                AccountModel.user_id == user_id,
+                AccountModel.institution_id.is_(None),
+                AccountModel.archived_at.is_(None),
+                AccountModel.type == "loan",
+            )
+            .with_for_update(of=AccountModel)
+        )
+        if account_id is not None:
+            interest_query = interest_query.where(AccountModel.id == account_id)
+        interest_rows = (await self.session.execute(interest_query)).all()
+        liabilities = {account.id: liability for liability, account in interest_rows}
+        for liability, _ in interest_rows:
+            if liability.last_interest_accrual_date is None:
+                # Existing balances have no dated principal or payment baseline.
+                liability.last_interest_accrual_date = today
         query = (
             select(LoanBalanceRuleModel, AccountModel)
             .join(AccountModel, AccountModel.id == LoanBalanceRuleModel.account_id)
@@ -79,19 +102,20 @@ class LoanBalanceAutomationService:
             query = query.where(AccountModel.id == account_id)
         query = query.order_by(AccountModel.id, LoanBalanceRuleModel.id).with_for_update(of=AccountModel)
         pairs = (await self.session.execute(query)).all()
-        applied = 0
         for rule, account in pairs:
             if account.balance >= 0:
                 rule.active = False
                 continue
             if rule.mode == "scheduled":
-                applied += await self._apply_scheduled(rule, account)
+                applied += await self._apply_scheduled(rule, account, liabilities.get(account.id), today)
             else:
-                applied += await self._apply_merchant(rule, account, user_id)
+                applied += await self._apply_merchant(rule, account, user_id, liabilities.get(account.id), today)
+        for liability, account in interest_rows:
+            applied += self._accrue_interest(account, liability, today)
         await self.session.flush()
         return applied
 
-    async def reconcile(self, user_id: UUID, account_id: UUID | None = None) -> None:
+    async def reconcile(self, user_id: UUID, account_id: UUID | None = None) -> int:
         """Replay merchant adjustments so edits, removals, and caps cascade correctly."""
         source_account = aliased(AccountModel)
         query = (
@@ -111,6 +135,7 @@ class LoanBalanceAutomationService:
         if account_id is not None:
             query = query.where(AccountModel.id == account_id)
         grouped: dict[UUID, list[Any]] = {}
+        changed = 0
         for values in (await self.session.execute(query)).all():
             grouped.setdefault(values[2].id, []).append(values)
         for rows in grouped.values():
@@ -122,12 +147,11 @@ class LoanBalanceAutomationService:
                     transaction is not None
                     and source is not None
                     and source.user_id == user_id
-                    and source.archived_at is None
                     and source.id != account.id
                     and transaction.deleted_at is None
                     and transaction.status == "cleared"
                     and transaction.amount < 0
-                    and transaction.posted_at > rule.created_at.date()
+                    and transaction.posted_at >= rule.created_at.date()
                     and merchant_matches_rule(transaction.merchant, rule.merchant_pattern or "", collapse_transfers=False)
                     and transaction.id not in seen
                 )
@@ -143,6 +167,7 @@ class LoanBalanceAutomationService:
                 if unchanged:
                     account.balance += expected
                 else:
+                    changed += 1
                     adjustment.reversed_at = datetime.now(timezone.utc)
                     adjustment.reversal_reason = "source_changed" if valid else "source_removed_or_ineligible"
                     await self.session.flush()
@@ -153,13 +178,17 @@ class LoanBalanceAutomationService:
                 if rule.deleted_at is None:
                     rule.active = account.balance < 0
         await self.session.flush()
+        return changed
 
-    async def _apply_scheduled(self, rule: LoanBalanceRuleModel, account: AccountModel) -> int:
-        today = date.today()
+    async def _apply_scheduled(self, rule: LoanBalanceRuleModel, account: AccountModel,
+                               liability: LiabilityModel | None = None, today: date | None = None) -> int:
+        today = today or datetime.now(ZoneInfo(get_settings().financial_timezone)).date()
         count = 0
         while rule.active and rule.next_run_date is not None and rule.next_run_date <= today and account.balance < 0:
             event_date = rule.next_run_date
             if not await self._already_applied(rule.id, f"scheduled:{event_date.isoformat()}"):
+                if liability is not None:
+                    count += self._accrue_interest(account, liability, event_date)
                 self._reduce(account, rule, rule.amount or Decimal("0"), f"scheduled:{event_date.isoformat()}")
                 count += 1
             if rule.frequency == "once":
@@ -168,7 +197,9 @@ class LoanBalanceAutomationService:
                 rule.next_run_date = _next_month(event_date)
         return count
 
-    async def _apply_merchant(self, rule: LoanBalanceRuleModel, account: AccountModel, user_id: UUID) -> int:
+    async def _apply_merchant(self, rule: LoanBalanceRuleModel, account: AccountModel, user_id: UUID,
+                              liability: LiabilityModel | None = None, today: date | None = None) -> int:
+        today = today or datetime.now(ZoneInfo(get_settings().financial_timezone)).date()
         pattern = (rule.merchant_pattern or "").lower()
         result = await self.session.execute(
             select(TransactionModel)
@@ -180,7 +211,7 @@ class LoanBalanceAutomationService:
                 AccountModel.archived_at.is_(None),
                 TransactionModel.amount < 0,
                 TransactionModel.deleted_at.is_(None),
-                TransactionModel.posted_at > rule.created_at.date(),
+                TransactionModel.posted_at >= rule.created_at.date(),
             )
             .order_by(TransactionModel.posted_at, TransactionModel.id)
         )
@@ -196,9 +227,32 @@ class LoanBalanceAutomationService:
                 continue
             if await self._transaction_already_applied(account.id, transaction.id):
                 continue
+            if liability is not None:
+                count += self._accrue_interest(account, liability, min(transaction.posted_at, today))
             self._reduce(account, rule, abs(transaction.amount), event_key, transaction.id)
             count += 1
         return count
+
+    @staticmethod
+    def _accrue_interest(account: AccountModel, liability: LiabilityModel, through: date) -> int:
+        start = liability.last_interest_accrual_date
+        if start is None:
+            liability.last_interest_accrual_date = through
+            return 0
+        days = (through - start).days
+        if days <= 0:
+            return 0
+        if account.balance >= 0 or not liability.interest_rate or liability.interest_rate <= 0:
+            liability.last_interest_accrual_date = through
+            return 0
+        interest = (abs(account.balance) * liability.interest_rate * Decimal(days) / Decimal(365)).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+        if interest == 0:
+            return 0
+        liability.last_interest_accrual_date = through
+        account.balance -= interest
+        return 1
 
     async def _already_applied(self, rule_id: UUID, event_key: str) -> bool:
         return (

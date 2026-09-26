@@ -31,6 +31,7 @@ from app.persistence.repositories.investment_value_snapshot_repository import In
 from app.persistence.repositories.transaction_repository import TransactionRepository
 from app.providers.base import FinancialDataProvider
 from app.providers.plaid_client import PlaidClient, RawPlaidAccount, RawPlaidHolding, RawPlaidTransaction
+from app.services.loan_balance_automation_service import LoanBalanceAutomationService
 
 # Plaid (type, subtype) -> our AccountType. Falls back by `type` alone if
 # the subtype isn't one we've special-cased.
@@ -157,7 +158,9 @@ class PlaidProvider(FinancialDataProvider):
         results: list[PlaidRefreshResult] = []
         for institution in institutions:
             try:
-                result = await self._refresh_institution(user_id, institution)
+                result = await self._refresh_institution(
+                    user_id, institution, apply_loan_automation=False
+                )
                 results.append(result)
             except ProviderError as exc:
                 await self._institutions.mark_sync_error(institution.id)
@@ -169,6 +172,9 @@ class PlaidProvider(FinancialDataProvider):
                         error=str(exc),
                     )
                 )
+        # Apply against the complete transaction snapshot so interest is
+        # accrued only after every institution's incoming payments are known.
+        await LoanBalanceAutomationService(self.session).apply(user_id)
         return results
 
     async def refresh_institution(self, user_id: UUID, institution_id: UUID) -> PlaidRefreshResult:
@@ -183,7 +189,13 @@ class PlaidProvider(FinancialDataProvider):
             await self._institutions.mark_sync_error(institution_id)
             raise
 
-    async def _refresh_institution(self, user_id: UUID, institution: Institution) -> PlaidRefreshResult:
+    async def _refresh_institution(
+        self,
+        user_id: UUID,
+        institution: Institution,
+        *,
+        apply_loan_automation: bool = True,
+    ) -> PlaidRefreshResult:
         access_token = await self._institutions.get_decrypted_access_token(institution.id)
         cursor = await self._institutions.get_sync_cursor(institution.id)
 
@@ -257,8 +269,8 @@ class PlaidProvider(FinancialDataProvider):
             # Persist applicable user merchant rules for newly synced
             # expenses, so their custom category is visible everywhere.
             await self._budgets.apply_category_defaults_for_user(user_id)
-            from app.services.loan_balance_automation_service import LoanBalanceAutomationService
-            await LoanBalanceAutomationService(self.session).apply(user_id)
+            if apply_loan_automation:
+                await LoanBalanceAutomationService(self.session).apply(user_id)
 
             # Investment holdings are optional for a Transactions-linked Item.
             # A bank without Investments support must still sync balances and

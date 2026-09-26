@@ -22,7 +22,7 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
   const [contributionAmount, setContributionAmount] = useState("");
   const [contributionDay, setContributionDay] = useState("15");
   const [savingContribution, setSavingContribution] = useState(false);
-  const [ruleMode, setRuleMode] = useState<"scheduled" | "merchant">("scheduled");
+  const [ruleMode, setRuleMode] = useState<"scheduled" | "merchant">("merchant");
   const [ruleAmount, setRuleAmount] = useState("");
   const [ruleFrequency, setRuleFrequency] = useState<"once" | "monthly">("monthly");
   const [ruleDate, setRuleDate] = useState("");
@@ -46,7 +46,7 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
       api.transactions.merchants(merchantPattern, controller.signal).then(setMerchantOptions)
         .catch(() => { if (!controller.signal.aborted) setMerchantError("Couldn't load merchants. Try searching again."); })
         .finally(() => { if (!controller.signal.aborted) setMerchantLoading(false); });
-    }, 250);
+    }, 150);
     return () => { clearTimeout(timer); controller.abort(); };
   }, [account, debt, ruleMode, merchantPattern, selectedMerchant]);
 
@@ -63,6 +63,7 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
     setContributionDay("15");
     setSavingContribution(false);
     setSavingRule(false);
+    setRuleMode("merchant");
     setMerchantPattern("");
     setSelectedMerchant("");
     if (debt) {
@@ -135,6 +136,7 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
       setRuleDate("");
       setMerchantPattern("");
       setSelectedMerchant("");
+      refresh();
     } catch (cause) {
       if (accountIdRef.current === savingAccountId) setError(cause instanceof Error ? cause.message : "Unable to add automatic payment.");
     } finally {
@@ -166,7 +168,7 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
   return (
     <DialogShell onClose={onClose} ariaLabelledBy="financial-details-title" panelClassName="max-w-lg rounded-lg bg-card p-4">
       <h2 id="financial-details-title" className="text-sm font-semibold">{debt ? "Debt details" : "Manual holdings"} · {account.name}</h2>
-      <p className="mt-1 text-xs text-muted-foreground">{debt ? "All debt details are optional. Add only what you know; these fields do not change net worth." : "Positions explain allocation. Automatic ticker updates change the account balance only by that position’s gain or loss."}</p>
+      <p className="mt-1 text-xs text-muted-foreground">{debt ? "APR on a manual loan adds daily interest to its balance when accounts refresh. Other debt details are for planning." : "Positions explain allocation. Automatic ticker updates change the account balance only by that position’s gain or loss."}</p>
       {holdingAccount && account.institutionId ? (
         <p className="mt-4 text-xs text-warning">Linked holdings are managed by the institution and cannot be edited here.</p>
       ) : (
@@ -177,7 +179,7 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
       {debt && !account.institutionId && (
         <section className="mt-5 border-t border-border pt-4">
           <h3 className="text-xs font-semibold">Automatic balance reductions</h3>
-          <p className="mt-1 text-xs text-muted-foreground">Reduce this balance on a schedule or when a cleared payment transaction matches a merchant.</p>
+          <p className="mt-1 text-xs text-muted-foreground">Find a merchant from your transactions and select the exact result to link its future cleared payments to this loan.</p>
           {rules.map((rule) => (
             <div key={rule.id} className="mt-2 flex items-center justify-between rounded-md border border-border px-3 py-2 text-xs">
               <span>{rule.mode === "merchant" ? `Merchant matches “${rule.merchant_pattern}” · use transaction amount` : `${rule.frequency === "monthly" ? "Monthly" : "One time"} · $${Number(rule.amount).toFixed(2)} · next ${rule.next_run_date}`}{!rule.active ? " · completed" : ""}</span>
@@ -186,12 +188,12 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
           ))}
           <div className="mt-3 grid grid-cols-1 sm:grid-cols-2 gap-2">
             <select className={input} value={ruleMode} onChange={(event) => setRuleMode(event.target.value as "scheduled" | "merchant")}><option value="scheduled">Scheduled payment</option><option value="merchant">Merchant-linked payment</option></select>
-            {ruleMode === "scheduled" ? <select className={input} value={ruleFrequency} onChange={(event) => setRuleFrequency(event.target.value as "once" | "monthly")}><option value="monthly">Monthly</option><option value="once">One time</option></select> : <input className={input} value={merchantPattern} onChange={(event) => { setMerchantPattern(event.target.value); setSelectedMerchant(""); }} aria-label="Search payment merchants" placeholder="Search your transaction merchants…" />}
+            {ruleMode === "scheduled" ? <select className={input} value={ruleFrequency} onChange={(event) => setRuleFrequency(event.target.value as "once" | "monthly")}><option value="monthly">Monthly</option><option value="once">One time</option></select> : <label className="text-xs text-muted-foreground">Search transaction merchants<input className={`${input} mt-1`} value={merchantPattern} onChange={(event) => { setMerchantPattern(event.target.value); setSelectedMerchant(""); }} aria-label="Search payment merchants" autoComplete="off" placeholder="Type a merchant name…" /></label>}
             {ruleMode === "scheduled" && <><input className={input} type="number" inputMode="decimal" min="0.01" step="0.01" value={ruleAmount} onChange={(event) => setRuleAmount(event.target.value)} placeholder="Payment amount" /><input className={input} type="date" value={ruleDate} onChange={(event) => setRuleDate(event.target.value)} /></>}
           </div>
           {ruleMode === "merchant" && <div className="mt-2 text-xs">
-            <p className="text-muted-foreground">Select a merchant from your outgoing transactions. Cleared payments dated after today will reduce this balance by the full payment amount, once per transaction. Interest is not separated.</p>
-            {selectedMerchant ? <p className="mt-2">Selected: {selectedMerchant}</p> : merchantLoading ? <p className="mt-2">Searching…</p> : merchantError ? <p role="alert" className="mt-2 text-destructive">{merchantError}</p> : <ul className="mt-2 max-h-36 overflow-auto rounded border border-border">{merchantOptions.map((merchant) => <li key={merchant}><button type="button" className="w-full px-2 py-2 text-left hover:bg-muted" onClick={() => { setSelectedMerchant(merchant); setMerchantPattern(merchant); }}>{merchant}</button></li>)}{!merchantOptions.length && <li className="p-2 text-muted-foreground">No matching payment merchants.</li>}</ul>}
+            <p className="text-muted-foreground">Select a merchant from your outgoing transactions. Cleared payments dated on or after the rule is added reduce this balance by the full payment amount, once per transaction. Interest is added separately from the saved APR.</p>
+            {selectedMerchant ? <p className="mt-2 rounded border border-border bg-muted px-2 py-2" role="status">Selected transaction merchant: <strong>{selectedMerchant}</strong>. Payments with matching merchant words will update this loan.</p> : merchantLoading ? <p className="mt-2">Searching transactions…</p> : merchantError ? <p role="alert" className="mt-2 text-destructive">{merchantError}</p> : <ul className="mt-2 max-h-36 overflow-auto rounded border border-border" aria-label="Matching transaction merchants">{merchantOptions.map((merchant) => <li key={merchant}><button type="button" className="w-full px-2 py-2 text-left hover:bg-muted focus:bg-muted" onClick={() => { setSelectedMerchant(merchant); setMerchantPattern(merchant); }}>{merchant}</button></li>)}{!merchantOptions.length && <li className="p-2 text-muted-foreground">No matching outgoing transaction merchants.</li>}</ul>}
           </div>}
           <Button className="mt-2" variant="outline" size="sm" type="button" onClick={() => void addRule()} disabled={savingRule || (ruleMode === "scheduled" ? !ruleAmount || !ruleDate : !selectedMerchant)}>Add automatic payment</Button>
         </section>

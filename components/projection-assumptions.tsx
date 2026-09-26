@@ -24,12 +24,18 @@ const FALLBACK_ASSUMPTIONS: Assumption[] = [
   { key: "return", label: "Expected real return", min: 2, max: 10, step: 0.1, value: 6.5, suffix: "%" },
 ];
 
+// The retirement endpoint defaults life expectancy to 95 and requires
+// retirement to happen before that age.
+const MAX_QUICK_RETIREMENT_AGE = 94;
+
 export function ProjectionAssumptions({ dollarDisplay }: { dollarDisplay: ProjectionDollarDisplay }) {
   const profile = useProfileSummary();
   const refresh = useDataRefresh();
   const [assumptions, setAssumptions] = useState<Assumption[]>(FALLBACK_ASSUMPTIONS);
   const [initialized, setInitialized] = useState(false);
   const retirementBalance = useCurrentRetirementBalance();
+  const currentAge = profile?.currentAge ?? null;
+  const projectionEligible = currentAge != null && currentAge < MAX_QUICK_RETIREMENT_AGE;
   const [result, setResult] = useState<{ balanceAtRetirement: number; monthlyIncome: number; years: number } | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -45,10 +51,13 @@ export function ProjectionAssumptions({ dollarDisplay }: { dollarDisplay: Projec
       {
         key: "age",
         label: "Target retirement age",
-        min: profile.currentAge + 1,
-        max: 80,
+        min: Math.min(profile.currentAge + 1, MAX_QUICK_RETIREMENT_AGE),
+        max: MAX_QUICK_RETIREMENT_AGE,
         step: 1,
-        value: profile.targetRetirementAge,
+        value: Math.min(
+          MAX_QUICK_RETIREMENT_AGE,
+          Math.max(profile.currentAge + 1, profile.targetRetirementAge),
+        ),
         suffix: "yrs",
       },
       {
@@ -91,6 +100,10 @@ export function ProjectionAssumptions({ dollarDisplay }: { dollarDisplay: Projec
       setSaveError("Add your date of birth in Settings before saving an age-based scenario.");
       return;
     }
+    if (!projectionEligible) {
+      setSaveError("Quick projections use age 95 as the life expectancy and need at least one retirement year.");
+      return;
+    }
     setSaving(true);
     setSaveError(null);
     setSaved(false);
@@ -115,8 +128,10 @@ export function ProjectionAssumptions({ dollarDisplay }: { dollarDisplay: Projec
   // assets, not total net worth: a home or taxable cash balance alone does
   // not represent spendable retirement income in this model.
   useEffect(() => {
-    if (!profile || profile.currentAge == null || retirementBalance == null) {
+    if (!profile || profile.currentAge == null || profile.currentAge >= MAX_QUICK_RETIREMENT_AGE || retirementBalance == null) {
       setResult(null);
+      setLoading(false);
+      setError(null);
       return;
     }
     const currentAge = profile.currentAge;
@@ -159,6 +174,7 @@ export function ProjectionAssumptions({ dollarDisplay }: { dollarDisplay: Projec
         description="Quick retirement-balance what-if — contributions stop at retirement, then withdrawals begin"
       />
       {profile?.currentAge == null && <p className="mx-4 mt-4 rounded-md border border-warning/30 bg-warning/5 p-3 text-xs text-muted-foreground">Add your date of birth in Settings to run age-based retirement projections.</p>}
+      {profile?.currentAge != null && !projectionEligible && <p className="mx-4 mt-4 rounded-md border border-warning/30 bg-warning/5 p-3 text-xs text-muted-foreground">Quick projections use age 95 as the life expectancy, so there is no valid retirement age remaining for your current age.</p>}
       <div className="flex flex-col gap-4 p-4">
         {assumptions.map((a) => (
           <div key={a.key}>
@@ -180,6 +196,7 @@ export function ProjectionAssumptions({ dollarDisplay }: { dollarDisplay: Projec
               max={a.max}
               step={a.step}
               value={a.value}
+              disabled={!projectionEligible}
               onChange={(e) => update(a.key, Number(e.target.value))}
               className="mt-2 h-2 w-full cursor-pointer appearance-none rounded-full border border-primary/30 bg-primary/15 accent-primary shadow-inner outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 [&::-moz-range-track]:h-2 [&::-moz-range-track]:rounded-full [&::-moz-range-track]:bg-primary/20 [&::-moz-range-thumb]:size-4 [&::-moz-range-thumb]:border-2 [&::-moz-range-thumb]:border-background [&::-moz-range-thumb]:bg-primary [&::-webkit-slider-runnable-track]:h-2 [&::-webkit-slider-runnable-track]:rounded-full [&::-webkit-slider-runnable-track]:bg-primary/20 [&::-webkit-slider-thumb]:mt-[-5px] [&::-webkit-slider-thumb]:size-4 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:border-2 [&::-webkit-slider-thumb]:border-background [&::-webkit-slider-thumb]:bg-primary [&::-webkit-slider-thumb]:shadow-sm"
             />
@@ -203,7 +220,7 @@ export function ProjectionAssumptions({ dollarDisplay }: { dollarDisplay: Projec
         </p>
       </div>
       <div className="border-t border-border p-3">
-        <Button size="sm" className="w-full" onClick={handleSaveAsScenario} disabled={saving}>
+        <Button size="sm" className="w-full" onClick={handleSaveAsScenario} disabled={saving || (profile?.currentAge != null && !projectionEligible)}>
           {saving ? "Saving…" : saved ? "Saved as scenario ✓" : "Save as scenario"}
         </Button>
         {saveError && <p className="mt-1.5 text-[11px] text-destructive">{saveError}</p>}

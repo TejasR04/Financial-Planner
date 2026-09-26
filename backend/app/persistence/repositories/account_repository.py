@@ -3,10 +3,12 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from decimal import Decimal
 from uuid import UUID, uuid4
+from zoneinfo import ZoneInfo
 
 from sqlalchemy import delete, func, select, update
 
 from app.core.exceptions import ValidationError
+from app.core.config import get_settings
 from app.domain.entities import Account
 from app.domain.enums import AccountStatus, AccountType
 from app.persistence.models import AccountModel, HoldingModel, InvestmentValueSnapshotModel, LiabilityModel, TransactionModel
@@ -161,6 +163,10 @@ class AccountRepository(BaseRepository[AccountModel]):
                 row.custom_name = value.strip() if value else None
             else:
                 setattr(row, field, value)
+        if "balance" in fields and row.institution_id is None and row.type == AccountType.LOAN.value:
+            liability = await self.session.scalar(select(LiabilityModel).where(LiabilityModel.account_id == account_id))
+            if liability is not None:
+                liability.last_interest_accrual_date = datetime.now(ZoneInfo(get_settings().financial_timezone)).date()
         await self.session.flush()
         return _to_domain(row)
 

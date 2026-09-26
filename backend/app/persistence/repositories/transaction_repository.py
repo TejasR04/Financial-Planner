@@ -216,24 +216,49 @@ class TransactionRepository(BaseRepository[TransactionModel]):
 
         identities = import_fingerprints(transactions, identity_numbers)
         existing_identities = {row.import_fingerprint for row in existing if row.import_fingerprint}
-        known_bases = {identity.split(":", 1)[0] for identity in existing_identities if ":" in identity}
-        legacy_identities = {identity for identity in existing_identities if ":" not in identity}
+        known_bases = {_import_identity_parts(identity)[0] for identity in existing_identities}
+        existing_occurrences: dict[str, set[int]] = {}
+        for identity in existing_identities:
+            base, occurrence = _import_identity_parts(identity)
+            if occurrence is not None:
+                existing_occurrences.setdefault(base, set()).add(occurrence)
+        legacy_counts = _legacy_import_counts(existing_identities)
+        legacy_consumed: dict[str, int] = {}
+        requested_occurrences: dict[str, set[int]] = {}
+        for identity in identities:
+            base, occurrence = _import_identity_parts(identity)
+            if occurrence is not None:
+                requested_occurrences.setdefault(base, set()).add(occurrence)
+        accepted_occurrences: dict[str, set[int]] = {}
         accepted: list[tuple[Transaction, str]] = []
         skipped = 0
         for transaction, identity, forced in zip(transactions, identities, force_import, strict=True):
             key = (transaction.account_id, transaction.amount)
-            base_identity = identity.split(":", 1)[0]
-            exact_reimport = identity in existing_identities or base_identity in legacy_identities
-            if base_identity in legacy_identities:
-                legacy_identities.remove(base_identity)
+            base_identity, occurrence = _import_identity_parts(identity)
+            legacy_duplicate = False
+            if occurrence not in existing_occurrences.get(base_identity, set()):
+                consumed = legacy_consumed.get(base_identity, 0)
+                if consumed < legacy_counts.get(base_identity, 0):
+                    legacy_duplicate = True
+                    legacy_consumed[base_identity] = consumed + 1
+            exact_reimport = identity in existing_identities
             duplicate_existing = any(
                 abs((row.posted_at - transaction.posted_at).days) <= IMPORT_DATE_TOLERANCE_DAYS
                 and merchants_likely_match(row.merchant, transaction.merchant)
                 for row in existing_by_account_amount.get(key, [])
             )
-            if exact_reimport or (duplicate_existing and not forced and base_identity not in known_bases):
+            if (exact_reimport and not forced) or (legacy_duplicate and not forced) or (duplicate_existing and not forced and base_identity not in known_bases):
                 skipped += 1
             else:
+                if forced and (exact_reimport or legacy_duplicate):
+                    reserved = set(existing_occurrences.get(base_identity, set()))
+                    reserved.update(requested_occurrences.get(base_identity, set()))
+                    reserved.update(accepted_occurrences.get(base_identity, set()))
+                    reserved.update(range(1, legacy_counts.get(base_identity, 0) + 1))
+                    occurrence = max(reserved, default=0) + 1
+                    identity = f"{base_identity}:occurrence:{occurrence}"
+                if occurrence is not None:
+                    accepted_occurrences.setdefault(base_identity, set()).add(occurrence)
                 accepted.append((transaction, identity))
         if not accepted:
             return [], skipped
@@ -284,8 +309,14 @@ class TransactionRepository(BaseRepository[TransactionModel]):
             existing_by_account_amount.setdefault((row.account_id, row.amount), []).append(row)
         identities = import_fingerprints(transactions, identity_numbers)
         existing_identities = {row.import_fingerprint for row in existing if row.import_fingerprint}
-        known_bases = {identity.split(":", 1)[0] for identity in existing_identities if ":" in identity}
-        legacy_identities = {identity for identity in existing_identities if ":" not in identity}
+        known_bases = {_import_identity_parts(identity)[0] for identity in existing_identities}
+        existing_occurrences: dict[str, set[int]] = {}
+        for identity in existing_identities:
+            base, occurrence = _import_identity_parts(identity)
+            if occurrence is not None:
+                existing_occurrences.setdefault(base, set()).add(occurrence)
+        legacy_counts = _legacy_import_counts(existing_identities)
+        legacy_consumed: dict[str, int] = {}
         flags: list[bool] = []
         for transaction, identity in zip(transactions, identities, strict=True):
             key = (transaction.account_id, transaction.amount)
@@ -294,12 +325,17 @@ class TransactionRepository(BaseRepository[TransactionModel]):
                 and merchants_likely_match(row.merchant, transaction.merchant)
                 for row in existing_by_account_amount.get(key, [])
             )
-            base_identity = identity.split(":", 1)[0]
+            base_identity, occurrence = _import_identity_parts(identity)
+            legacy_duplicate = False
+            if occurrence not in existing_occurrences.get(base_identity, set()):
+                consumed = legacy_consumed.get(base_identity, 0)
+                if consumed < legacy_counts.get(base_identity, 0):
+                    legacy_duplicate = True
+                    legacy_consumed[base_identity] = consumed + 1
             flags.append(
-                identity in existing_identities or base_identity in legacy_identities
+                identity in existing_identities or legacy_duplicate
                 or (duplicate and base_identity not in known_bases)
             )
-            legacy_identities.discard(base_identity)
         return flags
 
     async def apply_plaid_updates(
@@ -617,14 +653,39 @@ def import_fingerprints(
     if identity_numbers is not None:
         if len(identity_numbers) != len(transactions):
             raise ValueError("identity_numbers must align with transactions")
-        return [f"{import_fingerprint(transaction)}:{number}" for transaction, number in zip(transactions, identity_numbers, strict=True)]
     occurrences: dict[str, int] = {}
     result: list[str] = []
-    for transaction in transactions:
+    for index, transaction in enumerate(transactions):
         base = import_fingerprint(transaction)
-        occurrences[base] = occurrences.get(base, 0) + 1
-        result.append(f"{base}:{occurrences[base]}")
+        occurrence = identity_numbers[index] if identity_numbers is not None else occurrences.get(base, 0) + 1
+        occurrences[base] = max(occurrences.get(base, 0), occurrence)
+        result.append(f"{base}:occurrence:{occurrence}")
     return result
+
+
+def _import_identity_parts(identity: str) -> tuple[str, int | None]:
+    parts = identity.split(":")
+    if len(parts) == 3 and parts[1] == "occurrence":
+        try:
+            return parts[0], int(parts[2])
+        except ValueError:
+            pass
+    return parts[0], None
+
+
+def _legacy_import_counts(identities: set[str]) -> dict[str, int]:
+    """Count old row-number fingerprints by transaction identity.
+
+    Prior releases stored ``base:csv_line``. Line numbers cannot be mapped
+    back to occurrence ranks after a file changes, so reserve that many
+    occurrences conservatively when evaluating a replay.
+    """
+    counts: dict[str, int] = {}
+    for identity in identities:
+        base, occurrence = _import_identity_parts(identity)
+        if occurrence is None:
+            counts[base] = counts.get(base, 0) + 1
+    return counts
 
 
 def _to_domain(

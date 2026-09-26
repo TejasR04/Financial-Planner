@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
@@ -34,7 +34,7 @@ async def test_payment_matching_filters_and_repeated_application():
     assert "transactions.amount < 0" in sql
     assert "transactions.status = 'cleared'" in sql
     assert "transactions.deleted_at IS NULL" in sql
-    assert "transactions.posted_at >" in sql
+    assert "transactions.posted_at >=" in sql
     assert "accounts.archived_at IS NULL" in sql
 
 
@@ -83,7 +83,7 @@ async def test_reconcile_does_not_reapply_an_unchanged_capped_payment():
 
 
 def _reconcile_case(*, current_balance: str, applied: str, source_amount: str, transaction_amount: str,
-                    deleted: bool = False, posted_at=None, rule_deleted: bool = False):
+                    deleted: bool = False, posted_at=None, rule_deleted: bool = False, source_archived: bool = False):
     user_id, target_id, source_id, transaction_id = uuid4(), uuid4(), uuid4(), uuid4()
     account = SimpleNamespace(id=target_id, balance=Decimal(current_balance))
     transaction = SimpleNamespace(
@@ -101,7 +101,10 @@ def _reconcile_case(*, current_balance: str, applied: str, source_amount: str, t
         source_amount=Decimal(source_amount), reversed_at=None, reversal_reason=None,
         event_key=f"transaction:{transaction_id}",
     )
-    source = SimpleNamespace(id=source_id, user_id=user_id, archived_at=None)
+    source = SimpleNamespace(
+        id=source_id, user_id=user_id,
+        archived_at=datetime.now(timezone.utc) if source_archived else None,
+    )
     return user_id, account, transaction, rule, adjustment, source
 
 
@@ -183,6 +186,25 @@ async def test_deleted_rule_retains_its_valid_historical_adjustment():
 
 
 @pytest.mark.asyncio
+async def test_reconcile_preserves_valid_payment_when_source_account_is_archived():
+    values = _reconcile_case(
+        current_balance="-900", applied="100", source_amount="100",
+        transaction_amount="-100", source_archived=True,
+    )
+    user_id, account, transaction, rule, adjustment, source = values
+    session = SimpleNamespace(
+        execute=AsyncMock(return_value=SimpleNamespace(all=lambda: [(adjustment, rule, account, transaction, source)])),
+        flush=AsyncMock(), add=Mock(),
+    )
+
+    await LoanBalanceAutomationService(session).reconcile(user_id)
+
+    assert account.balance == Decimal("-900")
+    assert adjustment.reversed_at is None
+    session.add.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_reconcile_reverses_payment_moved_before_rule_start():
     values = _reconcile_case(
         current_balance="-900", applied="100", source_amount="100", transaction_amount="-100",
@@ -196,6 +218,29 @@ async def test_reconcile_reverses_payment_moved_before_rule_start():
     await LoanBalanceAutomationService(session).reconcile(user_id)
     assert account.balance == Decimal("-1000")
     assert adjustment.reversed_at is not None
+
+
+def test_manual_loan_interest_uses_elapsed_days_once_and_payment_reduces_future_interest():
+    service = LoanBalanceAutomationService(SimpleNamespace())
+    account = SimpleNamespace(balance=Decimal("-1000.00"))
+    liability = SimpleNamespace(interest_rate=Decimal("0.365"), last_interest_accrual_date=date(2026, 1, 1))
+
+    assert service._accrue_interest(account, liability, date(2026, 1, 2)) == 1
+    assert account.balance == Decimal("-1001.00")
+    assert service._accrue_interest(account, liability, date(2026, 1, 2)) == 0
+    assert account.balance == Decimal("-1001.00")
+
+    account.balance += Decimal("501.00")
+    assert service._accrue_interest(account, liability, date(2026, 1, 3)) == 1
+    assert account.balance == Decimal("-500.50")
+
+
+def test_manual_loan_interest_does_not_backfill_without_checkpoint():
+    account = SimpleNamespace(balance=Decimal("-1000.00"))
+    liability = SimpleNamespace(interest_rate=Decimal("0.12"), last_interest_accrual_date=None)
+    assert LoanBalanceAutomationService._accrue_interest(account, liability, date(2026, 1, 2)) == 0
+    assert liability.last_interest_accrual_date == date(2026, 1, 2)
+    assert account.balance == Decimal("-1000.00")
 
 
 def test_loan_transfer_rule_keeps_destination():
