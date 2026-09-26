@@ -222,6 +222,9 @@ export default function TransactionsPage() {
       if (pending.transactionType) {
         await api.transactions.updateClassification(pending.transaction.id, pending.transactionType);
       } else if (pending.categoryId) {
+        if (pending.transaction.type !== "expense" && pending.transaction.type !== "transfer") {
+          await api.transactions.updateClassification(pending.transaction.id, "expense");
+        }
         await api.transactions.updateBudgetCategory(pending.transaction.id, pending.categoryId);
       }
       if (createRule) {
@@ -372,7 +375,7 @@ export default function TransactionsPage() {
                     <td className="px-4 py-2.5 text-muted-foreground">
                       {categoryEditingId === transaction.id ? <select
                         autoFocus
-                        value={transaction.budget_category_id ?? ""}
+                        value={transaction.budget_category_id ?? (transaction.type === "income" ? "__income__" : transaction.type === "transfer" ? "__transfer__" : transaction.type === "credit_card_payment" ? "__credit_card_payment__" : "")}
                         onChange={(event) => void updateCategory(transaction, event.target.value)}
                         onBlur={() => setCategoryEditingId(null)}
                         disabled={updatingCategoryId === transaction.id}
@@ -380,10 +383,13 @@ export default function TransactionsPage() {
                         className="h-8 rounded-md border border-border bg-background px-2 text-xs"
                       >
                         <option value="">Uncategorized</option>
+                        <option value="__income__">Income</option>
+                        <option value="__transfer__">Transfer</option>
+                        <option value="__credit_card_payment__">Credit card payment</option>
                         {categories.filter((category) => category.active).map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}
                       </select> : <button
                         disabled={bulkBusy || loading}
-                        onClick={() => transaction.type === "expense" || transaction.type === "transfer" ? setCategoryEditingId(transaction.id) : setEditing(transaction)}
+                        onClick={() => setCategoryEditingId(transaction.id)}
                         className="rounded py-1 text-left hover:text-primary hover:underline"
                         aria-label={`Edit category for ${transaction.merchant}`}
                       >{transaction.budget_category_name ?? categories.find((category) => category.id === transaction.budget_category_id)?.name ?? (transaction.type === "expense" ? "Uncategorized" : transaction.type === "credit_card_payment" ? "Card payment" : transaction.type === "income" ? "Income" : "No budget category")}</button>}

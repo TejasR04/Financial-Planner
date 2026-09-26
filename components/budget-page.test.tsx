@@ -1,13 +1,19 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import BudgetPage from "@/app/(app)/budget/page";
 
-const mocks = vi.hoisted(() => ({ push: vi.fn(), summary: vi.fn(), categories: vi.fn(), reviewQueue: vi.fn() }));
+const mocks = vi.hoisted(() => ({
+  push: vi.fn(), summary: vi.fn(), categories: vi.fn(), reviewQueue: vi.fn(),
+  updateClassification: vi.fn(), updateBudgetCategory: vi.fn(),
+}));
 vi.mock("next/navigation", () => ({ useRouter: () => ({ push: mocks.push }) }));
 vi.mock("@/components/charts/spending-pace-chart", () => ({ SpendingPaceChart: () => <div>Spending comparison</div> }));
 vi.mock("@/components/budget-breakdown", () => ({ BudgetBreakdown: () => <div>Category breakdown</div> }));
-vi.mock("@/lib/api-client", () => ({ ApiError: class extends Error {}, api: { budgets: mocks } }));
+vi.mock("@/lib/api-client", () => ({ ApiError: class extends Error {}, api: {
+  budgets: mocks,
+  transactions: { updateClassification: mocks.updateClassification, updateBudgetCategory: mocks.updateBudgetCategory },
+} }));
 vi.mock("@/lib/data-provider", () => ({ useDataRefresh: () => vi.fn() }));
 
 describe("budget summary and review scope", () => {
@@ -21,5 +27,22 @@ describe("budget summary and review scope", () => {
     expect(screen.getByRole("link", { name: "Review 1 transaction" })).toHaveAttribute("href", "#transaction-review");
     await userEvent.selectOptions(screen.getByLabelText("Category order"), "group");
     expect(screen.getByRole("heading", { name: "Wants" })).toBeInTheDocument();
+  });
+
+  it("changes an income transaction to an expense before assigning a budget category", async () => {
+    mocks.categories.mockResolvedValue([{ id: "dining", name: "Dining", active: true }]);
+    mocks.summary.mockResolvedValue({ categories: [], uncategorized: { spent: "0", pending: "0", transaction_count: 0 } });
+    mocks.reviewQueue.mockResolvedValue([{ id: "income-row", posted_at: "2026-09-01", merchant: "Cafe", provider_category: "Income", amount: "-20", status: "cleared", type: "income", budget_category_id: null }]);
+    mocks.updateClassification.mockResolvedValue({});
+    mocks.updateBudgetCategory.mockResolvedValue({});
+
+    render(<BudgetPage />);
+    const merchant = await screen.findByText("Cafe");
+    await userEvent.selectOptions(within(merchant.closest("tr")!).getByRole("combobox"), "dining");
+    await userEvent.click(screen.getByRole("button", { name: "Only this transaction" }));
+
+    await waitFor(() => expect(mocks.updateBudgetCategory).toHaveBeenCalledWith("income-row", "dining"));
+    expect(mocks.updateClassification).toHaveBeenCalledWith("income-row", "expense");
+    expect(mocks.updateClassification.mock.invocationCallOrder[0]).toBeLessThan(mocks.updateBudgetCategory.mock.invocationCallOrder[0]);
   });
 });

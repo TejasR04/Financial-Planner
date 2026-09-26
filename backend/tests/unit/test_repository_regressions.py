@@ -121,6 +121,25 @@ async def test_income_cannot_silently_become_budget_spending():
 
 
 @pytest.mark.asyncio
+async def test_category_merchant_rule_classifies_incompatible_transactions_as_expenses():
+    category_id = uuid4()
+    session = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(rowcount=1)), flush=AsyncMock())
+    repo = BudgetRepository(session)
+    repo.list_rules = AsyncMock(return_value=[(
+        SimpleNamespace(merchant_pattern="Cafe", budget_category_id=category_id),
+        SimpleNamespace(active=True),
+    )])
+
+    assert await repo.apply_merchant_rules_for_user(uuid4()) == 1
+    sql = _sql(session.execute.await_args.args[0])
+    assert "CASE WHEN" in sql
+    assert "transactions.type IN" in sql
+    assert "user_type_override" in sql
+    assert "budget_category_id" in sql
+    assert "expense" in session.execute.await_args.args[0].compile().params.values()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("repository_type", [HoldingRepository, LiabilityRepository])
 async def test_active_child_queries_exclude_archived_accounts(repository_type):
     session = SimpleNamespace(execute=AsyncMock(return_value=_empty_result()))

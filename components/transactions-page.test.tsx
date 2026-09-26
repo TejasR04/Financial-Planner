@@ -3,7 +3,7 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import TransactionsPage from "@/app/(app)/transactions/page";
 
-const mocks = vi.hoisted(() => ({ list: vi.fn(), categories: vi.fn(), refresh: vi.fn(), accounts: [], updateBudgetCategory: vi.fn(), markReviewed: vi.fn() }));
+const mocks = vi.hoisted(() => ({ list: vi.fn(), categories: vi.fn(), refresh: vi.fn(), accounts: [], updateBudgetCategory: vi.fn(), updateClassification: vi.fn(), markReviewed: vi.fn() }));
 vi.mock("@/lib/data-provider", () => ({ useAccountsData: () => mocks.accounts, useDataRefresh: () => mocks.refresh }));
 vi.mock("@/lib/api-client", () => ({ ApiError: class extends Error {}, api: { transactions: mocks, budgets: mocks } }));
 vi.mock("@/components/transaction-entry-dialog", () => ({ TransactionEntryDialog: () => null }));
@@ -31,5 +31,21 @@ describe("transaction ledger", () => {
     await userEvent.click(screen.getByRole("button", { name: "Previous month" }));
     const previous = new Date(now.getFullYear(), now.getMonth() - 1, 1);
     await waitFor(() => expect(mocks.list).toHaveBeenLastCalledWith(expect.objectContaining({ since: `${previous.getFullYear()}-${String(previous.getMonth() + 1).padStart(2, "0")}-01`, offset: 0 }), expect.any(AbortSignal)));
+  });
+
+  it("reclassifies a mistaken income transaction before assigning an expense category", async () => {
+    mocks.categories.mockResolvedValue([{ id: "food", name: "Food", active: true }]);
+    mocks.list.mockResolvedValue({ data: [{ id: "income-row", account_id: "a", merchant: "Cafe refund", amount: "10", posted_at: "2026-09-01", type: "income", status: "cleared", budget_category_id: null, budget_category_name: null, ignored_from_budget: false }], total: 1, totals: { income: "10", spending: "0", net_cash_flow: "10" } });
+    mocks.updateClassification.mockResolvedValue({});
+    mocks.updateBudgetCategory.mockResolvedValue({});
+
+    render(<TransactionsPage />);
+    await userEvent.click(await screen.findByRole("button", { name: "Edit category for Cafe refund" }));
+    await userEvent.selectOptions(screen.getByRole("combobox", { name: "Category for Cafe refund" }), "food");
+    await userEvent.click(screen.getByRole("button", { name: "Only this transaction" }));
+
+    await waitFor(() => expect(mocks.updateBudgetCategory).toHaveBeenCalledWith("income-row", "food"));
+    expect(mocks.updateClassification).toHaveBeenCalledWith("income-row", "expense");
+    expect(mocks.updateClassification.mock.invocationCallOrder.at(-1)).toBeLessThan(mocks.updateBudgetCategory.mock.invocationCallOrder.at(-1)!);
   });
 });

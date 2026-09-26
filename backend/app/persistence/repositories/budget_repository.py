@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import date, datetime, timezone
 from uuid import UUID, uuid4
 
-from sqlalchemy import func, select, update
+from sqlalchemy import case, func, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.core.exceptions import ConflictError, NotFoundError, ValidationError
@@ -148,8 +148,13 @@ class BudgetRepository(BaseRepository[BudgetCategoryModel]):
                 conditions.append(TransactionModel.reviewed_at.is_(None))
             if rule.budget_category_id is not None:
                 conditions.append(TransactionModel.budget_category_id.is_(None) | TransactionModel.reviewed_at.is_(None))
+                eligible_type = TransactionModel.type.in_(("expense", "transfer"))
                 values = {
                     "budget_category_id": rule.budget_category_id,
+                    "type": case((eligible_type, TransactionModel.type), else_="expense"),
+                    "user_type_override": case(
+                        (TransactionModel.type == "transfer", TransactionModel.user_type_override), else_="expense"
+                    ),
                     "reviewed_at": datetime.now(timezone.utc),
                 }
             else:

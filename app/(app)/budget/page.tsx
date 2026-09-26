@@ -170,6 +170,9 @@ export default function BudgetPage() {
       if (pendingAssignment.transactionType) {
         await api.transactions.updateClassification(pendingAssignment.transaction.id, pendingAssignment.transactionType);
       } else if (pendingAssignment.categoryId) {
+        if (pendingAssignment.transaction.type !== "expense" && pendingAssignment.transaction.type !== "transfer") {
+          await api.transactions.updateClassification(pendingAssignment.transaction.id, "expense");
+        }
         await api.transactions.updateBudgetCategory(pendingAssignment.transaction.id, pendingAssignment.categoryId);
       }
       transactionAssigned = true;
