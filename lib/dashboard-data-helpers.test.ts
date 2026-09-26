@@ -3,6 +3,7 @@ import type { ApiTransaction } from "@/lib/api-client";
 import {
   ageFromBirthDate,
   buildCashflowSeries,
+  formatTimestamp,
   monthKey,
   twelveMonthWindow,
 } from "@/lib/dashboard-data-helpers";
@@ -27,6 +28,11 @@ function transaction(overrides: Partial<ApiTransaction>): ApiTransaction {
 }
 
 describe("dashboard date helpers", () => {
+  it("shows UTC sync timestamps in Eastern time across daylight saving changes", () => {
+    expect(formatTimestamp("2026-09-25T20:30:00Z")).toContain("4:30 PM EDT");
+    expect(formatTimestamp("2026-01-25T20:30:00Z")).toContain("3:30 PM EST");
+  });
+
   it("calculates age on either side of the birthday", () => {
     expect(ageFromBirthDate("1990-09-17T00:00:00", new Date(2026, 8, 16))).toBe(35);
     expect(ageFromBirthDate("1990-09-17T00:00:00", new Date(2026, 8, 17))).toBe(36);

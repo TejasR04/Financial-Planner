@@ -100,3 +100,19 @@ jobs:
 
       - name: Show service URL
         run: echo "${{ steps.deploy.outputs.url }}"
+
+      # Scheduled syncs use the same backend code and ticker secret as the API.
+      - name: Update scheduled sync job
+        shell: bash
+        run: |
+          set -euo pipefail
+          image=$(gcloud run services describe meridian-api \
+            --region us-east1 \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --format='value(spec.template.spec.containers[0].image)')
+          test -n "$image"
+          gcloud run jobs update meridian-plaid-sync \
+            --image "$image" \
+            --update-secrets TIINGO_API_KEY=tiingo-api-key:latest \
+            --region us-east1 \
+            --project "${{ vars.GCP_PROJECT_ID }}"
