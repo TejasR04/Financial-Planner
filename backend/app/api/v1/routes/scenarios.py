@@ -226,6 +226,11 @@ async def run_scenario(
             "allocation": str(assumptions.target_equity_allocation),
             "return_basis": "real_pre_tax_pre_fee",
             "withdrawal_timing": "start_of_year",
+            "withdrawal_basis": (
+                "fixed_real_income_target"
+                if body.annual_spending_target is not None or scenario.desired_monthly_income_today is not None
+                else "rate_of_each_trials_retirement_balance"
+            ),
             "contribution_timing": "month_end",
             "inflation_treatment": "expected returns and withdrawals are modeled directly in today's dollars; nominal volatility is scaled to a real-return approximation",
             "retirement_dollar_basis": "today_dollars",
@@ -281,6 +286,11 @@ async def preview_scenario(
         model_metadata=({
             "model_version": result.monte_carlo.model_version,
             "success_metric": result.monte_carlo.success_metric,
+            "withdrawal_basis": (
+                "fixed_real_income_target"
+                if body.annual_spending_target is not None or scenario.desired_monthly_income_today is not None
+                else "rate_of_each_trials_retirement_balance"
+            ),
             "trials": result.monte_carlo.trials,
             "seed": result.monte_carlo.seed,
             "return_volatility": str(result.executed_return_volatility),

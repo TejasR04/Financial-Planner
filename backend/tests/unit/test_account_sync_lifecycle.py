@@ -1,4 +1,5 @@
 """Lifecycle contracts for the Accounts/Plaid boundary without a live bank."""
+import asyncio
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
@@ -21,6 +22,18 @@ from app.schemas.user import PlanningProfileUpdateRequest, UserUpdateRequest
 class _AsyncContext:
     async def __aenter__(self):
         return self
+
+    async def __aexit__(self, exc_type, exc, traceback):
+        return False
+
+
+class _StopAfterReads(Exception):
+    pass
+
+
+class _StopOnEnter:
+    async def __aenter__(self):
+        raise _StopAfterReads
 
     async def __aexit__(self, exc_type, exc, traceback):
         return False
@@ -156,6 +169,41 @@ async def test_refresh_archives_removed_accounts_and_tolerates_missing_holdings(
     provider._investment_history.record_for_accounts.assert_awaited_once()
     provider._institutions.lock_for_sync.assert_awaited_once_with(user_id, institution_id, None)
     provider._institutions.mark_sync_success.assert_awaited_once_with(institution_id, "cursor-1")
+
+
+@pytest.mark.asyncio
+async def test_plaid_remote_reads_start_concurrently_before_local_writes():
+    user_id = uuid4()
+    institution = SimpleNamespace(id=uuid4(), name="Test bank")
+    started = set()
+    all_started = asyncio.Event()
+
+    async def record_start(name, result):
+        started.add(name)
+        if len(started) == 3:
+            all_started.set()
+        await asyncio.wait_for(all_started.wait(), timeout=1)
+        return result
+
+    provider = object.__new__(PlaidProvider)
+    provider.session = SimpleNamespace(begin_nested=lambda: _StopOnEnter())
+    provider._institutions = SimpleNamespace(
+        get_decrypted_access_token=AsyncMock(return_value="access-token"),
+        get_sync_cursor=AsyncMock(return_value="cursor"),
+    )
+    provider._client = SimpleNamespace(
+        get_accounts=lambda _token: record_start("accounts", []),
+        sync_transactions=lambda _token, _cursor: record_start(
+            "transactions",
+            SimpleNamespace(added_or_modified=[], removed_external_transaction_ids=[], next_cursor="next"),
+        ),
+        get_holdings=lambda _token: record_start("holdings", ([], [])),
+    )
+
+    with pytest.raises(_StopAfterReads):
+        await provider._refresh_institution(user_id, institution, apply_loan_automation=False)
+
+    assert started == {"accounts", "transactions", "holdings"}
 
 
 @pytest.mark.asyncio

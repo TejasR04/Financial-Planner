@@ -70,7 +70,17 @@ class NetWorthProjectionService:
         assets_balance = sum(asset_balances.values(), ZERO)
         liabilities_balance = sum(liability_balances.values(), ZERO)
         net_worth_today = assets_balance - liabilities_balance
-        series: list[NetWorthYearPoint] = []
+        # The trajectory includes the current balance as year zero. Keep it
+        # in the same today's-dollar basis as every projected point.
+        series: list[NetWorthYearPoint] = [
+            NetWorthYearPoint(
+                year_index=0,
+                age=assumptions.current_age,
+                assets=assets_balance.quantize(Decimal("0.01")),
+                liabilities=liabilities_balance.quantize(Decimal("0.01")),
+                net=net_worth_today.quantize(Decimal("0.01")),
+            )
+        ]
         payoff_factor = Decimal("1") - liability_payoff_rate
         invested_contributions_balance = ZERO
 

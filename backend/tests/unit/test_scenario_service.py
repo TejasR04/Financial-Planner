@@ -25,6 +25,8 @@ def test_scenario_run_produces_net_worth_and_retirement_projection():
         annual_contribution=Decimal("24000"),
         include_monte_carlo=False,
     )
+    assert result.net_worth_projection.series[0].year_index == 0
+    assert result.net_worth_projection.series[0].net == Decimal("100000.00")
     assert result.net_worth_projection.projected_net_worth_at_horizon > result.net_worth_projection.net_worth_today
     assert result.retirement_projection.projected_balance_at_retirement > Decimal("150000")
     assert result.monte_carlo is None
@@ -325,3 +327,19 @@ def test_explicit_volatility_override_still_respected():
     )
     assert result.monte_carlo.success_rate > 0.95
     assert result.executed_return_volatility == Decimal("0.03") / Decimal("1.028")
+
+
+def test_rate_based_scenario_uses_each_trials_balance_at_retirement():
+    assumptions = PlanningAssumptions(
+        current_age=55, retirement_age=65, expected_return=Decimal("0.065"),
+        monthly_contribution=Decimal("500"), withdrawal_rate=Decimal("0.04"),
+        target_equity_allocation=Decimal("0.8"),
+    )
+    result = ScenarioService().run(
+        accounts=[], assumptions=assumptions,
+        current_retirement_balance=Decimal("400000"),
+        annual_contribution=Decimal("6000"), monte_carlo_trials=1000,
+    )
+
+    assert result.monte_carlo is not None
+    assert result.monte_carlo.success_rate > 0.85

@@ -33,7 +33,7 @@ const metrics = [
   {
     key: "successRate",
     label: "Monte Carlo success",
-    hint: "Of 1,000 simulated trials with randomized annual returns, the percentage where retirement savings funded the scenario's modeled spending through age 95. Income-target scenarios use the fixed target; rate-based scenarios use their withdrawal rate.",
+    hint: "Of 1,000 simulated trials with randomized annual returns, the percentage where the investment portfolio funded spending through age 95. Income-target scenarios use the fixed target; rate-based scenarios start withdrawals at the selected percentage of each trial's retirement balance.",
     fmt: (v: number) => `${v}%`,
   },
 ] as const;
@@ -97,8 +97,8 @@ export function ScenarioCompare({
     <div className="grid grid-cols-1 gap-4 xl:grid-cols-3">
       <Panel className="xl:col-span-2">
         <PanelHeader
-          title="Retirement balance by scenario"
-          description={`Retirement accounts only · real-dollar model${dollarDisplay === "future" ? ", displayed in each year's dollars" : ", displayed in today's dollars"}`}
+          title="Net worth through retirement by scenario"
+          description={`Total assets minus liabilities · starts at today's net worth and ends at each scenario's retirement age · real-dollar model${dollarDisplay === "future" ? ", displayed in each year's dollars" : ", displayed in today's dollars"}`}
           actions={
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1">

@@ -21,6 +21,7 @@ import {
   twelveMonthWindow,
 } from "@/lib/dashboard-data-helpers";
 import { RESPONSE_CACHE_TTL_MS } from "@/lib/response-cache";
+import { retirementPortfolioBalance } from "@/lib/retirement-portfolio";
 import {
   formatCurrency,
   type Account,
@@ -411,9 +412,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         // Expensive projections are loaded separately, and only while the
         // projections route is active. This base load remains fast for every
         // other screen and never presents missing projections as zeroes.
-        const retirementBalance = accountList.data
-          .filter((a) => a.type === "retirement")
-          .reduce((s, a) => s + parseFloat(a.balance), 0);
+        const retirementBalance = retirementPortfolioBalance(accountList.data);
 
         const scenarios: Scenario[] = scenarioRows.map((s, i) => ({
           id: s.id,
@@ -571,9 +570,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           }
           return {
             ...scenario,
-            // The projections card and chart are both explicitly about
-            // retirement accounts. Total projected net worth includes other
-            // assets and liabilities and must not be shown under that label.
+            // The summary card shows the invested portfolio available for
+            // retirement; the chart below separately shows total net worth.
             netWorthAt65: parseFloat(
               preview.retirement_balance_at_target_age
                 ?? preview.retirement_trajectory.find((point) => point.age === scenario.retirementAge)?.balance
@@ -584,7 +582,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             withdrawalRateCapacity: preview.monthly_sustainable_withdrawal
               ? parseFloat(preview.monthly_sustainable_withdrawal)
               : null,
-            successRate: preview.success_rate
+            successRate: preview.success_rate != null
               ? Math.round(parseFloat(preview.success_rate) * 1000) / 10
               : null,
             projectionStatus: "available",
@@ -598,9 +596,11 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
                   exclusions: preview.model_metadata.exclusions,
                 }
               : undefined,
-            series: preview.retirement_trajectory.map((point) => parseFloat(point.balance) / 1_000_000),
+            // The scenario chart is a total net-worth projection, so use its
+            // matching net-worth trajectory (including current year zero).
+            series: preview.trajectory.map((point) => parseFloat(String(point.net)) / 1_000_000),
             withdrawals: preview.retirement_trajectory.map((point) => parseFloat(point.withdrawal)),
-            years: preview.retirement_trajectory.map((point) => String(currentYear + point.year)),
+            years: preview.trajectory.map((point) => String(currentYear + Number(point.year))),
           };
         }),
       }));

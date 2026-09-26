@@ -206,7 +206,7 @@ export function ProjectionAssumptions({ dollarDisplay }: { dollarDisplay: Projec
 
       <div className="border-t border-border bg-muted/30 px-4 py-3.5">
         <p className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-          Retirement balance at age {age}
+          Investment portfolio at age {age}
         </p>
         <p className="mt-1 font-mono text-2xl font-semibold tracking-tight text-primary tabular-nums">
           {result ? formatCurrency(displayProjectionDollars(result.balanceAtRetirement, years, Number(profile?.inflationRate ?? 0), dollarDisplay), { compact: true }) : loading ? "…" : "—"}

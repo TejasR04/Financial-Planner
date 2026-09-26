@@ -34,10 +34,9 @@ export function ScenarioChart({
     projectedScenarios.forEach((s) => {
       const i = s.years.indexOf(year);
       if (i === -1) return;
-      const yearsFromToday = i + 1;
+      const yearsFromToday = Number(year) - Number(s.years[0]);
       const inflationRate = s.inflationRate;
       row[s.id] = displayProjectionDollars(s.series[i] * 1_000_000, yearsFromToday, inflationRate, dollarDisplay) / 1_000_000;
-      row[`${s.id}-withdrawal`] = displayProjectionDollars(s.withdrawals[i], yearsFromToday, inflationRate, dollarDisplay);
       row[`${s.id}-retirement-age`] = year === s.retirementYear ? s.retirementAge : 0;
     });
     return row;
@@ -87,21 +86,12 @@ export function ScenarioChart({
               <ChartTooltip
                 formatter={(v) => `$${(v as number).toFixed(2)}M`}
               detail={(entry) => {
-                  const dataKey = String(entry.dataKey);
-                  const withdrawal = Number(
-                    (entry.payload as Record<string, number | string>)[`${dataKey}-withdrawal`] ?? 0,
-                  );
                   const retirementAge = Number(
-                    (entry.payload as Record<string, number | string>)[`${dataKey}-retirement-age`] ?? 0,
+                    (entry.payload as Record<string, number | string>)[`${String(entry.dataKey)}-retirement-age`] ?? 0,
                   );
-                  const phase = retirementAge > 0
-                    ? `Retirement begins at age ${retirementAge}`
-                    : withdrawal > 0
-                      ? `Withdrawal: $${withdrawal.toLocaleString("en-US", { maximumFractionDigits: 0 })}/yr ${dollarDisplay === "future" ? "in that year's dollars" : "in today's dollars"}`
-                      : "Contributing to retirement";
-                  return withdrawal > 0 && retirementAge > 0
-                    ? `${phase} · withdrawal: $${withdrawal.toLocaleString("en-US", { maximumFractionDigits: 0 })}/yr`
-                    : phase;
+                  return retirementAge > 0
+                    ? `Projection ends at retirement age ${retirementAge}`
+                    : "Total net worth projection";
                 }}
               />
             }

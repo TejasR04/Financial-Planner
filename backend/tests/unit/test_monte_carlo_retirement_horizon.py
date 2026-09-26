@@ -103,6 +103,23 @@ def test_zero_balance_with_zero_withdrawals_is_successful():
     assert result.success_rate == 1.0
 
 
+def test_rate_based_withdrawal_uses_each_trials_actual_retirement_balance():
+    common = dict(
+        starting_balance=Decimal("100"), annual_contribution=Decimal("0"),
+        expected_return=Decimal("0"), return_volatility=Decimal("0.5"),
+        years=1, starting_age=64, target_balance=Decimal("0"),
+        retirement_years=1, trials=1000, seed=42,
+    )
+    fixed = run_monte_carlo(**common, annual_withdrawal=Decimal("50"))
+    rate_based = run_monte_carlo(
+        **common, annual_withdrawal=Decimal("50"),
+        withdrawal_rate_at_retirement=Decimal("0.5"),
+    )
+
+    assert fixed.success_rate < 1.0
+    assert rate_based.success_rate == 1.0
+
+
 def test_fees_reduce_accumulation_ending_balance():
     common = dict(
         starting_balance=Decimal("100000"), annual_contribution=Decimal("12000"),

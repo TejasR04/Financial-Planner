@@ -29,6 +29,21 @@ def test_insights_report_actual_values_and_period_without_health_score():
     assert not any("Equities" in d.text for d in drafts)
 
 
+def test_savings_insight_uses_authoritative_budget_cash_flow():
+    # Raw transaction totals differ from Overview's classified budget totals:
+    # the salary is still recognized, while only categorized spending counts.
+    history = ActivityHistory([date(2026, 8, 1)], [
+        BudgetTransactionInput("Salary", Decimal(4000), "cleared", None, type="income", posted_at=date(2026, 8, 1)),
+        BudgetTransactionInput("Rent", Decimal(-2000), "cleared", None, posted_at=date(2026, 8, 1)),
+    ])
+    drafts = InsightService().generate(
+        snapshot(), history, (Decimal("5000"), Decimal("2000")),
+    )
+    savings = next(d for d in drafts if d.meta.startswith("Savings /"))
+    assert "60.0%" in savings.text
+    assert "20.0%" in savings.text
+
+
 def test_insights_do_not_invent_savings_or_liquidity_with_no_history():
     drafts = InsightService().generate(snapshot(), ActivityHistory([], []))
     assert len(drafts) == 1

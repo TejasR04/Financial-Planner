@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 
 ZERO = Decimal("0")
-MODEL_VERSION = "normal-iid-monthly-contributions-v3"
+MODEL_VERSION = "normal-iid-monthly-contributions-v4"
 PERCENTILE_METHOD = "nearest-rank"
 
 
@@ -46,6 +46,7 @@ def run_monte_carlo(
     annual_withdrawal: Decimal = ZERO,
     annual_withdrawal_growth_rate: Decimal = ZERO,
     annual_fee_rate: Decimal = ZERO,
+    withdrawal_rate_at_retirement: Decimal | None = None,
 ) -> MonteCarloResult:
     """Runs `trials` independent projections with the annual return sampled
     from a normal distribution around `expected_return`.
@@ -73,7 +74,10 @@ def run_monte_carlo(
       that retirement horizon — i.e. "didn't run out of money" — which is
       what `ScenarioService` uses so "success rate" answers the question
       people actually mean by it for a retirement scenario. `target_balance`
-      is ignored in this mode.
+      is ignored in this mode. For a rate-based plan, set
+      `withdrawal_rate_at_retirement` to choose the initial annual withdrawal
+      from each trial's actual balance at retirement. Explicit spending
+      targets continue to use the fixed `annual_withdrawal` instead.
 
     This is deliberately simple (normal, i.i.d. annual returns) — a
     reasonable default for a v1 that is explicitly designed to be replaced
@@ -90,6 +94,8 @@ def run_monte_carlo(
         raise ValueError("balances and contributions cannot be negative")
     if annual_withdrawal < ZERO:
         raise ValueError("annual_withdrawal cannot be negative")
+    if withdrawal_rate_at_retirement is not None and not ZERO <= withdrawal_rate_at_retirement <= Decimal("1"):
+        raise ValueError("withdrawal_rate_at_retirement must be between 0 and 1")
     if not Decimal("-0.50") <= expected_return <= Decimal("0.50"):
         raise ValueError("expected_return must be between -0.50 and 0.50")
     if not ZERO <= return_volatility <= Decimal("1.00"):
@@ -121,7 +127,11 @@ def run_monte_carlo(
                 balance = balance * monthly_factor + monthly_contribution
 
         ran_out = False
-        withdrawal = annual_withdrawal
+        withdrawal = (
+            balance * withdrawal_rate_at_retirement
+            if withdrawal_rate_at_retirement is not None
+            else annual_withdrawal
+        )
         for _year in range(retirement_years):
             sampled_rate = Decimal(str(rng.normalvariate(mean, stdev)))
             if balance < withdrawal:

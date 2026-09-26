@@ -6,6 +6,7 @@ zero price.
 """
 from __future__ import annotations
 
+import asyncio
 import re
 from dataclasses import dataclass
 from datetime import date, timedelta
@@ -53,22 +54,28 @@ class TiingoMarketDataProvider:
         owns_client = self._client is None
         client = self._client or httpx.AsyncClient(timeout=15)
         try:
-            for symbol in missing:
-                if not re.fullmatch(r"[A-Z0-9.^_-]{1,20}", symbol):
-                    errors[symbol] = "Ticker contains unsupported characters."
-                    self._error_cache[symbol] = errors[symbol]
-                    continue
-                try:
-                    market_price = await self._latest_price(client, symbol)
+            results = await asyncio.gather(*(self._price_or_error(client, symbol) for symbol in missing))
+            for symbol, market_price, error in results:
+                if market_price is not None:
                     prices[symbol] = market_price
                     self._cache[symbol] = market_price
-                except (httpx.HTTPError, KeyError, ValueError, InvalidOperation):
-                    errors[symbol] = "No current market price was available."
-                    self._error_cache[symbol] = errors[symbol]
+                elif error is not None:
+                    errors[symbol] = error
+                    self._error_cache[symbol] = error
         finally:
             if owns_client:
                 await client.aclose()
         return MarketPriceBatch(prices=prices, errors=errors)
+
+    async def _price_or_error(
+        self, client: httpx.AsyncClient, symbol: str
+    ) -> tuple[str, MarketPrice | None, str | None]:
+        if not re.fullmatch(r"[A-Z0-9.^_-]{1,20}", symbol):
+            return symbol, None, "Ticker contains unsupported characters."
+        try:
+            return symbol, await self._latest_price(client, symbol), None
+        except (httpx.HTTPError, KeyError, ValueError, InvalidOperation):
+            return symbol, None, "No current market price was available."
 
     async def _latest_price(self, client: httpx.AsyncClient, symbol: str) -> MarketPrice:
         today = date.today()

@@ -23,13 +23,17 @@ async def refresh_financial_data(
     """Refresh linked institutions and automatically priced manual tickers."""
     settings = get_settings()
     plaid_results = []
-    if settings.plaid_client_id and settings.plaid_secret:
+    plaid_configured = bool(settings.plaid_client_id and settings.plaid_secret)
+    if plaid_configured:
         plaid_results = await PlaidProvider(
             db, settings.plaid_client_id, settings.plaid_secret, settings.plaid_env
         ).refresh(current_user.id)
         await db.commit()
 
-    await LoanBalanceAutomationService(db).apply(current_user.id)
+    # PlaidProvider.refresh applies loan automation after every linked Item
+    # has synced; only run this separately when Plaid isn't configured.
+    if not plaid_configured:
+        await LoanBalanceAutomationService(db).apply(current_user.id)
     contributions_applied = await InvestmentContributionService(db).apply(current_user.id)
     market_result = await MarketPriceSyncService(
         db, TiingoMarketDataProvider(settings.tiingo_api_key)

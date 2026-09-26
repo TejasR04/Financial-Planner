@@ -50,9 +50,11 @@ class SensitivityResult:
 def _effective_withdrawal(
     retirement: RetirementProjection, assumptions: PlanningAssumptions, annual_spending_target: Decimal | None
 ) -> Decimal:
-    """The real annual amount withdrawn in year 1 of retirement, for
-    Monte Carlo. Priority: an explicit annual spending target > the user's
-    today's-dollars income goal > the withdrawal-rate-derived figure.
+    """The real year-one withdrawal for explicit income targets.
+
+    Rate-based Monte Carlo trials calculate the initial amount from each
+    trial's balance at retirement; the deterministic figure remains useful
+    for the retirement projection and API display.
     """
     if annual_spending_target is not None:
         return annual_spending_target
@@ -124,6 +126,11 @@ class ScenarioService:
                 target_balance=target,
                 retirement_years=assumptions.years_in_retirement,
                 annual_withdrawal=withdrawal,
+                withdrawal_rate_at_retirement=(
+                    assumptions.withdrawal_rate
+                    if annual_spending_target is None and assumptions.desired_monthly_income_today is None
+                    else None
+                ),
                 # A flat real withdrawal already preserves purchasing power.
                 annual_withdrawal_growth_rate=Decimal("0"),
                 trials=monte_carlo_trials,
@@ -176,6 +183,9 @@ class ScenarioService:
             target_balance=baseline_balance,
             retirement_years=assumptions.years_in_retirement,
             annual_withdrawal=_effective_withdrawal(baseline_retirement, assumptions, None),
+            withdrawal_rate_at_retirement=(
+                assumptions.withdrawal_rate if assumptions.desired_monthly_income_today is None else None
+            ),
             annual_withdrawal_growth_rate=Decimal("0"),
             trials=monte_carlo_trials,
             seed=monte_carlo_seed,
@@ -296,6 +306,7 @@ class ScenarioService:
                 target_balance=varied_retirement.projected_balance_at_retirement,
                 retirement_years=varied_withdrawal.years_in_retirement,
                 annual_withdrawal=varied_retirement.annual_sustainable_withdrawal,
+                withdrawal_rate_at_retirement=varied_withdrawal.withdrawal_rate,
                 annual_withdrawal_growth_rate=Decimal("0"),
                 trials=monte_carlo_trials,
                 seed=monte_carlo_seed,

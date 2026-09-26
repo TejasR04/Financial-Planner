@@ -46,16 +46,18 @@ async def test_outlook_uses_shared_history_and_not_partial_month_or_saved_salary
 @pytest.mark.asyncio
 async def test_insight_reads_reflect_current_activity_without_stored_health_score(monkeypatch):
     user = User(uuid4(), "test@example.com", "Test")
-    snapshot = FinancialSnapshot(user, PlanningProfile(user.id))
+    snapshot = FinancialSnapshot(user, PlanningProfile(user.id, target_savings_rate=Decimal("0.2")))
     history = ActivityHistory([date(2026, 8, 1)], [
         BudgetTransactionInput("Rent", Decimal(-2000), "cleared", None, posted_at=date(2026, 8, 2)),
     ])
     monkeypatch.setattr(insights, "build_financial_snapshot", AsyncMock(return_value=snapshot))
-    loader = AsyncMock(return_value=history)
-    monkeypatch.setattr(insights, "load_activity_history", loader)
+    loader = AsyncMock(return_value=(history, (Decimal("5000"), Decimal("1000"))))
+    monkeypatch.setattr(insights, "load_budget_activity_summary", loader)
     before = await insights.list_insights(user, None)
-    assert "$2,000.00" in before[0].text
-    loader.return_value = ActivityHistory([], [])
+    assert "$1,000.00" in before[0].text
+    savings = next(draft for draft in before if draft.meta.startswith("Savings /"))
+    assert "80.0%" in savings.text
+    loader.return_value = (ActivityHistory([], []), (Decimal("0"), Decimal("0")))
     after = await insights.list_insights(user, None)
     assert "need a completed month" in after[0].text
-    assert "$2,000.00" not in after[0].text
+    assert "$1,000.00" not in after[0].text

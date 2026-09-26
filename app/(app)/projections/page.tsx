@@ -172,7 +172,7 @@ export default function ProjectionsPage() {
             <div className="mt-3 flex items-end justify-between border-t border-border pt-3">
               <div>
                 <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                  Retirement balance at {s.retirementAge}
+                  Investment portfolio at {s.retirementAge}
                 </p>
                 <p className="font-mono text-lg font-semibold text-foreground tabular-nums">
                   {s.netWorthAt65 !== null
@@ -191,10 +191,10 @@ export default function ProjectionsPage() {
                   >
                     <title>
                       Estimated from {s.modelMetadata?.trials ?? 1000} randomized annual-return trials: the percentage
-                      where retirement savings lasted through age 95 without running out.
+                      where the investment portfolio lasted through age 95 without running out.
                       Contributions stop at retirement age; {s.desiredMonthlyIncomeToday != null
                         ? "the scenario's fixed income target is spent throughout retirement"
-                        : `the scenario's ${(s.withdrawalRate * 100).toFixed(1)}% withdrawal-rate amount is spent throughout retirement`}.
+                        : `each trial starts withdrawals at ${(s.withdrawalRate * 100).toFixed(1)}% of that trial's investment balance at retirement`}.
                       This is an estimate, not a guarantee or
                       precise probability. Taxes and investment/advisory fees are excluded.
                     </title>

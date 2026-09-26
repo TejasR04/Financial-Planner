@@ -126,8 +126,12 @@ def test_net_worth_projection_series_length_and_direction():
     service = NetWorthProjectionService()
     assumptions = PlanningAssumptions(current_age=35, retirement_age=65, expected_return=Decimal("0.07"))
     result = service.project(_sample_accounts(), assumptions, years=10, annual_net_contribution=Decimal("20000"))
-    assert len(result.series) == 10
+    assert len(result.series) == 11
     assert result.net_worth_today == Decimal("200000")
+    assert result.series[0].year_index == 0
+    assert result.series[0].age == 35
+    assert result.series[0].net == Decimal("200000.00")
+    assert result.series[1].year_index == 1
     # assets growing + contributions + shrinking liabilities => net worth should rise
     assert result.projected_net_worth_at_horizon > result.net_worth_today
 
@@ -161,7 +165,8 @@ def test_net_worth_projection_uses_account_specific_growth_rates():
     # All figures are in today's dollars: the 1% nominal savings yield is
     # converted using 3% inflation, while property that tracks inflation has
     # zero real growth.
-    assert result.series[0].assets == Decimal("308058.25")
+    assert result.series[0].assets == Decimal("300000.00")
+    assert result.series[1].assets == Decimal("308058.25")
 
 
 def test_net_worth_projection_includes_depository_overdraft():
@@ -181,7 +186,10 @@ def test_net_worth_projection_includes_depository_overdraft():
 
     assert result.net_worth_today == Decimal("500")
     assert result.series[0].assets == Decimal("500.00")
+    assert result.series[0].liabilities == Decimal("0.00")
     assert result.series[0].net == Decimal("500.00")
+    assert result.series[1].assets == Decimal("500.00")
+    assert result.series[1].net == Decimal("500.00")
 
 
 def test_net_worth_projection_uses_consistent_real_dollar_basis():
@@ -205,7 +213,8 @@ def test_net_worth_projection_uses_consistent_real_dollar_basis():
 
     # Investment: 10,600; savings and home: 10,000 each in real terms;
     # contribution: 1,000 real dollars added at year end.
-    assert result.series[0].assets == Decimal("31600.00")
+    assert result.series[0].assets == Decimal("30000.00")
+    assert result.series[1].assets == Decimal("31600.00")
 
 
 def test_net_worth_projection_classifies_liabilities_by_account_type():
@@ -219,6 +228,9 @@ def test_net_worth_projection_classifies_liabilities_by_account_type():
     result = service.project([account], assumptions, years=0)
 
     assert result.net_worth_today == Decimal("-10000")
+    assert len(result.series) == 1
+    assert result.series[0].year_index == 0
+    assert result.series[0].net == Decimal("-10000.00")
 
 
 # ---------- CashFlowProjectionService ----------

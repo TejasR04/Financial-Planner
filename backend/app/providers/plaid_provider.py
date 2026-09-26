@@ -13,6 +13,7 @@ no token field.
 """
 from __future__ import annotations
 
+import asyncio
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal
@@ -201,12 +202,18 @@ class PlaidProvider(FinancialDataProvider):
 
         # Complete every remote read before opening the short local write
         # savepoint or taking a row lock.
-        raw_accounts = await self._client.get_accounts(access_token)
-        transaction_patch = await self._client.sync_transactions(access_token, cursor)
-        try:
-            holding_account_external_ids, raw_holdings = await self._client.get_holdings(access_token)
-        except ProviderError:
-            holding_account_external_ids, raw_holdings = None, None
+        async def optional_holdings() -> tuple[list[str] | None, list[RawPlaidHolding] | None]:
+            try:
+                return await self._client.get_holdings(access_token)
+            except ProviderError:
+                return None, None
+
+        raw_accounts, transaction_patch, holdings_result = await asyncio.gather(
+            self._client.get_accounts(access_token),
+            self._client.sync_transactions(access_token, cursor),
+            optional_holdings(),
+        )
+        holding_account_external_ids, raw_holdings = holdings_result
 
         async with self.session.begin_nested():
             locked = await self._institutions.lock_for_sync(

@@ -1,9 +1,11 @@
+import asyncio
 from datetime import date
 from decimal import Decimal
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
+import httpx
 import pytest
 
 from app.domain.entities import Account, Holding
@@ -17,6 +19,29 @@ async def test_missing_api_key_retains_prices_and_reports_each_symbol():
     result = await TiingoMarketDataProvider(None).latest_prices({"VOO", "VTI"})
     assert result.prices == {}
     assert set(result.errors) == {"VOO", "VTI"}
+
+
+@pytest.mark.asyncio
+async def test_tiingo_fetches_distinct_symbols_concurrently():
+    active_requests = 0
+    max_active_requests = 0
+
+    async def respond(_request):
+        nonlocal active_requests, max_active_requests
+        active_requests += 1
+        max_active_requests = max(max_active_requests, active_requests)
+        await asyncio.sleep(0.01)
+        active_requests -= 1
+        return httpx.Response(200, json=[{"date": "2026-09-25T00:00:00Z", "close": 100}])
+
+    client = httpx.AsyncClient(transport=httpx.MockTransport(respond))
+    try:
+        result = await TiingoMarketDataProvider("test-key", client).latest_prices({"VOO", "VTI", "VXUS"})
+    finally:
+        await client.aclose()
+
+    assert set(result.prices) == {"VOO", "VTI", "VXUS"}
+    assert max_active_requests == 3
 
 
 @pytest.mark.asyncio

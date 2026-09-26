@@ -18,11 +18,19 @@ class InsightDraft:
 
 
 class InsightService:
-    def generate(self, snapshot: FinancialSnapshot, history: ActivityHistory) -> list[InsightDraft]:
+    def generate(
+        self,
+        snapshot: FinancialSnapshot,
+        history: ActivityHistory,
+        monthly_cash_flow: tuple[Decimal, Decimal] | None = None,
+    ) -> list[InsightDraft]:
         drafts: list[InsightDraft] = []
 
         zero = Decimal("0")
-        income, expenses = history.monthly_cash_flow
+        # Callers that load the authoritative activity summary pass its
+        # virtually classified budget cash flow. Keep the fallback for other
+        # callers that only have raw transaction history.
+        income, expenses = monthly_cash_flow or history.monthly_cash_flow
         if history.months:
             drafts.append(InsightDraft(
                 InsightKind.ALERT if income < expenses else InsightKind.OBSERVATION,

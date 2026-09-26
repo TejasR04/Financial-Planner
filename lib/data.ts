@@ -164,11 +164,11 @@ export type Scenario = {
   projectionStatus: "loading" | "available" | "unavailable";
   modelMetadata?: { modelVersion: string; successMetric: string; trials: number; seed: number; percentileMethod: string; exclusions: string[] };
   color: string;
-  // Retirement-account balance from the latest run, from accumulation
-  // through the life-expectancy horizon (in millions), aligned with `years`.
+  // Total net worth from today through the retirement horizon (in millions),
+  // aligned with `years` and including the current year as step zero.
   series: number[];
-  // The corresponding annual withdrawal in nominal dollars (zero before
-  // retirement), aligned with `years`.
+  // Retirement withdrawal trajectory in nominal dollars, separately aligned
+  // to retirement projection years; it is not aligned with the net-worth chart.
   withdrawals: number[];
   years: string[];
 };
