@@ -1,7 +1,7 @@
 """add daily per holding observed value history
 
 Revision ID: c1d2e3f4a5b6
-Revises: b9d1e2f3a4b5
+Revises: b0d1e2f3a4c5
 Create Date: 2026-09-26
 """
 from typing import Sequence, Union
@@ -11,7 +11,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision: str = "c1d2e3f4a5b6"
-down_revision: Union[str, Sequence[str], None] = "b9d1e2f3a4b5"
+down_revision: Union[str, Sequence[str], None] = "b0d1e2f3a4c5"
 branch_labels = None
 depends_on = None
 

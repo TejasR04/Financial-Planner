@@ -1,7 +1,14 @@
 from pathlib import Path
 
+from alembic.script import ScriptDirectory
+
 
 BACKEND_ROOT = Path(__file__).resolve().parents[2]
+
+
+def test_migration_graph_has_one_head_for_container_startup() -> None:
+    script = ScriptDirectory(str(BACKEND_ROOT / "alembic"))
+    assert len(script.get_heads()) == 1
 
 
 def test_runtime_container_migrates_before_starting_api() -> None:
