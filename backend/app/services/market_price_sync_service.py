@@ -52,6 +52,11 @@ class MarketPriceSyncService:
         for account_id, delta in account_deltas.items():
             updated_accounts.append(await self._accounts.adjust_manual_balance(user_id, account_id, delta))
         await self._history.record_for_accounts(updated_accounts)
+        if updated_accounts:
+            current_holdings = await self._holdings.list_for_user(user_id)
+            await self._history.record_holding_values(
+                [account.id for account in updated_accounts], current_holdings
+            )
         return MarketSyncResult(
             symbols_updated=len(batch.prices),
             holdings_updated=holdings_updated,

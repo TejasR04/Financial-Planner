@@ -297,6 +297,7 @@ class PlaidProvider(FinancialDataProvider):
                 saved_holdings = await self._holdings.replace_for_accounts(
                     holding_account_ids, holdings
                 )
+                await self._investment_history.record_holding_values(holding_account_ids, saved_holdings)
             await self._institutions.mark_sync_success(
                 institution.id, transaction_patch.next_cursor
             )

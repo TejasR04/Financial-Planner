@@ -59,10 +59,12 @@ async def test_market_sync_applies_holding_change_as_account_delta(monkeypatch):
     )
     holdings = SimpleNamespace(
         list_automatic_for_user=AsyncMock(return_value=[holding]),
+        list_for_user=AsyncMock(return_value=[holding]),
         apply_market_price_for_user=AsyncMock(return_value=holding),
     )
     accounts = SimpleNamespace(adjust_manual_balance=AsyncMock(return_value=updated_account))
     history = SimpleNamespace(record_for_accounts=AsyncMock())
+    history.record_holding_values = AsyncMock()
     monkeypatch.setattr(module, "HoldingRepository", lambda _: holdings)
     monkeypatch.setattr(module, "AccountRepository", lambda _: accounts)
     monkeypatch.setattr(module, "InvestmentValueSnapshotRepository", lambda _: history)
@@ -77,6 +79,7 @@ async def test_market_sync_applies_holding_change_as_account_delta(monkeypatch):
         user_id, holding.id, Decimal("510"), date(2026, 9, 21)
     )
     history.record_for_accounts.assert_awaited_once_with([updated_account])
+    history.record_holding_values.assert_awaited_once_with([account_id], [holding])
     assert result.holdings_updated == 1
     assert result.accounts_updated == 1
 

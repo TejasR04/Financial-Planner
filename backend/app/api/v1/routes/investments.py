@@ -1,8 +1,9 @@
 from collections import defaultdict
 from datetime import date
 from decimal import Decimal
+from uuid import UUID
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
@@ -18,11 +19,42 @@ from app.schemas.investment import (
     InvestmentAllocationResponse,
     InvestmentDashboardResponse,
     InvestmentHoldingResponse,
+    InvestmentHoldingHistoryResponse,
     InvestmentValuePointResponse,
 )
 
 router = APIRouter(prefix="/investments", tags=["investments"])
 ZERO = Decimal("0")
+
+
+@router.get("/holdings/history", response_model=InvestmentHoldingHistoryResponse)
+async def get_holding_history(
+    account_id: UUID,
+    symbol: str,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> InvestmentHoldingHistoryResponse:
+    account = await AccountRepository(db).get_for_user(current_user.id, account_id)
+    if account.type not in {AccountType.INVESTMENT, AccountType.RETIREMENT}:
+        raise HTTPException(404, "Investment account not found.")
+    normalized_symbol = symbol.strip().upper()
+    if not normalized_symbol or len(normalized_symbol) > 20:
+        raise HTTPException(422, "A valid holding symbol is required.")
+    repository = InvestmentValueSnapshotRepository(db)
+    rows = await repository.holding_history_for_user(current_user.id, account_id, normalized_symbol)
+    current = [holding for holding in await HoldingRepository(db).list_for_account(account_id)
+               if holding.account_id == account_id and holding.symbol.strip().upper() == normalized_symbol]
+    if current:
+        today = date.today()
+        latest_value = sum((holding.market_value for holding in current), ZERO)
+        rows = [(as_of, value) for as_of, value in rows if as_of != today]
+        rows.append((today, latest_value))
+        rows.sort(key=lambda point: point[0])
+    return InvestmentHoldingHistoryResponse(
+        account_id=account_id,
+        symbol=normalized_symbol,
+        history=[InvestmentValuePointResponse(date=as_of, value=value) for as_of, value in rows],
+    )
 
 
 @router.get("/dashboard", response_model=InvestmentDashboardResponse)

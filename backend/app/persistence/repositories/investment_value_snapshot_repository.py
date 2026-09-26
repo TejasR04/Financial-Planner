@@ -4,16 +4,81 @@ from datetime import date
 from decimal import Decimal
 from uuid import UUID, uuid4
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.domain.entities import Account
 from app.domain.enums import AccountType
-from app.persistence.models import AccountModel, InvestmentValueSnapshotModel
+from app.persistence.models import AccountModel, HoldingValueSnapshotModel, InvestmentValueSnapshotModel
 from app.persistence.repositories.base import BaseRepository
 
 
 class InvestmentValueSnapshotRepository(BaseRepository[InvestmentValueSnapshotModel]):
     model = InvestmentValueSnapshotModel
+
+    async def record_holding_values(self, account_ids: list[UUID], holdings, as_of: date | None = None) -> None:
+        """Snapshot observed position values, preserving same-day updates and zeroing closed positions."""
+        if not account_ids:
+            return
+        snapshot_date = as_of or date.today()
+        result = await self.session.execute(select(HoldingValueSnapshotModel).where(
+            HoldingValueSnapshotModel.account_id.in_(account_ids),
+            HoldingValueSnapshotModel.as_of == snapshot_date,
+        ))
+        existing = {(row.account_id, row.symbol): row for row in result.scalars().all()}
+        latest_prior = (
+            select(
+                HoldingValueSnapshotModel.account_id.label("account_id"),
+                HoldingValueSnapshotModel.symbol.label("symbol"),
+                func.max(HoldingValueSnapshotModel.as_of).label("latest_as_of"),
+            )
+            .where(
+                HoldingValueSnapshotModel.account_id.in_(account_ids),
+                HoldingValueSnapshotModel.as_of < snapshot_date,
+            )
+            .group_by(HoldingValueSnapshotModel.account_id, HoldingValueSnapshotModel.symbol)
+            .subquery()
+        )
+        prior_result = await self.session.execute(
+            select(HoldingValueSnapshotModel.account_id, HoldingValueSnapshotModel.symbol)
+            .join(
+                latest_prior,
+                (HoldingValueSnapshotModel.account_id == latest_prior.c.account_id)
+                & (HoldingValueSnapshotModel.symbol == latest_prior.c.symbol)
+                & (HoldingValueSnapshotModel.as_of == latest_prior.c.latest_as_of),
+            )
+            .where(HoldingValueSnapshotModel.value != Decimal("0"))
+        )
+        prior_keys = set(prior_result.all())
+        totals: dict[tuple[UUID, str], Decimal] = {}
+        for holding in holdings:
+            if holding.account_id not in account_ids:
+                continue
+            key = (holding.account_id, holding.symbol.strip().upper())
+            totals[key] = totals.get(key, Decimal("0")) + holding.market_value
+        # A refreshed account is a complete observation: positions whose
+        # latest prior observation is nonzero but absent now have a real zero.
+        # Already closed positions do not get repeated zero rows on every sync.
+        for key in prior_keys:
+            totals.setdefault(key, Decimal("0"))
+        # Mark a position closed when it disappears from the latest observed account holdings.
+        for key, row in existing.items():
+            row.value = totals.pop(key, Decimal("0"))
+        for (account_id, symbol), value in totals.items():
+            self.session.add(HoldingValueSnapshotModel(
+                id=uuid4(), account_id=account_id, symbol=symbol, as_of=snapshot_date, value=value
+            ))
+        await self.session.flush()
+
+    async def holding_history_for_user(self, user_id: UUID, account_id: UUID, symbol: str) -> list[tuple[date, Decimal]]:
+        result = await self.session.execute(
+            select(HoldingValueSnapshotModel.as_of, HoldingValueSnapshotModel.value)
+            .join(AccountModel, AccountModel.id == HoldingValueSnapshotModel.account_id)
+            .where(AccountModel.user_id == user_id, AccountModel.archived_at.is_(None),
+                   HoldingValueSnapshotModel.account_id == account_id,
+                   HoldingValueSnapshotModel.symbol == symbol.strip().upper())
+            .order_by(HoldingValueSnapshotModel.as_of)
+        )
+        return [(as_of, Decimal(value)) for as_of, value in result.all()]
 
     async def record_for_accounts(self, accounts: list[Account], as_of: date | None = None) -> None:
         """Store the latest value once per account per calendar day.

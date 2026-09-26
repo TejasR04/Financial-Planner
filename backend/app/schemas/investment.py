@@ -37,6 +37,12 @@ class InvestmentValuePointResponse(BaseModel):
     value: Decimal
 
 
+class InvestmentHoldingHistoryResponse(BaseModel):
+    account_id: UUID
+    symbol: str
+    history: list[InvestmentValuePointResponse]
+
+
 class InvestmentDashboardResponse(BaseModel):
     total_value: Decimal
     total_holdings_value: Decimal

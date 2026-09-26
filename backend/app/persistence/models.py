@@ -168,6 +168,19 @@ class InvestmentValueSnapshotModel(Base):
     value: Mapped[Decimal] = mapped_column(Numeric(18, 2))
 
 
+class HoldingValueSnapshotModel(Base):
+    """Observed daily market value for an account/symbol position."""
+
+    __tablename__ = "holding_value_snapshots"
+    __table_args__ = (UniqueConstraint("account_id", "symbol", "as_of", name="uq_holding_value_snapshots_account_symbol_date"),)
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    account_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("accounts.id"), index=True)
+    symbol: Mapped[str] = mapped_column(String(20))
+    as_of: Mapped[date] = mapped_column(Date, index=True)
+    value: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+
+
 class InvestmentContributionRuleModel(Base):
     __tablename__ = "investment_contribution_rules"
 

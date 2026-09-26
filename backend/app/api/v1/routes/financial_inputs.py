@@ -8,6 +8,7 @@ from app.domain.entities import Holding, IncomeSource, User
 from app.domain.enums import AccountType
 from app.persistence.repositories.account_repository import AccountRepository
 from app.persistence.repositories.holding_repository import HoldingRepository
+from app.persistence.repositories.investment_value_snapshot_repository import InvestmentValueSnapshotRepository
 from app.persistence.repositories.income_source_repository import IncomeSourceRepository
 from app.persistence.repositories.liability_repository import LiabilityRepository
 from app.schemas.financial_inputs import *
@@ -146,6 +147,7 @@ async def list_holdings(account_id: UUID, current_user: User = Depends(get_curre
 async def create_holding(account_id: UUID, body: HoldingInput, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     await _eligible_account(current_user.id, account_id, db, {AccountType.INVESTMENT, AccountType.RETIREMENT}, manual_only=True)
     row = await HoldingRepository(db).create(Holding(id=uuid4(), account_id=account_id, **body.model_dump()))
+    await InvestmentValueSnapshotRepository(db).record_holding_values([account_id], await HoldingRepository(db).list_for_account(account_id))
     await db.commit()
     return row
 
@@ -153,11 +155,18 @@ async def create_holding(account_id: UUID, body: HoldingInput, current_user: Use
 @router.patch("/holdings/{holding_id}", response_model=HoldingResponse)
 async def update_holding(holding_id: UUID, body: HoldingUpdate, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
     row = await HoldingRepository(db).update_for_user(current_user.id, holding_id, **body.model_dump(exclude_unset=True))
+    await InvestmentValueSnapshotRepository(db).record_holding_values([row.account_id], await HoldingRepository(db).list_for_account(row.account_id))
     await db.commit()
     return row
 
 
 @router.delete("/holdings/{holding_id}", status_code=204)
 async def delete_holding(holding_id: UUID, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    all_user_holdings = await HoldingRepository(db).list_for_user(current_user.id)
+    holding = next((item for item in all_user_holdings if item.id == holding_id), None)
+    if holding is None:
+        await HoldingRepository(db).delete_for_user(current_user.id, holding_id)  # raises the normal 404
+    account_holdings = await HoldingRepository(db).list_for_account(holding.account_id)
     await HoldingRepository(db).delete_for_user(current_user.id, holding_id)
+    await InvestmentValueSnapshotRepository(db).record_holding_values([holding.account_id], [item for item in account_holdings if item.id != holding_id])
     await db.commit()

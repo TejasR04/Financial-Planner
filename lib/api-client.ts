@@ -402,6 +402,12 @@ export type ApiInvestmentDashboard = {
   history: { date: string; value: string }[];
 };
 
+export type ApiInvestmentHoldingHistory = {
+  account_id: string;
+  symbol: string;
+  history: { date: string; value: string }[];
+};
+
 // ---------------------------------------------------------------------------
 // Endpoints
 // ---------------------------------------------------------------------------
@@ -508,6 +514,8 @@ export const api = {
   },
   investments: {
     dashboard: () => get<ApiInvestmentDashboard>("/investments/dashboard"),
+    holdingHistory: (accountId: string, symbol: string) =>
+      get<ApiInvestmentHoldingHistory>(`/investments/holdings/history?account_id=${encodeURIComponent(accountId)}&symbol=${encodeURIComponent(symbol)}`),
   },
   sync: {
     all: () => post<ApiFinancialDataRefreshResponse>("/sync"),
