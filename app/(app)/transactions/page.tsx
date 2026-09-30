@@ -270,7 +270,7 @@ export default function TransactionsPage() {
     <PageContainer>
       <PageHeader
         title="Transactions"
-        description="Search and review activity across every connected account"
+        description="Search and review activity across connected and manually tracked accounts"
         actions={<Button size="sm" onClick={() => setEntryOpen(true)}><Plus /> Add transactions</Button>}
       />
       {editing && <TransactionEditDialog transaction={editing} account={accounts.find((a) => a.id === editing.account_id)} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); setReloadTick((x) => x + 1); refreshData(); }} />}
