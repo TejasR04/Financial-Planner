@@ -120,10 +120,29 @@ def test_positive_normalized_amount_is_income():
             pending=False,
         ),
         uuid4(),
+        AccountType.DEPOSITORY,
     )
     assert transaction.amount == Decimal("2500.00")
     assert transaction.type == TransactionType.INCOME
     assert transaction.status == TransactionStatus.CLEARED
+
+
+def test_positive_credit_card_refund_is_not_income():
+    transaction = _to_transaction_entity(
+        RawPlaidTransaction(
+            external_transaction_id="card-refund",
+            external_account_id="card-account",
+            posted_at=date(2026, 9, 23),
+            merchant="RAZ*SUN TV NETWORK LIMI",
+            category="GENERAL_MERCHANDISE_OTHER_GENERAL_MERCHANDISE",
+            amount=Decimal("69.99"),
+            pending=False,
+        ),
+        uuid4(),
+        AccountType.CREDIT,
+    )
+    assert transaction.type == TransactionType.EXPENSE
+    assert transaction.amount == Decimal("69.99")
 
 
 def test_transfer_category_is_not_misclassified_as_income():
@@ -138,6 +157,7 @@ def test_transfer_category_is_not_misclassified_as_income():
             pending=True,
         ),
         uuid4(),
+        AccountType.DEPOSITORY,
     )
     assert transaction.type == TransactionType.TRANSFER
     assert transaction.status == TransactionStatus.PENDING
@@ -155,6 +175,7 @@ def test_credit_card_payment_has_distinct_non_cash_flow_type():
             pending=False,
         ),
         uuid4(),
+        AccountType.CREDIT,
     )
     assert transaction.type == TransactionType.CREDIT_CARD_PAYMENT
 
@@ -171,6 +192,7 @@ def test_bilt_card_payment_has_distinct_type_even_when_provider_calls_it_income(
             pending=False,
         ),
         uuid4(),
+        AccountType.CREDIT,
     )
     assert transaction.type == TransactionType.CREDIT_CARD_PAYMENT
 

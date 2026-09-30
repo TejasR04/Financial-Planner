@@ -265,8 +265,9 @@ class PlaidProvider(FinancialDataProvider):
             )
 
             account_map = await self._account_id_map(user_id, institution.id)
+            account_types = {raw.external_account_id: _map_account_type(raw) for raw in raw_accounts}
             transactions = [
-                _to_transaction_entity(raw, account_map[raw.external_account_id])
+                _to_transaction_entity(raw, account_map[raw.external_account_id], account_types[raw.external_account_id])
                 for raw in transaction_patch.added_or_modified
                 if raw.external_account_id in account_map
             ]
@@ -355,7 +356,7 @@ def _to_account_entity(user_id: UUID, institution_id: UUID, raw: RawPlaidAccount
     )
 
 
-def _to_transaction_entity(raw: RawPlaidTransaction, account_id: UUID) -> Transaction:
+def _to_transaction_entity(raw: RawPlaidTransaction, account_id: UUID, account_type: AccountType) -> Transaction:
     normalized_category = raw.category.upper()
     normalized_merchant = raw.merchant.upper()
     is_credit_card_payment = (
@@ -370,6 +371,10 @@ def _to_transaction_entity(raw: RawPlaidTransaction, account_id: UUID) -> Transa
         transaction_type = TransactionType.CREDIT_CARD_PAYMENT
     elif normalized_category.startswith("TRANSFER"):
         transaction_type = TransactionType.TRANSFER
+    elif account_type == AccountType.CREDIT and raw.amount > 0:
+        # A card credit reduces spending (refund, statement credit, rewards),
+        # even when Plaid labels it as income. User overrides still win on sync.
+        transaction_type = TransactionType.EXPENSE
     elif raw.amount > 0:
         transaction_type = TransactionType.INCOME
     else:
