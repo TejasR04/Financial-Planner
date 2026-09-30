@@ -30,7 +30,7 @@ export function NetWorthHistoryChart() {
     date: point.date,
     timestamp: new Date(`${point.date}T12:00:00`).getTime(),
     assets: Number(point.assets),
-    liabilities: Number(point.liabilities),
+    liabilities: -Math.abs(Number(point.liabilities)),
     net: Number(point.net),
   })), [history]);
 

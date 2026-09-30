@@ -25,7 +25,7 @@ it("renders dated observed totals without filling missing dates", async () => {
   const points = JSON.parse(chart.getAttribute("data-points")!);
   expect(points).toHaveLength(2);
   expect(points.map((point: { date: string }) => point.date)).toEqual(["2026-09-26", "2026-09-28"]);
-  expect(points[1]).toMatchObject({ assets: 1300, liabilities: 150, net: 1150 });
+  expect(points[1]).toMatchObject({ assets: 1300, liabilities: -150, net: 1150 });
   expect(mocks.netWorthHistory).toHaveBeenCalledOnce();
 });
 
