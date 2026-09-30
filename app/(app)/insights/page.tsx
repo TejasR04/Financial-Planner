@@ -89,7 +89,7 @@ export default function InsightsPage() {
           </span>
           <div>
             <p className="text-[14px] font-semibold tracking-tight text-foreground">
-              Deterministic analysis · {recommendations.length} opportunities
+              Deterministic analysis · {recommendations.length} {recommendations.length === 1 ? "opportunity" : "opportunities"}
             </p>
             <p className="mt-0.5 text-[13px] text-muted-foreground text-pretty">
               Rule-based checks currently estimate a combined annual impact of{" "}
