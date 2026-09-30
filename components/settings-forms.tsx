@@ -19,23 +19,38 @@ const sections = [
 ];
 
 function Field({
+  id,
   label,
   hint,
+  association = "input",
   children,
 }: {
+  id: string;
   label: string;
   hint?: string;
+  association?: "input" | "switch" | "group";
   children: React.ReactNode;
 }) {
+  const labelId = `${id}-label`;
+  const hintId = `${id}-hint`;
+
   return (
     <div className="grid grid-cols-1 gap-2 py-3.5 sm:grid-cols-[220px_1fr] sm:items-center sm:gap-4">
       <div>
-        <p className="text-[13px] font-medium text-foreground">{label}</p>
+        {association === "input" ? (
+          <label id={labelId} htmlFor={id} className="text-[13px] font-medium text-foreground">{label}</label>
+        ) : (
+          <p id={labelId} className="text-[13px] font-medium text-foreground">{label}</p>
+        )}
         {hint ? (
-          <p className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p>
+          <p id={hintId} className="mt-0.5 text-[11px] text-muted-foreground">{hint}</p>
         ) : null}
       </div>
-      <div>{children}</div>
+      {association === "group" ? (
+        <div role="group" aria-labelledby={labelId} aria-describedby={hint ? hintId : undefined}>{children}</div>
+      ) : (
+        <div>{children}</div>
+      )}
     </div>
   );
 }
@@ -46,17 +61,26 @@ const inputClass =
 function Toggle({
   on,
   onChange,
+  id,
+  "aria-labelledby": ariaLabelledBy,
+  "aria-describedby": ariaDescribedBy,
   disabled = false,
 }: {
   on: boolean;
   onChange: (next: boolean) => void;
+  id?: string;
+  "aria-labelledby"?: string;
+  "aria-describedby"?: string;
   disabled?: boolean;
 }) {
   return (
     <button
+      id={id}
       type="button"
       role="switch"
       aria-checked={on}
+      aria-labelledby={ariaLabelledBy}
+      aria-describedby={ariaDescribedBy}
       disabled={disabled}
       onClick={() => onChange(!on)}
       className={cn(
@@ -318,30 +342,34 @@ export function SettingsForms() {
               description="Your account identity and locale"
             />
             <div className="divide-y divide-border px-4">
-              <Field label="Full name">
+              <Field id="profile-full-name" label="Full name">
                 <input
+                  id="profile-full-name"
                   className={inputClass}
                   value={fullName}
                   onChange={(e) => setFullName(e.target.value)}
                 />
               </Field>
-              <Field label="Email" hint="Contact support to change your email">
+              <Field id="profile-email" label="Email" hint="Contact support to change your email">
                 <input
+                  id="profile-email"
                   className={inputClass}
                   type="email"
                   value={userAccount?.email ?? ""}
                   disabled
                 />
               </Field>
-              <Field label="Base currency">
+              <Field id="profile-base-currency" label="Base currency">
                 <input
+                  id="profile-base-currency"
                   className={inputClass}
                   value="USD — US Dollar"
                   disabled
                 />
               </Field>
-              <Field label="Date of birth" hint="Drives retirement horizon">
+              <Field id="profile-date-of-birth" label="Date of birth" hint="Drives retirement horizon">
                 <input
+                  id="profile-date-of-birth"
                   className={inputClass}
                   type="date"
                   value={dob}
@@ -368,8 +396,9 @@ export function SettingsForms() {
               description="Defaults applied to new projections"
             />
             <div className="divide-y divide-border px-4">
-              <Field label="Target retirement age">
+              <Field id="planning-retirement-age" label="Target retirement age">
                 <input
+                  id="planning-retirement-age"
                   className={inputClass}
                   type="number"
                   value={retirementAge}
@@ -377,18 +406,21 @@ export function SettingsForms() {
                 />
               </Field>
               <Field
+                id="planning-equity-allocation"
                 label="Target equity allocation"
                 hint="Used for drift alerts (%)"
               >
                 <input
+                  id="planning-equity-allocation"
                   className={inputClass}
                   type="number"
                   value={equityAllocation}
                   onChange={(e) => setEquityAllocation(Number(e.target.value))}
                 />
               </Field>
-              <Field label="Default withdrawal rate" hint="%">
+              <Field id="planning-withdrawal-rate" label="Default withdrawal rate" hint="%">
                 <input
+                  id="planning-withdrawal-rate"
                   className={inputClass}
                   type="number"
                   step="0.1"
@@ -397,24 +429,34 @@ export function SettingsForms() {
                 />
               </Field>
               <Field
+                id="planning-include-social-security"
                 label="Include Social Security"
                 hint="Saved for future planning; current projections do not include benefits"
+                association="switch"
               >
-                <Toggle on={includeSS} onChange={setIncludeSS} />
+                <Toggle
+                  id="planning-include-social-security"
+                  aria-labelledby="planning-include-social-security-label"
+                  aria-describedby="planning-include-social-security-hint"
+                  on={includeSS}
+                  onChange={setIncludeSS}
+                />
               </Field>
-              <Field label="Target savings rate" hint="Required for the savings-discipline health score (%)">
-                <input className={inputClass} type="number" min="0" max="100" step="0.1" value={targetSavingsRate} onChange={(e) => setTargetSavingsRate(e.target.value)} placeholder="Not configured" />
+              <Field id="planning-target-savings-rate" label="Target savings rate" hint="Required for the savings-discipline health score (%)">
+                <input id="planning-target-savings-rate" aria-describedby="planning-target-savings-rate-hint" className={inputClass} type="number" min="0" max="100" step="0.1" value={targetSavingsRate} onChange={(e) => setTargetSavingsRate(e.target.value)} placeholder="Not configured" />
               </Field>
-              <Field label="Cash reserve target" hint="Your chosen emergency/liquidity reserve in dollars">
-                <input className={inputClass} type="number" min="0" step="100" value={cashReserveTarget} onChange={(e) => setCashReserveTarget(e.target.value)} placeholder="Not configured" />
+              <Field id="planning-cash-reserve-target" label="Cash reserve target" hint="Your chosen emergency/liquidity reserve in dollars">
+                <input id="planning-cash-reserve-target" aria-describedby="planning-cash-reserve-target-hint" className={inputClass} type="number" min="0" step="100" value={cashReserveTarget} onChange={(e) => setCashReserveTarget(e.target.value)} placeholder="Not configured" />
               </Field>
-              <Field label="Income sources" hint="Planning inputs only; never added to historical transaction income">
+              <Field id="planning-income-sources" label="Income sources" hint="Planning inputs only; never added to historical transaction income" association="group">
                 <div className="space-y-2">
                   {incomeSources.map((source) => <div key={source.id} className="flex items-center justify-between rounded-md border border-border px-3 py-2 text-[12px]"><span>{source.name} · ${Number(source.annual_amount).toLocaleString()}/yr</span><Button variant="outline" size="xs" onClick={() => void removeIncomeSource(source)}>Remove</Button></div>)}
                   <div className="grid grid-cols-1 sm:grid-cols-[1fr_1fr_auto] gap-2">
-                    <input className={inputClass} value={incomeName} onChange={(e) => setIncomeName(e.target.value)} placeholder="Salary, pension…" />
-                    <input className={inputClass} type="number" min="0" value={incomeAmount} onChange={(e) => setIncomeAmount(e.target.value)} placeholder="Annual amount" />
-                    <Button variant="outline" size="sm" disabled={!incomeName || !incomeAmount} onClick={() => void addIncomeSource()}>Add</Button>
+                    <label className="sr-only" htmlFor="planning-income-source-name">Income source name</label>
+                    <input id="planning-income-source-name" className={inputClass} value={incomeName} onChange={(e) => setIncomeName(e.target.value)} placeholder="Salary, pension…" />
+                    <label className="sr-only" htmlFor="planning-income-source-amount">Annual amount</label>
+                    <input id="planning-income-source-amount" className={inputClass} type="number" min="0" value={incomeAmount} onChange={(e) => setIncomeAmount(e.target.value)} placeholder="Annual amount" />
+                    <Button variant="outline" size="sm" aria-label="Add income source" disabled={!incomeName || !incomeAmount} onClick={() => void addIncomeSource()}>Add</Button>
                   </div>
                 </div>
               </Field>
