@@ -12,6 +12,7 @@ import pytest
 from app.core.exceptions import ProviderError
 from app.domain.enums import AccountType, AssetClass, TransactionStatus, TransactionType
 from app.providers.plaid_client import (
+    PlaidClient,
     RawPlaidAccount,
     RawPlaidHolding,
     RawPlaidTransaction,
@@ -184,7 +185,26 @@ def test_etf_holding_maps_to_equity():
         security_type="etf",
         is_cash_equivalent=False,
         as_of=date(2026, 7, 25),
+        last_price=Decimal("250"),
     )
     holding = _to_holding_entity(raw, uuid4())
     assert _map_asset_class(raw) == AssetClass.EQUITY
     assert holding.asset_class == AssetClass.EQUITY
+    assert holding.last_price == Decimal("250")
+
+
+@pytest.mark.asyncio
+async def test_plaid_holding_keeps_institution_unit_price():
+    price_date = date(2026, 9, 25)
+    client = PlaidClient.__new__(PlaidClient)
+    client._client = SimpleNamespace(investments_holdings_get=lambda _: SimpleNamespace(
+        securities=[SimpleNamespace(security_id="security-1", ticker_symbol="VTI", name="VTI",
+                                     type="etf", is_cash_equivalent=False)],
+        holdings=[SimpleNamespace(account_id="account-1", security_id="security-1", quantity=2,
+                                  cost_basis=400, institution_value=500, institution_price=250,
+                                  institution_price_as_of=price_date)],
+        accounts=[SimpleNamespace(account_id="account-1")],
+    ))
+    _, holdings = await client.get_holdings("token")
+    assert holdings[0].last_price == Decimal("250")
+    assert holdings[0].as_of == price_date

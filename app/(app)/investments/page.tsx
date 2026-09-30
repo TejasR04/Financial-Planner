@@ -51,7 +51,6 @@ function rangeStartDate(range: HistoryRange, now = new Date()): string | null {
   const start = new Date(now);
   if (range === "All time") return null;
   if (range === "YTD") return `${start.getFullYear()}-01-01`;
-  if (range === "1D") start.setDate(start.getDate() - 1);
   if (range === "1M") return localDateString(subtractCalendarMonths(start, 1));
   if (range === "6M") return localDateString(subtractCalendarMonths(start, 6));
   return localDateString(start);
@@ -122,10 +121,13 @@ export default function InvestmentsPage() {
     value: Number(point.value),
     label: formatHistoryDate(point.date, historyRange === "All time"),
   }));
-  const positionRangeStart = rangeStartDate(historyRange);
-  const chartHistory = selectedHolding
-    ? positionHistory.filter((point) => positionRangeStart == null || (point.date >= positionRangeStart && point.date <= localDateString(new Date())))
-    : history;
+  const availableHistory = selectedHolding ? positionHistory : history;
+  const rangeStart = rangeStartDate(historyRange);
+  const datedHistory = availableHistory.filter((point) => point.date <= localDateString(new Date()));
+  // A daily snapshot may skip weekends, holidays, or days without an account sync.
+  const chartHistory = historyRange === "1D"
+    ? datedHistory.slice(-2)
+    : datedHistory.filter((point) => rangeStart == null || point.date >= rangeStart);
   const chartValue = selectedHolding ? Number(positionHistory.at(-1)?.value ?? selectedPosition?.market_value ?? 0) : Number(dashboard?.total_value ?? 0);
   const chartFirstValue = chartHistory[0]?.value;
   const chartLastValue = chartHistory.at(-1)?.value;
@@ -162,19 +164,21 @@ export default function InvestmentsPage() {
           description={selectedHolding ? `${selectedHolding.accountName} · position market value over time` : "All brokerage and retirement accounts · daily account balances"}
           actions={selectedHolding && <button type="button" onClick={showTotal} className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><ArrowLeft className="size-3.5" /> Back to total</button>}
         />
-        <div className="flex flex-wrap items-end justify-between gap-4 px-4 pt-4">
+        <div className="flex flex-wrap items-start justify-between gap-4 px-4 pt-4">
           <div>
             <p className="text-[11px] text-muted-foreground">{selectedHolding ? "Current position value" : "Current account balance"}</p>
             <p className="font-mono text-2xl font-semibold tabular-nums text-foreground">{loading || (selectedHolding && !selectedPosition && holdingHistoryLoading) ? "—" : formatCurrency(chartValue)}</p>
           </div>
-          {selectedHolding && <div>
-            <p className="text-[11px] text-muted-foreground">Latest asset price</p>
-            <p className="font-mono text-2xl font-semibold tabular-nums text-foreground">{selectedPrice ? formatCurrency(Number(selectedPrice.value)) : "—"}</p>
-            <p className="text-[11px] text-muted-foreground">{selectedPrice ? selectedPriceDate ? `Close as of ${selectedPriceDate}` : "Close date unavailable" : holdingHistoryLoading ? "Loading latest quote…" : "No quote is available for this position."}</p>
+          {(selectedHolding || chartChange !== null) && <div className="ml-auto text-right">
+            {selectedHolding && <div>
+              <p className="text-[11px] text-muted-foreground">Latest asset price</p>
+              <p className="font-mono text-2xl font-semibold tabular-nums text-foreground">{selectedPrice ? formatCurrency(Number(selectedPrice.value)) : "—"}</p>
+              <p className="text-[11px] text-muted-foreground">{selectedPrice ? selectedPriceDate ? `Price as of ${selectedPriceDate}` : "Price date unavailable" : holdingHistoryLoading ? "Loading latest price…" : "No price is available for this position."}</p>
+            </div>}
+            {chartChange !== null && <p className={`font-mono text-sm tabular-nums ${selectedHolding ? "mt-2" : ""} ${chartChange >= 0 ? "text-positive" : "text-destructive"}`}>{formatCurrency(chartChange, { sign: true })} since {formatHistoryDate(chartHistory[0].date)}</p>}
           </div>}
-          {chartChange !== null && <p className={`font-mono text-sm tabular-nums ${chartChange >= 0 ? "text-positive" : "text-destructive"}`}>{formatCurrency(chartChange, { sign: true })} since {formatHistoryDate(chartHistory[0].date)}</p>}
         </div>
-        {selectedHolding && <div className="flex flex-wrap items-center gap-1 px-4 pt-4" role="group" aria-label="Position value history range">{HISTORY_RANGES.map((range) => <button key={range} type="button" aria-pressed={historyRange === range} onClick={() => setHistoryRange(range)} className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${historyRange === range ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>{range}</button>)}</div>}
+        <div className="flex flex-wrap items-center gap-1 px-4 pt-4" role="group" aria-label={selectedHolding ? "Position value history range" : "Investment value history range"}>{HISTORY_RANGES.map((range) => <button key={range} type="button" aria-pressed={historyRange === range} onClick={() => setHistoryRange(range)} className={`rounded-md px-2.5 py-1.5 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring ${historyRange === range ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:bg-muted hover:text-foreground"}`}>{range}</button>)}</div>
         <div className="h-72 p-4">{selectedHolding && holdingHistoryLoading ? <div role="status" className="flex h-full items-center justify-center text-sm text-muted-foreground">Loading {selectedHolding.symbol} history…</div> : selectedHolding && holdingHistoryError ? <div className="flex h-full flex-col items-center justify-center gap-2 text-center"><p role="alert" className="text-sm text-destructive">{holdingHistoryError}</p><button type="button" className="text-xs font-medium text-primary hover:underline" onClick={() => { setHoldingHistoryError(null); setHoldingHistoryLoading(true); setHistoryRequest((value) => value + 1); }}>Try again</button></div> : chartHistory.length > 1 ? <ResponsiveContainer width="100%" height="100%"><LineChart data={chartHistory} margin={{ top: 10, right: 12, left: 0, bottom: 0 }}><CartesianGrid vertical={false} stroke="var(--border)" strokeDasharray="3 3" /><XAxis dataKey="label" tickLine={false} axisLine={false} tick={{ fill: "var(--muted-foreground)", fontSize: 11 }} minTickGap={32} /><YAxis width={72} tickLine={false} axisLine={false} tick={{ fill: "var(--muted-foreground)", fontSize: 11 }} tickFormatter={(value) => formatCurrency(Number(value), { compact: true })} /><Tooltip content={({ active, payload, label }) => <ChartTooltip active={active} payload={payload as TooltipProps<number, string>["payload"]} label={String(payload?.[0]?.payload?.date ?? label ?? "")} formatter={(value) => formatCurrency(value)} />} /><Line type="monotone" dataKey="value" name={selectedHolding ? selectedHolding.symbol : "Investment value"} stroke="var(--chart-1)" strokeWidth={2.5} dot={false} activeDot={{ r: 4 }} /></LineChart></ResponsiveContainer> : <div className="flex h-full flex-col items-center justify-center text-center"><p className="text-sm font-medium text-foreground">{selectedHolding && chartHistory.length === 0 ? "No position values in this range" : selectedHolding ? formatCurrency(chartHistory[0].value) : dashboard?.account_count ? formatCurrency(totalValue) : "No investment accounts yet"}</p><p className="mt-1 max-w-md text-[12px] text-muted-foreground">{selectedHolding ? chartHistory.length === 0 ? "No daily position value is recorded for this period. Try a longer range." : chartHistory.length === 1 ? `Recorded ${formatHistoryDate(chartHistory[0].date, true)}. This position's graph needs at least two dated values.` : "" : dashboard?.account_count ? "This is today’s value. Connect or sync your accounts on future days to build a value chart." : "Connect a brokerage or retirement account to see its balance, holdings, allocation, and value history here."}</p></div>}</div>
         <p className="border-t border-border px-4 py-2.5 text-[11px] text-muted-foreground">{selectedHolding ? "This chart shows position value, which changes with price and quantity. History is recorded daily; intraday values are not available." : "Account balance changes include deposits and withdrawals; they are not investment returns."}</p>
       </Panel>

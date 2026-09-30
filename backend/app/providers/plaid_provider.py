@@ -397,6 +397,7 @@ def _to_holding_entity(raw: RawPlaidHolding, account_id: UUID) -> Holding:
         market_value=raw.market_value,
         asset_class=_map_asset_class(raw),
         as_of=raw.as_of,
+        last_price=raw.last_price,
     )
 
 

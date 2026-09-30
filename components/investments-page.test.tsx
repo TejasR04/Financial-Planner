@@ -70,6 +70,46 @@ it("charts the selected account's holding and returns to the total view", async 
   expect(screen.getByText("All brokerage and retirement accounts · daily account balances")).toBeInTheDocument();
 });
 
+it("applies ranges to total investments and compares 1D with the prior recorded day", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(2026, 8, 28, 12));
+  mocks.dashboard.mockResolvedValue({ total_value: "1100", total_holdings_value: "0", total_cost_basis: "0", total_gain_loss: null,
+    account_count: 1, holding_count: 0, accounts: [], allocation: [], holdings: [], history: [
+      { date: "2026-08-20", value: "800" },
+      { date: "2026-09-25", value: "1000" },
+      { date: "2026-09-28", value: "1100" },
+    ],
+  });
+  render(<InvestmentsPage />);
+  expect(await screen.findByTestId("investment-chart-data")).toHaveAttribute("data-dates", "2026-08-20|2026-09-25|2026-09-28");
+  expect(screen.queryByText("Latest asset price")).not.toBeInTheDocument();
+  const ranges = screen.getByRole("group", { name: "Investment value history range" });
+  fireEvent.click(within(ranges).getByRole("button", { name: "1D" }));
+  expect(screen.getByTestId("investment-chart-data")).toHaveAttribute("data-dates", "2026-09-25|2026-09-28");
+  expect(screen.getByText("+$100.00 since Sep 25")).toBeInTheDocument();
+  fireEvent.click(within(ranges).getByRole("button", { name: "1M" }));
+  expect(screen.getByTestId("investment-chart-data")).toHaveAttribute("data-dates", "2026-09-25|2026-09-28");
+  fireEvent.click(within(ranges).getByRole("button", { name: "All time" }));
+  expect(screen.getByTestId("investment-chart-data")).toHaveAttribute("data-dates", "2026-08-20|2026-09-25|2026-09-28");
+});
+
+it("places the asset price and change together on the right", async () => {
+  mocks.dashboard.mockResolvedValue({ total_value: "1100", total_holdings_value: "1100", total_cost_basis: "0", total_gain_loss: null,
+    account_count: 1, holding_count: 1, accounts: [], allocation: [], history: [],
+    holdings: [{ account_id: "one", account_name: "Brokerage", symbol: "VOO", quantity: "2", cost_basis: null,
+      market_value: "1100", gain_loss: null, asset_class: "equity", as_of: "2026-09-25", last_price: "550", price_as_of: "2026-09-25" }],
+  });
+  mocks.holdingHistory.mockResolvedValue({ account_id: "one", symbol: "VOO", last_price: "550", price_as_of: "2026-09-25", history: [
+    { date: "2026-09-24", value: "1000" }, { date: "2026-09-25", value: "1100" },
+  ] });
+  render(<InvestmentsPage />);
+  fireEvent.click(await screen.findByRole("button", { name: "View VOO in Brokerage chart" }));
+  const price = await screen.findByText("Latest asset price");
+  const change = await screen.findByText("+$100.00 since Sep 24");
+  expect(price.parentElement?.parentElement).toBe(change.parentElement);
+  expect(price.parentElement?.parentElement).toHaveClass("ml-auto", "text-right");
+});
+
 it("filters daily position values by each range and displays the latest per-asset quote", async () => {
   vi.useFakeTimers({ toFake: ["Date"] });
   vi.setSystemTime(new Date(2026, 8, 28, 12));
@@ -87,7 +127,7 @@ it("filters daily position values by each range and displays the latest per-asse
 
   render(<InvestmentsPage />);
   fireEvent.click(await screen.findByRole("button", { name: "View VOO in Brokerage chart" }));
-  expect(await screen.findByText(`Close as of ${displayDate(yesterday)}`)).toBeInTheDocument();
+  expect(await screen.findByText(`Price as of ${displayDate(yesterday)}`)).toBeInTheDocument();
   expect(screen.getByText("Latest asset price")).toBeInTheDocument();
   expect(screen.getByText("$140.75")).toBeInTheDocument();
   expect(screen.getByText("Current position value").nextElementSibling).toHaveTextContent("$2,500.00");
@@ -133,6 +173,6 @@ it("shows loading state while individual history is pending and dates a single d
   await act(async () => resolveHistory({ account_id: "one", symbol: "XYZ", last_price: null, price_as_of: null, history: [{ date: onlyDate, value: "1000" }] }));
 
   expect(await screen.findByText(`Recorded ${displayDate(onlyDate)}. This position's graph needs at least two dated values.`)).toBeInTheDocument();
-  expect(screen.getByText("No quote is available for this position.")).toBeInTheDocument();
+  expect(screen.getByText("No price is available for this position.")).toBeInTheDocument();
   expect(screen.queryByTestId("investment-chart-data")).not.toBeInTheDocument();
 });
