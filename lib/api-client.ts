@@ -397,6 +397,8 @@ export type ApiInvestmentDashboard = {
     gain_loss: string | null;
     asset_class: string;
     as_of: string;
+    last_price: string | null;
+    price_as_of: string | null;
   }[];
   allocation: { asset_class: string; market_value: string; weight: string }[];
   history: { date: string; value: string }[];
@@ -405,6 +407,8 @@ export type ApiInvestmentDashboard = {
 export type ApiInvestmentHoldingHistory = {
   account_id: string;
   symbol: string;
+  last_price: string | null;
+  price_as_of: string | null;
   history: { date: string; value: string }[];
 };
 

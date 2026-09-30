@@ -74,7 +74,7 @@ class TiingoMarketDataProvider:
             return symbol, None, "Ticker contains unsupported characters."
         try:
             return symbol, await self._latest_price(client, symbol), None
-        except (httpx.HTTPError, KeyError, ValueError, InvalidOperation):
+        except (httpx.HTTPError, KeyError, TypeError, ValueError, InvalidOperation):
             return symbol, None, "No current market price was available."
 
     async def _latest_price(self, client: httpx.AsyncClient, symbol: str) -> MarketPrice:
@@ -90,6 +90,6 @@ class TiingoMarketDataProvider:
             raise ValueError("empty market-price response")
         latest = max(rows, key=lambda row: row["date"])
         price = Decimal(str(latest["close"]))
-        if price <= 0:
+        if not price.is_finite() or price <= 0:
             raise ValueError("non-positive market price")
         return MarketPrice(symbol=symbol, price=price, as_of=date.fromisoformat(latest["date"][:10]))

@@ -39,7 +39,13 @@ class MarketPriceSyncService:
         holdings_updated = 0
         for holding in holdings:
             price = batch.prices.get(holding.symbol.strip().upper())
-            if price is None or price.as_of < holding.as_of:
+            # A newly automatic holding can have a user-entered as_of date
+            # newer than Tiingo's latest completed close (weekends, holidays,
+            # or before today's close). Accept its first quote, then use the
+            # stored quote date to prevent later syncs from downgrading it.
+            if price is None or (
+                holding.last_price is not None and price.as_of < holding.as_of
+            ):
                 continue
             new_value = (holding.quantity * price.price).quantize(CENT, rounding=ROUND_HALF_UP)
             account_deltas[holding.account_id] = account_deltas.get(holding.account_id, Decimal("0")) + (

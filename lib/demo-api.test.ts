@@ -47,6 +47,20 @@ describe("isolated demo API", () => {
     expect(Number(after.net_worth_at_target_age)).toBeGreaterThan(Number(before.net_worth_at_target_age));
   });
 
+  it("returns account-specific holding history without a network request or invented quote", async () => {
+    const network = vi.spyOn(globalThis, "fetch");
+    setDemoMode(true);
+    const history = await api.investments.holdingHistory("brokerage", " vti ");
+    expect(history.account_id).toBe("brokerage");
+    expect(history.symbol).toBe("VTI");
+    expect(history.history).toHaveLength(1);
+    expect(history.history[0].value).toBe("58000.00");
+    expect(history.last_price).toBeNull();
+    expect(history.price_as_of).toBeNull();
+    expect((await api.investments.holdingHistory("retirement", "VTI")).history).toEqual([]);
+    expect(network).not.toHaveBeenCalled();
+  });
+
   it("uses completed sample months for spending averages and outlooks", async () => {
     setDemoMode(true);
     const month = new Date().toISOString().slice(0, 7);

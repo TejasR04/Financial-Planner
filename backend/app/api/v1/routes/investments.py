@@ -7,6 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
+from app.core.financial_date import financial_today
 from app.domain.entities import User
 from app.domain.enums import AccountType
 from app.domain.holding_valuation import unrealized_gain_loss
@@ -27,6 +28,17 @@ router = APIRouter(prefix="/investments", tags=["investments"])
 ZERO = Decimal("0")
 
 
+def _display_history(rows: list[tuple[date, Decimal]], today: date) -> list[InvestmentValuePointResponse]:
+    """Collapse legacy UTC-dated future snapshots into the financial day."""
+    by_day: dict[date, Decimal] = {}
+    for as_of, value in rows:
+        if as_of <= today:
+            by_day[as_of] = value
+        elif today not in by_day:
+            by_day[today] = value
+    return [InvestmentValuePointResponse(date=as_of, value=value) for as_of, value in sorted(by_day.items())]
+
+
 @router.get("/holdings/history", response_model=InvestmentHoldingHistoryResponse)
 async def get_holding_history(
     account_id: UUID,
@@ -44,16 +56,20 @@ async def get_holding_history(
     rows = await repository.holding_history_for_user(current_user.id, account_id, normalized_symbol)
     current = [holding for holding in await HoldingRepository(db).list_for_account(account_id)
                if holding.account_id == account_id and holding.symbol.strip().upper() == normalized_symbol]
+    quoted = [holding for holding in current if getattr(holding, "last_price", None) is not None]
+    latest_quote = max(quoted, key=lambda holding: holding.as_of) if quoted else None
     if current:
-        today = date.today()
+        today = financial_today()
         latest_value = sum((holding.market_value for holding in current), ZERO)
-        rows = [(as_of, value) for as_of, value in rows if as_of != today]
+        rows = [(as_of, value) for as_of, value in rows if as_of < today]
         rows.append((today, latest_value))
         rows.sort(key=lambda point: point[0])
     return InvestmentHoldingHistoryResponse(
         account_id=account_id,
         symbol=normalized_symbol,
-        history=[InvestmentValuePointResponse(date=as_of, value=value) for as_of, value in rows],
+        history=_display_history(rows, financial_today()),
+        last_price=latest_quote.last_price if latest_quote else None,
+        price_as_of=latest_quote.as_of if latest_quote else None,
     )
 
 
@@ -87,11 +103,11 @@ async def get_investment_dashboard(
     ]
 
     history_rows = await InvestmentValueSnapshotRepository(db).daily_totals_for_user(current_user.id)
-    history = [InvestmentValuePointResponse(date=as_of, value=value) for as_of, value in history_rows]
+    history = _display_history(history_rows, financial_today())
     # A newly linked account has no previous sync yet. Show the honest current
     # value rather than inventing a historical performance line.
     if not history and accounts:
-        history = [InvestmentValuePointResponse(date=date.today(), value=total_value)]
+        history = [InvestmentValuePointResponse(date=financial_today(), value=total_value)]
 
     return InvestmentDashboardResponse(
         total_value=total_value,
@@ -124,6 +140,8 @@ async def get_investment_dashboard(
                 gain_loss=unrealized_gain_loss(holding.symbol, holding.asset_class, holding.cost_basis, holding.market_value),
                 asset_class=holding.asset_class.value,
                 as_of=holding.as_of,
+                last_price=holding.last_price,
+                price_as_of=holding.as_of if holding.last_price is not None else None,
             )
             for holding in sorted(holdings, key=lambda holding: holding.market_value, reverse=True)
         ],

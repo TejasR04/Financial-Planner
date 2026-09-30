@@ -24,6 +24,8 @@ class InvestmentHoldingResponse(BaseModel):
     gain_loss: Decimal | None
     asset_class: str
     as_of: date
+    last_price: Decimal | None = None
+    price_as_of: date | None = None
 
 
 class InvestmentAllocationResponse(BaseModel):
@@ -41,6 +43,8 @@ class InvestmentHoldingHistoryResponse(BaseModel):
     account_id: UUID
     symbol: str
     history: list[InvestmentValuePointResponse]
+    last_price: Decimal | None = None
+    price_as_of: date | None = None
 
 
 class InvestmentDashboardResponse(BaseModel):

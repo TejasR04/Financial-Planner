@@ -92,6 +92,11 @@ class HoldingRepository(BaseRepository[HoldingModel]):
         account = await self.session.get(AccountModel, row.account_id)
         if account is not None and account.institution_id is not None:
             raise ValidationError("Linked holdings are managed by the institution.")
+        if {"symbol", "market_value", "as_of"}.intersection(fields):
+            # These edits make the previously stored quote metadata stale.
+            # The next market sync can then accept the latest completed close
+            # even if it predates a manually entered as_of date.
+            row.last_price = None
         for key, value in fields.items():
             setattr(row, key, value)
         await self.session.flush()

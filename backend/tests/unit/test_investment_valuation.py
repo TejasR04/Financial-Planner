@@ -47,6 +47,7 @@ async def test_dashboard_gain_totals_only_include_eligible_holdings(monkeypatch)
     }.items():
         monkeypatch.setattr(investments, name, lambda db, repo=repo: repo)
     result = await investments.get_investment_dashboard(user, None)
+    assert all(h.last_price is None and h.price_as_of is None for h in result.holdings)
     assert result.total_value == 20000
     assert result.total_holdings_value == 19200
     assert result.total_cost_basis == 1000
@@ -54,5 +55,10 @@ async def test_dashboard_gain_totals_only_include_eligible_holdings(monkeypatch)
     assert result.excluded_gain_loss_value == 18000
     assert result.gain_loss_holding_count == 1
     assert all(h.gain_loss is None and h.cost_basis is None for h in result.holdings if h.symbol != "VTI")
+    holdings[0].last_price = Decimal("1200")
+    quoted = (await investments.get_investment_dashboard(user, None)).holdings
+    vti = next(h for h in quoted if h.symbol == "VTI")
+    assert vti.last_price == Decimal("1200")
+    assert vti.price_as_of == holdings[0].as_of
     holdings.pop(0)
     assert (await investments.get_investment_dashboard(user, None)).total_gain_loss is None

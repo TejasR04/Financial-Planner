@@ -2,6 +2,7 @@
 import type { ApiAccount, ApiTransaction, ApiBudgetCategory, ApiScenario, ApiHolding, ApiInvestmentContributionRule } from "@/lib/api-client";
 import { cashFlowAmounts, isCardPayment } from "@/lib/cash-flow";
 import { budgetCashFlowAmounts } from "@/lib/budget-cash-flow";
+import { localDateKey } from "@/lib/local-date";
 
 const now = () => new Date().toISOString();
 const money = (n: number) => n.toFixed(2);
@@ -31,9 +32,9 @@ function seed() {
     { id: "early", name: "Retire earlier", description: "Save more to retire at 60", is_baseline: false, retirement_age: 60, savings_rate: "0.3", monthly_contribution: "2200", expected_return: "0.06", inflation_rate: "0.025", withdrawal_rate: "0.035", desired_monthly_income_today: "4000", created_at: now(), updated_at: now() },
   ];
   const holdings: ApiHolding[] = [
-    { id: "holding-1", account_id: "brokerage", symbol: "VTI", quantity: "200", cost_basis: "42000", market_value: "58000", asset_class: "equity", as_of: now().slice(0, 10), pricing_mode: "manual", last_price: null },
-    { id: "holding-2", account_id: "brokerage", symbol: "BND", quantity: "270", cost_basis: "19500", market_value: "20000", asset_class: "fixed_income", as_of: now().slice(0, 10), pricing_mode: "manual", last_price: null },
-    { id: "holding-3", account_id: "retirement", symbol: "VT", quantity: "1000", cost_basis: "115000", market_value: "146000", asset_class: "equity", as_of: now().slice(0, 10), pricing_mode: "manual", last_price: null },
+    { id: "holding-1", account_id: "brokerage", symbol: "VTI", quantity: "200", cost_basis: "42000", market_value: "58000", asset_class: "equity", as_of: localDateKey(), pricing_mode: "manual", last_price: null },
+    { id: "holding-2", account_id: "brokerage", symbol: "BND", quantity: "270", cost_basis: "19500", market_value: "20000", asset_class: "fixed_income", as_of: localDateKey(), pricing_mode: "manual", last_price: null },
+    { id: "holding-3", account_id: "retirement", symbol: "VT", quantity: "1000", cost_basis: "115000", market_value: "146000", asset_class: "equity", as_of: localDateKey(), pricing_mode: "manual", last_price: null },
   ];
   return { accounts, transactions, categories, scenarios, holdings, archived: [] as ApiAccount[],
     user: { id: "demo-user", full_name: "Tejas Ravi", email: "tejas.ravi04@gmail.com", base_currency: "USD", date_of_birth: `${new Date().getFullYear() - 34}-03-12` },
@@ -112,6 +113,17 @@ export function demoRequest(path: string, options: RequestInit = {}): unknown {
   if (p === "/accounts/institutions") return [];
   if (p === "/accounts/archived") return db.archived;
   if (p === "/accounts/disconnected-imported-data") return { account_count: 0, transaction_count: 0, deleted: method === "DELETE" };
+  if (p === "/investments/holdings/history") {
+    const accountId = q.get("account_id");
+    const symbol = (q.get("symbol") ?? "").trim().toUpperCase();
+    const holdings = db.holdings.filter(h => h.account_id === accountId && h.symbol.trim().toUpperCase() === symbol);
+    const quoted = holdings.filter(h => h.last_price != null).sort((a, b) => b.as_of.localeCompare(a.as_of))[0];
+    return {
+      account_id: accountId, symbol,
+      history: holdings.length ? [{ date: localDateKey(), value: money(holdings.reduce((sum, h) => sum + Number(h.market_value), 0)) }] : [],
+      last_price: quoted?.last_price ?? null, price_as_of: quoted?.as_of ?? null,
+    };
+  }
   if (p === "/accounts/allocation" || p === "/investments/dashboard") {
     const holdings = db.holdings.map(h => ({ ...h,
       asset_class: h.symbol.toUpperCase().startsWith("CUR:") || h.symbol.toUpperCase() === "SPAXX" ? "cash" : h.asset_class,
@@ -129,8 +141,8 @@ export function demoRequest(path: string, options: RequestInit = {}): unknown {
     return { total_value: money(accounts.reduce((n, a) => n + Number(a.balance), 0)), total_holdings_value: money(value), total_cost_basis: money(cost), total_gain_loss: eligible.length ? money(eligibleValue - cost) : null,
       gain_loss_holding_count: eligible.length, excluded_gain_loss_value: money(value - eligibleValue),
       account_count: accounts.length, holding_count: holdings.length, accounts,
-      holdings: holdings.map(h => ({ ...h, cost_basis: Number(h.cost_basis) > 0 ? h.cost_basis : null, account_name: db.accounts.find(a => a.id === h.account_id)?.name ?? "Sample account", gain_loss: eligible.includes(h) ? money(Number(h.market_value) - Number(h.cost_basis)) : null })),
-      allocation: breakdown, history: Array.from({ length: 12 }, (_, i) => { const date = new Date(); date.setMonth(date.getMonth() - 11 + i); return { date: date.toISOString().slice(0, 10), value: money(value * (0.85 + i * 0.15 / 11)) }; }) };
+      holdings: holdings.map(h => ({ ...h, price_as_of: h.last_price != null ? h.as_of : null, cost_basis: Number(h.cost_basis) > 0 ? h.cost_basis : null, account_name: db.accounts.find(a => a.id === h.account_id)?.name ?? "Sample account", gain_loss: eligible.includes(h) ? money(Number(h.market_value) - Number(h.cost_basis)) : null })),
+      allocation: breakdown, history: Array.from({ length: 12 }, (_, i) => { const date = new Date(); date.setMonth(date.getMonth() - 11 + i); return { date: localDateKey(date), value: money(value * (0.85 + i * 0.15 / 11)) }; }) };
   }
   const accountMatch = p.match(/^\/accounts\/([^/]+)\/(liability|holdings|balance-rules|contribution-rules|restore|name|reported-cash)(?:\/([^/]+))?$/);
   if (accountMatch) {
@@ -146,7 +158,7 @@ export function demoRequest(path: string, options: RequestInit = {}): unknown {
         const next = new Date();
         next.setDate(Number(body.day_of_month));
         if (next < new Date()) next.setMonth(next.getMonth() + 1);
-        const row = { ...body, id: id(), account_id: accountId, next_run_date: next.toISOString().slice(0, 10), active: true, created_at: now() } as ApiInvestmentContributionRule;
+        const row = { ...body, id: id(), account_id: accountId, next_run_date: localDateKey(next), active: true, created_at: now() } as ApiInvestmentContributionRule;
         db.contributionRules.push(row);
         return row;
       }
