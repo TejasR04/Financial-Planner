@@ -11,6 +11,7 @@ from app.persistence.repositories.account_repository import AccountRepository
 from app.persistence.repositories.holding_repository import HoldingRepository
 from app.persistence.repositories.institution_repository import InstitutionRepository
 from app.persistence.repositories.investment_value_snapshot_repository import InvestmentValueSnapshotRepository
+from app.persistence.repositories.net_worth_snapshot_repository import NetWorthSnapshotRepository
 from app.persistence.repositories.user_repository import UserRepository
 from app.schemas.account import (
     AccountCreateRequest,
@@ -23,6 +24,7 @@ from app.schemas.account import (
     DisconnectedDataDeleteResponse,
     DisconnectedDataSummary,
 )
+from app.schemas.net_worth_history import NetWorthHistoryPointResponse
 from app.schemas.plaid import PlaidRefreshInstitutionResponse
 from app.providers.plaid_provider import PlaidProvider
 from app.core.config import get_settings
@@ -37,6 +39,19 @@ from app.services.investment_contribution_service import InvestmentContributionS
 
 router = APIRouter(prefix="/accounts", tags=["accounts"])
 allocation_service = PortfolioAllocationService()
+
+
+@router.post("/net-worth/history", response_model=list[NetWorthHistoryPointResponse])
+async def observe_net_worth_history(
+    current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
+) -> list[NetWorthHistoryPointResponse]:
+    """Record today's account totals, then return only genuinely observed dates."""
+    repo = NetWorthSnapshotRepository(db)
+    await repo.observe_current(current_user.id)
+    await db.commit()
+    rows = await repo.history_for_user(current_user.id)
+    return [NetWorthHistoryPointResponse(date=as_of, assets=assets, liabilities=liabilities,
+                                        net=assets - liabilities) for as_of, assets, liabilities in rows]
 
 
 @router.get("/disconnected-imported-data", response_model=DisconnectedDataSummary)

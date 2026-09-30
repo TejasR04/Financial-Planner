@@ -47,6 +47,19 @@ describe("isolated demo API", () => {
     expect(Number(after.net_worth_at_target_age)).toBeGreaterThan(Number(before.net_worth_at_target_age));
   });
 
+  it("records the current sample net worth alongside its dated history", async () => {
+    const network = vi.spyOn(globalThis, "fetch");
+    setDemoMode(true);
+    const history = await api.accounts.netWorthHistory();
+    const latest = history.at(-1)!;
+    const accounts = await api.accounts.list();
+    expect(history.length).toBeGreaterThan(1);
+    expect(latest.net).toBe(accounts.net_worth);
+    expect(Number(latest.assets) - Number(latest.liabilities)).toBe(Number(latest.net));
+    expect((await api.accounts.netWorthHistory()).length).toBe(history.length);
+    expect(network).not.toHaveBeenCalled();
+  });
+
   it("returns account-specific holding history without a network request or invented quote", async () => {
     const network = vi.spyOn(globalThis, "fetch");
     setDemoMode(true);

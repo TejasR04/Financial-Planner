@@ -169,6 +169,13 @@ export type ApiAccountList = {
   net_worth: string;
 };
 
+export type ApiNetWorthHistoryPoint = {
+  date: string;
+  assets: string;
+  liabilities: string;
+  net: string;
+};
+
 export type ApiTransaction = {
   id: string;
   account_id: string;
@@ -469,6 +476,7 @@ export const api = {
     delete: (id: string) => del<void>(`/income-sources/${id}`),
   },
   accounts: {
+    netWorthHistory: () => post<ApiNetWorthHistoryPoint[]>("/accounts/net-worth/history", {}),
     list: (params?: { type?: ApiAccount["type"] }) => {
       const suffix = params?.type ? `?type=${params.type}` : "";
       return get<ApiAccountList>(`/accounts${suffix}`);

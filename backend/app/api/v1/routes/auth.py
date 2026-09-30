@@ -21,6 +21,7 @@ from app.core.rate_limit import SlidingWindowRateLimiter
 from app.persistence.repositories.refresh_session_repository import RefreshSessionRepository
 from app.persistence.repositories.password_reset_token_repository import PasswordResetTokenRepository
 from app.persistence.repositories.user_repository import UserRepository
+from app.persistence.repositories.net_worth_snapshot_repository import NetWorthSnapshotRepository
 from app.schemas.auth import (
     LoginRequest,
     PasswordResetConfirmRequest,
@@ -98,6 +99,7 @@ async def register(
         raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="Email already registered")
 
     user = await repo.create(body.email, body.full_name, hash_password(body.password))
+    await NetWorthSnapshotRepository(db).observe_current(user.id)
     tokens = await _start_session(user.id, response, db)
     await db.commit()
     return tokens

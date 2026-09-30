@@ -168,6 +168,19 @@ class InvestmentValueSnapshotModel(Base):
     value: Mapped[Decimal] = mapped_column(Numeric(18, 2))
 
 
+class NetWorthSnapshotModel(Base):
+    """Observed totals for all active accounts on a financial calendar day."""
+
+    __tablename__ = "net_worth_snapshots"
+    __table_args__ = (UniqueConstraint("user_id", "as_of", name="uq_net_worth_snapshots_user_date"),)
+
+    id: Mapped[uuid.UUID] = _uuid_pk()
+    user_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("users.id", ondelete="CASCADE"), index=True)
+    as_of: Mapped[date] = mapped_column(Date, index=True)
+    assets: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+    liabilities: Mapped[Decimal] = mapped_column(Numeric(18, 2))
+
+
 class HoldingValueSnapshotModel(Base):
     """Observed daily market value for an account/symbol position."""
 

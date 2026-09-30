@@ -1,5 +1,5 @@
 // Isolated, tab-memory sample data. No demo request ever falls through to the server.
-import type { ApiAccount, ApiTransaction, ApiBudgetCategory, ApiScenario, ApiHolding, ApiInvestmentContributionRule } from "@/lib/api-client";
+import type { ApiAccount, ApiTransaction, ApiBudgetCategory, ApiScenario, ApiHolding, ApiInvestmentContributionRule, ApiNetWorthHistoryPoint } from "@/lib/api-client";
 import { cashFlowAmounts, isCardPayment } from "@/lib/cash-flow";
 import { budgetCashFlowAmounts } from "@/lib/budget-cash-flow";
 import { localDateKey } from "@/lib/local-date";
@@ -36,7 +36,16 @@ function seed() {
     { id: "holding-2", account_id: "brokerage", symbol: "BND", quantity: "270", cost_basis: "19500", market_value: "20000", asset_class: "fixed_income", as_of: localDateKey(), pricing_mode: "manual", last_price: null },
     { id: "holding-3", account_id: "retirement", symbol: "VT", quantity: "1000", cost_basis: "115000", market_value: "146000", asset_class: "equity", as_of: localDateKey(), pricing_mode: "manual", last_price: null },
   ];
+  const netWorthHistory: ApiNetWorthHistoryPoint[] = Array.from({ length: 5 }, (_, index) => {
+    const date = new Date();
+    date.setDate(1);
+    date.setMonth(date.getMonth() - 5 + index);
+    const assets = 228000 + index * 5000;
+    const liabilities = 23000 - index * 700;
+    return { date: localDateKey(date), assets: money(assets), liabilities: money(liabilities), net: money(assets - liabilities) };
+  });
   return { accounts, transactions, categories, scenarios, holdings, archived: [] as ApiAccount[],
+    netWorthHistory,
     user: { id: "demo-user", full_name: "Tejas Ravi", email: "tejas.ravi04@gmail.com", base_currency: "USD", date_of_birth: `${new Date().getFullYear() - 34}-03-12` },
     profile: { target_retirement_age: 65, target_equity_allocation: "0.8", default_withdrawal_rate: "0.04", include_social_security: false, expected_return: "0.06", inflation_rate: "0.025", target_savings_rate: "0.2", cash_reserve_target: "24000" },
     income: [{ id: "salary", name: "Sample salary", annual_amount: "86400", growth_rate: "0.03", active: true }],
@@ -113,6 +122,14 @@ export function demoRequest(path: string, options: RequestInit = {}): unknown {
   if (p === "/accounts/institutions") return [];
   if (p === "/accounts/archived") return db.archived;
   if (p === "/accounts/disconnected-imported-data") return { account_count: 0, transaction_count: 0, deleted: method === "DELETE" };
+  if (p === "/accounts/net-worth/history") {
+    const assets = db.accounts.filter(a => !["credit", "loan"].includes(a.type)).reduce((sum, a) => sum + Number(a.balance), 0);
+    const liabilities = db.accounts.filter(a => ["credit", "loan"].includes(a.type)).reduce((sum, a) => sum + Math.abs(Number(a.balance)), 0);
+    const today = localDateKey();
+    const point = { date: today, assets: money(assets), liabilities: money(liabilities), net: money(assets - liabilities) };
+    db.netWorthHistory = [...db.netWorthHistory.filter(row => row.date !== today), point];
+    return db.netWorthHistory;
+  }
   if (p === "/investments/holdings/history") {
     const accountId = q.get("account_id");
     const symbol = (q.get("symbol") ?? "").trim().toUpperCase();

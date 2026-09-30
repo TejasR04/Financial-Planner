@@ -101,9 +101,12 @@ async def test_background_financial_sync_applies_loan_automation(monkeypatch, pl
         "MarketPriceSyncService",
         lambda *_: SimpleNamespace(sync_user=market_sync),
     )
+    net_worth_observe = AsyncMock()
+    monkeypatch.setattr(service, "NetWorthSnapshotRepository", lambda _: SimpleNamespace(observe_current=net_worth_observe))
 
     assert await service.sync_all_financial_data() == 0
 
     loan_apply.assert_awaited_once_with("user")
     contribution_apply.assert_awaited_once_with("user")
     market_sync.assert_awaited_once_with("user")
+    net_worth_observe.assert_awaited_once_with("user")

@@ -5,6 +5,7 @@ from sqlalchemy import text
 
 from app.core.config import get_settings
 from app.persistence.repositories.user_repository import UserRepository
+from app.persistence.repositories.net_worth_snapshot_repository import NetWorthSnapshotRepository
 from app.persistence.session import AsyncSessionLocal
 from app.providers.plaid_provider import PlaidProvider
 from app.providers.market_data_provider import TiingoMarketDataProvider
@@ -106,4 +107,11 @@ async def sync_all_financial_data() -> int:
                 await session.rollback()
                 failures += 1
                 logger.exception("market_sync_user_failed", extra={"user_id": str(user_id)})
+            try:
+                await NetWorthSnapshotRepository(session).observe_current(user_id)
+                await session.commit()
+            except Exception:
+                await session.rollback()
+                failures += 1
+                logger.exception("net_worth_snapshot_user_failed", extra={"user_id": str(user_id)})
     return failures
