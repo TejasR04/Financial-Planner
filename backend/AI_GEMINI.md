@@ -34,13 +34,17 @@ docker compose -f backend/docker-compose.yml up --build -d
    come from tool results, not model estimates.
 
 `app/ai/assistant_context.md` is the durable behavior and tool-routing context.
-Each request also receives a privacy-limited current financial summary built
-from the signed-in user's accounts, planning profile, holdings, debts, income
-sources, and trailing transaction totals. Raw transaction and authentication
-details are not sent.
+Each request also receives a current financial summary built from the signed-in
+user's accounts, planning profile, holdings, debts, income sources, and
+trailing transaction totals. Relevant budget and transaction facts are added
+when the question calls for them. Meri can also use authenticated, read-only
+tools during the conversation to search transactions, calculate complete
+spending totals, or retrieve a monthly budget summary. Transaction details
+are paged, and the model cannot choose a different user ID.
 
 Conversation messages are stored per user in `agent_messages`; the Insights
-page can reload or explicitly clear that history. The provider adapter is in
+view and bottom-right Meri popup share that history and active conversation.
+The provider adapter is in
 `app/ai/agent.py`; schema conversion and result serialization are in
 `app/ai/tool_registry.py`. Provider-free tests use a fake Gemini client, so
 they never require a live key.

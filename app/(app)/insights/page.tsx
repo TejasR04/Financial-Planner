@@ -7,6 +7,7 @@ import { Panel, PanelHeader } from "@/components/panel";
 import { RecommendationCard } from "@/components/recommendation-card";
 import { RuleBasedInsights } from "@/components/rule-based-insights";
 import { GeminiAssistant } from "@/components/gemini-assistant";
+import { useMeriChat } from "@/components/meri-chat-context";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/data";
 import { useDataRefresh, useFinancialHealthData, useRecommendationsData } from "@/lib/data-provider";
@@ -20,6 +21,7 @@ function healthLabel(score: number) {
 }
 
 export default function InsightsPage() {
+  const { popupOpen, setPopupOpen } = useMeriChat();
   const recommendations = useRecommendationsData();
   const financialHealth = useFinancialHealthData();
   const refresh = useDataRefresh();
@@ -63,7 +65,7 @@ export default function InsightsPage() {
     <PageContainer>
       <PageHeader
         title="Insights"
-        description="Gemini guidance and deterministic financial checks, kept clearly separate"
+        description="Meri guidance and deterministic financial checks, kept clearly separate"
         actions={
           <Button variant="outline" size="sm" onClick={handleRerun} disabled={rerunning}>
             <RefreshCw className={rerunning ? "animate-spin" : undefined} />
@@ -79,7 +81,11 @@ export default function InsightsPage() {
         </div>
       )}
 
-      <GeminiAssistant />
+      {popupOpen ? (
+        <div className="rounded-lg border border-border bg-card p-5 text-sm text-muted-foreground">
+          Meri is open in the popup. <button type="button" className="font-medium text-primary underline" onClick={() => setPopupOpen(false)}>Return chat to Insights</button>
+        </div>
+      ) : <GeminiAssistant />}
 
       {/* Deterministic analysis summary */}
       <div className="mt-4 flex flex-col gap-4 rounded-lg border border-border bg-card p-5 sm:flex-row sm:items-center sm:justify-between">

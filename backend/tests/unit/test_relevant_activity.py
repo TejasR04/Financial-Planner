@@ -100,6 +100,16 @@ async def test_specific_amount_and_period_narrow_transaction_details(activity_re
 
 
 @pytest.mark.asyncio
+async def test_exact_day_expenses_select_day_and_budget_facts(activity_repositories) -> None:
+    result = await relevant_activity.build_relevant_activity_context(
+        object(), uuid4(), "What were my expenses on 2026-09-08?", date(2026, 9, 20)
+    )
+    assert result["period"]["start"] == "2026-09-08"
+    assert result["period"]["end"] == "2026-09-08"
+    assert result["budget_categories"][0]["net_spending_in_period"] == "12.50"
+
+
+@pytest.mark.asyncio
 async def test_duration_number_is_not_mistaken_for_an_amount(activity_repositories) -> None:
     result = await relevant_activity.build_relevant_activity_context(
         object(), uuid4(), "Show my transactions for the last 3 months", date(2026, 9, 20)

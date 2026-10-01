@@ -10,17 +10,19 @@ from __future__ import annotations
 
 import json
 from dataclasses import asdict, is_dataclass
+import inspect
 from typing import Any, Callable
 
 from pydantic import BaseModel
 
 
 class ToolSpec:
-    def __init__(self, name: str, description: str, input_model: type[BaseModel], handler: Callable[..., Any]):
+    def __init__(self, name: str, description: str, input_model: type[BaseModel], handler: Callable[..., Any], scoped: bool = False):
         self.name = name
         self.description = description
         self.input_model = input_model
         self.handler = handler
+        self.scoped = scoped
 
     def to_gemini_declaration(self) -> dict:
         return {
@@ -34,22 +36,33 @@ class ToolRegistry:
     def __init__(self):
         self._tools: dict[str, ToolSpec] = {}
 
-    def register(self, name: str, description: str, input_model: type[BaseModel]):
+    def register(self, name: str, description: str, input_model: type[BaseModel], *, scoped: bool = False):
         def decorator(handler: Callable[..., Any]) -> Callable[..., Any]:
-            self._tools[name] = ToolSpec(name, description, input_model, handler)
+            self._tools[name] = ToolSpec(name, description, input_model, handler, scoped)
             return handler
         return decorator
 
-    def to_gemini_declarations(self) -> list[dict]:
-        return [spec.to_gemini_declaration() for spec in self._tools.values()]
+    def to_gemini_declarations(self, *, include_scoped: bool = False) -> list[dict]:
+        return [spec.to_gemini_declaration() for spec in self._tools.values() if include_scoped or not spec.scoped]
 
     def dispatch(self, name: str, raw_arguments: str | dict) -> Any:
         if name not in self._tools:
             raise KeyError(f"Unknown tool: {name}")
         spec = self._tools[name]
+        if spec.scoped:
+            raise ValueError(f"Tool {name} requires an authenticated request")
         args = json.loads(raw_arguments) if isinstance(raw_arguments, str) else raw_arguments
         validated = spec.input_model.model_validate(args)
         return spec.handler(validated)
+
+    async def dispatch_async(self, name: str, raw_arguments: str | dict, scope: Any) -> Any:
+        if name not in self._tools:
+            raise KeyError(f"Unknown tool: {name}")
+        spec = self._tools[name]
+        args = json.loads(raw_arguments) if isinstance(raw_arguments, str) else raw_arguments
+        validated = spec.input_model.model_validate(args)
+        result = spec.handler(validated, scope) if spec.scoped else spec.handler(validated)
+        return await result if inspect.isawaitable(result) else result
 
     def serialize_result(self, result: Any) -> Any:
         """Every tool result must be JSON-serializable so it can be handed

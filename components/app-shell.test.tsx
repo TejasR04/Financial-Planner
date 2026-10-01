@@ -8,6 +8,8 @@ vi.mock("@/lib/data-provider", () => ({ useDataError: () => null, useUserAccount
 vi.mock("@/lib/auth-context", () => ({ useAuth: () => ({ logout: vi.fn() }) }));
 vi.mock("@/components/theme-provider", () => ({ ThemeProvider: ({ children }: { children: React.ReactNode }) => children }));
 vi.mock("@/components/command-palette", () => ({ CommandPalette: () => null }));
+vi.mock("@/components/meri-chat-context", () => ({ MeriChatProvider: ({ children }: { children: React.ReactNode }) => children }));
+vi.mock("@/components/meri-chat-dock", () => ({ MeriChatDock: () => null }));
 vi.mock("@/components/topbar", () => ({ Topbar: ({ onOpenNavigation }: { onOpenNavigation: () => void }) => <button onClick={onOpenNavigation}>Open navigation</button> }));
 
 afterEach(() => vi.unstubAllGlobals());

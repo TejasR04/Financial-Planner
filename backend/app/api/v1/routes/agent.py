@@ -7,10 +7,10 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
-from starlette.concurrency import run_in_threadpool
 
 from app.ai.agent import AgentOrchestrator, GeminiConfigurationError, GeminiTemporaryError
 from app.ai.context import build_user_financial_context
+from app.ai.tools.activity_tools import ActivityScope
 from app.api.deps import get_current_user, get_db
 from app.domain.entities import User
 from app.core.rate_limit import PerKeyConcurrencyLimiter, SlidingWindowRateLimiter
@@ -211,8 +211,8 @@ async def chat(
         user_context = await build_user_financial_context(db, snapshot, selection_query)
 
         try:
-            result = await run_in_threadpool(
-                orchestrator.handle_message, message, conversation_history, 4, user_context
+            result = await orchestrator.handle_message_scoped(
+                message, conversation_history, user_context, ActivityScope(db, current_user.id)
             )
         except GeminiTemporaryError as exc:
             logger.warning("gemini_temporarily_unavailable", extra={"user_id": user_key}, exc_info=True)

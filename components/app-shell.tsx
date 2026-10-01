@@ -8,6 +8,8 @@ import { Topbar } from "@/components/topbar";
 import { CommandPalette } from "@/components/command-palette";
 import { useDataError } from "@/lib/data-provider";
 import { DialogShell } from "@/components/ui/dialog-shell";
+import { MeriChatProvider } from "@/components/meri-chat-context";
+import { MeriChatDock } from "@/components/meri-chat-dock";
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { isDemo } = useAuth();
@@ -39,6 +41,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <ThemeProvider>
+      <MeriChatProvider>
       <div className="flex h-dvh overflow-hidden bg-background text-foreground" inert={mobileOpen}>
         <div className="hidden md:flex">
           <Sidebar
@@ -49,7 +52,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         <div className="flex min-w-0 flex-1 flex-col">
           <Topbar onOpenCommand={() => setCommandOpen(true)} onOpenNavigation={() => setMobileOpen(true)} />
           <main className="min-h-0 min-w-0 flex-1 overflow-y-auto">
-            {isDemo && <div role="status" className="border-b border-primary/20 bg-primary/10 px-5 py-2 text-xs">Demo mode: sample data only. Edits reset on exit or reload. Projections are illustrative. Gemini and bank connections are disabled.</div>}
+            {isDemo && <div role="status" className="border-b border-primary/20 bg-primary/10 px-5 py-2 text-xs">Demo mode: sample data only. Edits reset on exit or reload. Projections are illustrative. Meri and bank connections are disabled.</div>}
             {dataError && (
               <div role="alert" className="border-b border-warning/30 bg-warning/10 px-5 py-2 text-xs text-foreground">
                 {dataError}
@@ -67,6 +70,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         </DialogShell>
       )}
       <CommandPalette open={commandOpen} onOpenChange={setCommandOpen} />
+      <MeriChatDock />
+      </MeriChatProvider>
     </ThemeProvider>
   );
 }

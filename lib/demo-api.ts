@@ -115,7 +115,7 @@ export function demoRequest(path: string, options: RequestInit = {}): unknown {
   const p = url.pathname; const q = url.searchParams;
   const method = options.method ?? "GET";
   const body = options.body ? JSON.parse(String(options.body)) : {};
-  if (p.startsWith("/agent/")) throw new Error("Gemini assistant is disabled in demo mode.");
+  if (p.startsWith("/agent/")) throw new Error("Meri is disabled in demo mode.");
   if (p.startsWith("/plaid/") || p.endsWith("/sync")) throw new Error("Bank connections are disabled in demo mode. Add a manual sample account instead.");
   if (p === "/users/me") { if (method === "PATCH") Object.assign(db.user, body); return db.user; }
   if (p === "/users/me/planning-profile") { if (method === "PATCH") Object.assign(db.profile, body); return db.profile; }

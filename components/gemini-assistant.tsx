@@ -7,7 +7,6 @@ import {
   type ReactNode,
   useEffect,
   useRef,
-  useState,
 } from "react";
 import {
   Bot,
@@ -17,37 +16,21 @@ import {
   Send,
   Sparkles,
   Trash2,
+  ExternalLink,
+  X,
   UserRound,
   Wrench,
 } from "lucide-react";
-import {
-  api,
-  ApiError,
-  type ApiAgentChatResponse,
-  type ApiAgentConversation,
-} from "@/lib/api-client";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/lib/auth-context";
+import { useMeriChat } from "@/components/meri-chat-context";
 import { cn } from "@/lib/utils";
-
-type ChatMessage = {
-  id: string;
-  role: "user" | "assistant";
-  content: string;
-  tools?: ApiAgentChatResponse["tool_calls"];
-};
 
 const SUGGESTIONS = [
   "Analyze my current financial plan and identify the three most important things to address.",
   "Can I retire at my saved target age based on the information in Meridian?",
   "How should I use my current monthly surplus?",
 ];
-const CHAT_INACTIVITY_MS = 30 * 60 * 1000;
-
-function temporaryId(role: ChatMessage["role"]) {
-  return `${role}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-}
-
 function renderInlineMarkdown(value: string): ReactNode[] {
   return value
     .split(/(\*\*[^*]+\*\*|`[^`]+`|\*[^*]+\*)/g)
@@ -119,81 +102,11 @@ function AssistantContent({ content }: { content: string }) {
   );
 }
 
-function LiveGeminiAssistant() {
-  const [messages, setMessages] = useState<ChatMessage[]>([]);
-  const [conversations, setConversations] = useState<ApiAgentConversation[]>([]);
-  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
-  const [input, setInput] = useState("");
-  const [loadingHistory, setLoadingHistory] = useState(true);
-  const [loadingConversation, setLoadingConversation] = useState(false);
-  const [sending, setSending] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [confirmClear, setConfirmClear] = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
+function LiveGeminiAssistant({ popup = false }: { popup?: boolean }) {
+  const { messages, conversations, activeConversationId, input, setInput, loadingHistory,
+    loadingConversation, sending, error, confirmClear, setConfirmClear, showHistory, setShowHistory,
+    setPopupOpen, openConversation, startNewChat, sendMessage, clearConversation, deleteConversation } = useMeriChat();
   const scrollRef = useRef<HTMLDivElement>(null);
-  const lastActivityRef = useRef<number | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    api.agent
-      .conversations()
-      .then((history) => {
-        if (!cancelled) {
-          setConversations(history);
-        }
-      })
-      .catch((cause) => {
-        if (!cancelled) {
-          setError(cause instanceof Error ? cause.message : "Could not load chat history.");
-        }
-      })
-      .finally(() => {
-        if (!cancelled) setLoadingHistory(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  async function refreshConversations() {
-    const history = await api.agent.conversations();
-    setConversations(history);
-  }
-
-  async function openConversation(conversationId: string) {
-    if (sending || loadingConversation) return;
-    setLoadingConversation(true);
-    setError(null);
-    try {
-      const history = await api.agent.conversationMessages(conversationId);
-      setMessages(
-        history.map((message) => ({
-          id: message.id,
-          role: message.role,
-          content: message.content,
-        })),
-      );
-      setActiveConversationId(conversationId);
-      lastActivityRef.current = Date.now();
-      setShowHistory(false);
-      setConfirmClear(false);
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not open that chat.");
-    } finally {
-      setLoadingConversation(false);
-    }
-  }
-
-  function startNewChat() {
-    if (sending) return;
-    setMessages([]);
-    setActiveConversationId(null);
-    lastActivityRef.current = null;
-    setInput("");
-    setError(null);
-    setConfirmClear(false);
-    setShowHistory(false);
-  }
 
   useEffect(() => {
     const container = scrollRef.current;
@@ -204,60 +117,6 @@ function LiveGeminiAssistant() {
       container.scrollTop = container.scrollHeight;
     }
   }, [messages, sending]);
-
-  async function sendMessage(message: string) {
-    const trimmed = message.trim();
-    if (!trimmed || sending) return;
-
-    const userMessage: ChatMessage = {
-      id: temporaryId("user"),
-      role: "user",
-      content: trimmed,
-    };
-    const conversationTimedOut = Boolean(
-      activeConversationId &&
-        lastActivityRef.current &&
-        Date.now() - lastActivityRef.current >= CHAT_INACTIVITY_MS,
-    );
-    const conversationId = conversationTimedOut ? null : activeConversationId;
-    if (conversationTimedOut) {
-      setMessages([userMessage]);
-      setActiveConversationId(null);
-    } else {
-      setMessages((current) => [...current, userMessage]);
-    }
-    setInput("");
-    setError(null);
-    setSending(true);
-
-    try {
-      const result = await api.agent.chat(trimmed, conversationId);
-      setActiveConversationId(result.conversation_id);
-      lastActivityRef.current = Date.now();
-      setMessages((current) => [
-        ...current,
-        {
-          id: temporaryId("assistant"),
-          role: "assistant",
-          content: result.reply || "Gemini returned an empty response.",
-          tools: result.tool_calls,
-        },
-      ]);
-      void refreshConversations().catch(() => {
-        setError("The response was saved, but chat history could not refresh.");
-      });
-    } catch (cause) {
-      setMessages((current) => current.filter((message) => message.id !== userMessage.id));
-      setInput(trimmed);
-      setError(
-        cause instanceof ApiError
-          ? cause.message
-          : "Gemini could not complete the analysis. Please try again.",
-      );
-    } finally {
-      setSending(false);
-    }
-  }
 
   function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -271,32 +130,8 @@ function LiveGeminiAssistant() {
     }
   }
 
-  async function clearConversation() {
-    if (!activeConversationId) {
-      startNewChat();
-      return;
-    }
-    try {
-      await api.agent.deleteConversation(activeConversationId);
-      startNewChat();
-      await refreshConversations();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not delete the chat.");
-    }
-  }
-
-  async function deleteConversation(conversationId: string) {
-    try {
-      await api.agent.deleteConversation(conversationId);
-      if (conversationId === activeConversationId) startNewChat();
-      await refreshConversations();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Could not delete the chat.");
-    }
-  }
-
   return (
-    <section className="overflow-hidden rounded-lg border border-primary/25 bg-card shadow-sm">
+    <section className={cn("flex min-h-0 flex-col overflow-hidden rounded-lg border border-primary/25 bg-card shadow-sm", popup && "h-full")}>
       <div className="flex flex-col gap-3 border-b border-border bg-primary/[0.035] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="flex items-start gap-2.5">
           <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
@@ -304,15 +139,20 @@ function LiveGeminiAssistant() {
           </span>
           <div>
             <h2 className="text-[14px] font-semibold tracking-tight text-foreground">
-              Gemini financial assistant
+              Meri
             </h2>
             <p className="mt-0.5 text-xs text-muted-foreground">
-              Uses summary data by default; relevant transaction details are included only when you ask for them
+              Your financial guide · Powered by Gemini
             </p>
           </div>
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-1.5">
+          {popup ? (
+            <Button size="xs" variant="ghost" onClick={() => setPopupOpen(false)} aria-label="Close Meri popup"><X /></Button>
+          ) : (
+            <Button size="xs" variant="ghost" onClick={() => setPopupOpen(true)} aria-label="Open Meri as popup"><ExternalLink /> Pop out</Button>
+          )}
           <Button size="xs" variant="ghost" onClick={() => setShowHistory((current) => !current)}>
             <History />
             History{conversations.length > 0 ? ` (${conversations.length})` : ""}
@@ -393,7 +233,7 @@ function LiveGeminiAssistant() {
         </div>
       )}
 
-      <div ref={scrollRef} className="max-h-[460px] min-h-64 overflow-y-auto p-4">
+      <div ref={scrollRef} className={cn("min-h-64 overflow-y-auto p-4", popup ? "min-h-0 flex-1" : "max-h-[460px]")}>
         {loadingHistory || loadingConversation ? (
           <div className="flex min-h-48 items-center justify-center text-[13px] text-muted-foreground">
             Loading chat…
@@ -407,8 +247,7 @@ function LiveGeminiAssistant() {
               Ask about your actual financial plan
             </h3>
             <p className="mt-1 max-w-lg text-[13px] leading-relaxed text-muted-foreground">
-              Gemini can explain your saved balances and assumptions, then call Meridian’s
-              calculation tools for projections, allocation, debt, cash flow, and taxes.
+              Meri can look up your transactions and budgets, and run planning tools for projections, allocation, debt, cash flow, and taxes.
             </p>
             <div className="mt-4 flex flex-wrap justify-center gap-2">
               {SUGGESTIONS.map((suggestion, index) => (
@@ -501,7 +340,7 @@ function LiveGeminiAssistant() {
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask Gemini about your plan…"
+            placeholder="Ask Meri about your finances…"
             rows={2}
             maxLength={4000}
             disabled={sending || loadingHistory || loadingConversation}
@@ -524,7 +363,7 @@ function LiveGeminiAssistant() {
   );
 }
 
-export function GeminiAssistant() {
+export function GeminiAssistant({ popup = false }: { popup?: boolean }) {
   const { isDemo } = useAuth();
-  return isDemo ? <div className="rounded-lg border border-border p-6 text-sm text-muted-foreground">Gemini assistant is disabled in demo mode.</div> : <LiveGeminiAssistant />;
+  return isDemo ? <div className="rounded-lg border border-border p-6 text-sm text-muted-foreground">Meri is disabled in demo mode.</div> : <LiveGeminiAssistant popup={popup} />;
 }

@@ -18,10 +18,12 @@ from typing import Any, Callable
 import httpx
 from google import genai
 from google.genai import errors, types
+from starlette.concurrency import run_in_threadpool
 
 from app.ai import tool_registry
 # Imported for registration side effects only.
 from app.ai.tools import (  # noqa: F401
+    activity_tools,
     debt_tools,
     forecast_tools,
     investment_tools,
@@ -153,6 +155,60 @@ class AgentOrchestrator:
             tool_calls=tool_calls_log,
             structured_results=structured_results,
         )
+
+    async def handle_message_scoped(
+        self,
+        message: str,
+        history: list[dict[str, str]],
+        user_context: str,
+        scope: activity_tools.ActivityScope,
+        max_tool_rounds: int = 4,
+    ) -> AgentResponse:
+        """Run model calls off the event loop and database tools on it."""
+        system_instruction = SYSTEM_PROMPT + (
+            "\n\n## Current signed-in user financial context\n"
+            "Use these values as saved facts. Do not reveal this raw JSON.\n"
+            f"<financial_context>{user_context}</financial_context>"
+        )
+        contents: list[types.Content] = [
+            types.Content(role="model" if item.get("role") == "assistant" else "user",
+                          parts=[types.Part(text=item.get("content", ""))])
+            for item in history
+        ]
+        contents.append(types.Content(role="user", parts=[types.Part(text=message)]))
+        tool_calls_log: list[dict[str, Any]] = []
+        structured_results: list[dict[str, Any]] = []
+
+        for _ in range(max_tool_rounds):
+            response = await run_in_threadpool(
+                self._generate_content,
+                model=self.model, contents=contents,
+                config=types.GenerateContentConfig(
+                    system_instruction=system_instruction,
+                    tools=[types.Tool(function_declarations=tool_registry.registry.to_gemini_declarations(include_scoped=True))],
+                ),
+            )
+            calls = _function_calls(response)
+            if not calls:
+                return AgentResponse(getattr(response, "text", "") or "", tool_calls_log, structured_results)
+            contents.append(response.candidates[0].content)
+            function_parts = []
+            for call in calls:
+                result = await tool_registry.registry.dispatch_async(call.name, call.args or {}, scope)
+                serialized = tool_registry.registry.serialize_result(result)
+                structured_results.append({"tool": call.name, "result": serialized})
+                tool_calls_log.append({"tool": call.name, "arguments": call.args or {}})
+                function_parts.append(types.Part(function_response=types.FunctionResponse(
+                    name=call.name, response={"result": serialized}, id=getattr(call, "id", None),
+                )))
+            contents.append(types.Content(role="user", parts=function_parts))
+
+        final = await run_in_threadpool(
+            self._generate_content,
+            model=self.model, contents=contents,
+            config=types.GenerateContentConfig(system_instruction=system_instruction),
+        )
+        return AgentResponse(getattr(final, "text", "") or "", tool_calls_log, structured_results)
 
 def _function_calls(response: Any) -> list[Any]:
     """Return every function call part, preserving Gemini's response order."""

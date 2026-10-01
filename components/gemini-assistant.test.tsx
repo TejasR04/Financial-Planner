@@ -3,6 +3,8 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { GeminiAssistant } from "@/components/gemini-assistant";
+import { MeriChatProvider, useMeriChat } from "@/components/meri-chat-context";
+import { MeriChatDock } from "@/components/meri-chat-dock";
 
 const { conversations, conversationMessages, chat, deleteConversation } = vi.hoisted(() => ({
   conversations: vi.fn(),
@@ -18,6 +20,11 @@ vi.mock("@/lib/api-client", () => ({
   },
 }));
 vi.mock("@/lib/auth-context", () => ({ useAuth: () => ({ isDemo: false }) }));
+
+function ChatSurfaces() {
+  const { popupOpen } = useMeriChat();
+  return <>{!popupOpen && <GeminiAssistant />}<MeriChatDock /></>;
+}
 
 describe("GeminiAssistant chat history", () => {
   beforeEach(() => {
@@ -55,7 +62,7 @@ describe("GeminiAssistant chat history", () => {
 
   it("starts blank after mounting and opens a saved chat only from history", async () => {
     const user = userEvent.setup();
-    render(<GeminiAssistant />);
+    render(<MeriChatProvider><GeminiAssistant /></MeriChatProvider>);
 
     expect(await screen.findByText("Ask about your actual financial plan")).toBeInTheDocument();
     expect(screen.queryByText("Here is the comparison.")).not.toBeInTheDocument();
@@ -81,7 +88,7 @@ describe("GeminiAssistant chat history", () => {
       structured_results: [],
     });
     const user = userEvent.setup();
-    render(<GeminiAssistant />);
+    render(<MeriChatProvider><GeminiAssistant /></MeriChatProvider>);
 
     await screen.findByText("Ask about your actual financial plan");
     await user.click(screen.getByRole("button", { name: "History (1)" }));
@@ -89,11 +96,30 @@ describe("GeminiAssistant chat history", () => {
     await screen.findByText("Here is the comparison.");
 
     now += 31 * 60 * 1000;
-    await user.type(screen.getByPlaceholderText("Ask Gemini about your plan…"), "New topic");
+    await user.type(screen.getByPlaceholderText("Ask Meri about your finances…"), "New topic");
     await user.click(screen.getByRole("button", { name: "Send message" }));
 
     expect(await screen.findByText("A fresh response.")).toBeInTheDocument();
     expect(chat).toHaveBeenCalledWith("New topic", null);
     expect(screen.queryByText("Here is the comparison.")).not.toBeInTheDocument();
+  });
+
+  it("shares an active reply and draft with the popup", async () => {
+    let resolveReply!: (value: unknown) => void;
+    chat.mockReturnValue(new Promise((resolve) => { resolveReply = resolve; }));
+    const user = userEvent.setup();
+    render(<MeriChatProvider><ChatSurfaces /></MeriChatProvider>);
+    await screen.findByText("Ask about your actual financial plan");
+    await user.type(screen.getByPlaceholderText("Ask Meri about your finances…"), "How was September?");
+    await user.click(screen.getByRole("button", { name: "Send message" }));
+    await user.click(screen.getByRole("button", { name: "Open Meri as popup" }));
+    expect(screen.getByRole("dialog", { name: "Meri chat" })).toBeInTheDocument();
+    resolveReply({ conversation_id: "chat-2", reply: "September spending was $300.", tool_calls: [], structured_results: [] });
+    expect(await screen.findByText("September spending was $300.")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "Close Meri popup" }));
+    expect(screen.getByText("September spending was $300.")).toBeInTheDocument();
+    await user.type(screen.getByPlaceholderText("Ask Meri about your finances…"), "And October?");
+    await user.click(screen.getByRole("button", { name: "Open Meri as popup" }));
+    expect(screen.getByPlaceholderText("Ask Meri about your finances…")).toHaveValue("And October?");
   });
 });

@@ -5,7 +5,7 @@ import re
 from calendar import monthrange
 from collections import defaultdict
 from dataclasses import dataclass
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 from uuid import UUID
 
@@ -62,6 +62,18 @@ def _month_end(value: date) -> date:
 def _requested_period(message: str, reference: date) -> tuple[date, date, str] | None:
     lowered = message.lower()
     current = reference.replace(day=1)
+    if re.search(r"\byesterday\b", lowered):
+        day = reference - timedelta(days=1)
+        return day, day, day.isoformat()
+    if re.search(r"\btoday\b", lowered):
+        return reference, reference, reference.isoformat()
+    exact_day = re.search(r"\b(20\d{2})-(0[1-9]|1[0-2])-([0-3]\d)\b", lowered)
+    if exact_day:
+        try:
+            day = date.fromisoformat(exact_day.group(0))
+            return day, day, day.isoformat()
+        except ValueError:
+            pass
     if "last month" in lowered:
         start = shift_month(current, -1)
         return start, _month_end(start), "last month"
@@ -171,11 +183,11 @@ async def build_relevant_activity_context(
         row for row in categories
         if _category_is_mentioned(row.name, normalized_question)
     ]
-    asks_about_spending = bool(re.search(r"\b(spent|spend|spending)\b", lowered))
+    asks_about_spending = bool(re.search(r"\b(spent|spend|spending|expenses?|expenditures?)\b", lowered))
     broad_budget_request = (
         bool(_BUDGET_WORDS.search(lowered))
         and ("budget" in lowered or "category" in lowered or "categories" in lowered)
-    ) or (asks_about_spending and explicit_period is not None)
+    ) or asks_about_spending
     amounts = _mentioned_amounts(message)
     mentions_detail = bool(_DETAIL_WORDS.search(lowered))
 

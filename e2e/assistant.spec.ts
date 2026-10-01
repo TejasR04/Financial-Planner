@@ -41,7 +41,7 @@ test("Insights separates Gemini from rule-based analysis and renders tool use", 
   await page.getByRole("link", { name: "Insights" }).click();
   await expect(page).toHaveURL(/\/insights$/);
   await expect(
-    page.getByRole("heading", { name: "Gemini financial assistant" }),
+    page.getByRole("heading", { name: "Meri" }),
   ).toBeVisible();
   await expect(page.getByRole("heading", { name: "Rule-based insights" })).toBeVisible();
   await expect(
@@ -53,4 +53,10 @@ test("Insights separates Gemini from rule-based analysis and renders tool use", 
     page.getByText("Your projection was calculated with Meridian's retirement model."),
   ).toBeVisible();
   await expect(page.getByText("forecast_retirement", { exact: true })).toBeVisible();
+  await page.getByRole("button", { name: "Open Meri as popup" }).click();
+  await expect(page.getByRole("dialog", { name: "Meri chat" })).toContainText(
+    "Your projection was calculated with Meridian's retirement model.",
+  );
+  await page.getByRole("button", { name: "Close Meri popup" }).click();
+  await expect(page.getByText("Your projection was calculated with Meridian's retirement model.")).toBeVisible();
 });
