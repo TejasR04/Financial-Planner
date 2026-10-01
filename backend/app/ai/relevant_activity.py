@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.merchant_rules import normalize_merchant_rule
 from app.domain.category_mapping import ALIASES, normalized as normalize_category
+from app.core.financial_date import financial_today
 from app.persistence.repositories.budget_repository import BudgetRepository
 from app.persistence.repositories.transaction_repository import TransactionRepository
 from app.services.activity_history import shift_month
@@ -164,7 +165,7 @@ async def build_relevant_activity_context(
     completed_history_months: list[date] | None = None,
 ) -> dict | None:
     """Return only ledger facts selected by the user's current question."""
-    today = reference or date.today()
+    today = reference or financial_today()
     lowered = " ".join(message.lower().split())
     current_message = message.split("\nPrior user request:", 1)[0]
     current_lowered = " ".join(current_message.lower().split())

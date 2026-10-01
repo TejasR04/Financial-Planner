@@ -38,6 +38,7 @@ from plaid.model.transactions_sync_request_options import TransactionsSyncReques
 from plaid.model.investments_holdings_get_request import InvestmentsHoldingsGetRequest
 
 from app.core.exceptions import ProviderError
+from app.core.financial_date import financial_today
 
 _ENVIRONMENTS = {
     "sandbox": "https://sandbox.plaid.com",
@@ -266,7 +267,7 @@ class PlaidClient:
             raise ProviderError(_sanitize_error(exc)) from exc
 
         securities = {security.security_id: security for security in response.securities}
-        as_of = date.today()
+        as_of = financial_today()
         holdings: list[RawPlaidHolding] = []
         for holding in response.holdings:
             security = securities.get(holding.security_id)

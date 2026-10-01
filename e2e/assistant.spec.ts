@@ -25,16 +25,16 @@ test("Insights separates Gemini from rule-based analysis and renders tool use", 
     }
     await route.fulfill({ status: 204 });
   });
-  await page.route("**/api/v1/agent/chat", async (route) => {
+  await page.route("**/api/v1/agent/chat/stream", async (route) => {
     await route.fulfill({
       status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
+      contentType: "application/x-ndjson",
+      body: `${JSON.stringify({ type: "status", label: "Running forecast retirement" })}\n${JSON.stringify({ type: "complete", data: {
         conversation_id: "e2e-conversation",
         reply: "Your projection was calculated with Meridian's retirement model.",
         tool_calls: [{ tool: "forecast_retirement", arguments: {} }],
         structured_results: [{ tool: "forecast_retirement", result: {} }],
-      }),
+      } })}\n`,
     });
   });
 

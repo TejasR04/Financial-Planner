@@ -6,6 +6,7 @@ import { DialogShell } from "@/components/ui/dialog-shell";
 import { api, ApiHolding, ApiInvestmentContributionRule, ApiLoanBalanceRule } from "@/lib/api-client";
 import type { Account } from "@/lib/data";
 import { useDataRefresh } from "@/lib/data-provider";
+import { localDateKey } from "@/lib/local-date";
 
 const input = "h-8 w-full rounded-md border border-border bg-background px-2.5 text-xs";
 const ordinal = (day: number) => `${day}${day % 10 === 1 && day % 100 !== 11 ? "st" : day % 10 === 2 && day % 100 !== 12 ? "nd" : day % 10 === 3 && day % 100 !== 13 ? "rd" : "th"}`;
@@ -55,7 +56,7 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
   }, [account, debt, ruleMode, merchantPattern, selectedMerchant]);
 
   useEffect(() => {
-    setValues({ pricing_mode: "manual", as_of: new Date().toISOString().slice(0, 10) });
+    setValues({ pricing_mode: "manual", as_of: localDateKey() });
     setHoldings([]);
     setUpdatingHoldingId(null);
     setCashBalance(account?.reportedCashBalance == null ? "" : String(account.reportedCashBalance));
@@ -121,7 +122,7 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
         });
         if (accountIdRef.current !== savingAccountId) return;
         setHoldings([...holdings, row]);
-        setValues({ pricing_mode: "manual", as_of: new Date().toISOString().slice(0, 10) });
+        setValues({ pricing_mode: "manual", as_of: localDateKey() });
         refresh();
         return;
       }

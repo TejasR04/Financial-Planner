@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -17,7 +18,8 @@ def _money(value: Decimal) -> str:
 
 
 async def build_user_financial_context(
-    session: AsyncSession, snapshot: FinancialSnapshot, message: str | None = None
+    session: AsyncSession, snapshot: FinancialSnapshot, message: str | None = None,
+    *, financial_timezone: str | None = None,
 ) -> str:
     """Return current planning facts without identifiers or transaction detail."""
     history, (monthly_income, monthly_expenses) = await load_budget_activity_summary(
@@ -55,6 +57,7 @@ async def build_user_financial_context(
 
     payload = {
         "as_of": snapshot.as_of.isoformat(),
+        "financial_timezone": financial_timezone or datetime.now().astimezone().tzname(),
         "currency": "USD",
         "display_basis": "real_today_dollars",
         "current_age": snapshot.user.age_on(snapshot.as_of),

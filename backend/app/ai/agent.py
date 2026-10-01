@@ -163,6 +163,7 @@ class AgentOrchestrator:
         user_context: str,
         scope: activity_tools.ActivityScope,
         max_tool_rounds: int = 4,
+        on_progress: Callable[[str], None] | None = None,
     ) -> AgentResponse:
         """Run model calls off the event loop and database tools on it."""
         system_instruction = SYSTEM_PROMPT + (
@@ -179,7 +180,12 @@ class AgentOrchestrator:
         tool_calls_log: list[dict[str, Any]] = []
         structured_results: list[dict[str, Any]] = []
 
+        def progress(label: str) -> None:
+            if on_progress:
+                on_progress(label)
+
         for _ in range(max_tool_rounds):
+            progress("Reviewing your question")
             response = await run_in_threadpool(
                 self._generate_content,
                 model=self.model, contents=contents,
@@ -194,6 +200,11 @@ class AgentOrchestrator:
             contents.append(response.candidates[0].content)
             function_parts = []
             for call in calls:
+                progress({
+                    "search_transactions": "Looking up transactions",
+                    "get_spending_summary": "Calculating spending totals",
+                    "get_budget_summary": "Checking budget limits and spending",
+                }.get(call.name, f"Running {call.name.replace('_', ' ')}"))
                 result = await tool_registry.registry.dispatch_async(call.name, call.args or {}, scope)
                 serialized = tool_registry.registry.serialize_result(result)
                 structured_results.append({"tool": call.name, "result": serialized})
@@ -203,6 +214,7 @@ class AgentOrchestrator:
                 )))
             contents.append(types.Content(role="user", parts=function_parts))
 
+        progress("Writing your answer")
         final = await run_in_threadpool(
             self._generate_content,
             model=self.model, contents=contents,

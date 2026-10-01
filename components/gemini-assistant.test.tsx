@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -16,7 +16,13 @@ const { conversations, conversationMessages, chat, deleteConversation } = vi.hoi
 vi.mock("@/lib/api-client", () => ({
   ApiError: class ApiError extends Error {},
   api: {
-    agent: { conversations, conversationMessages, chat, deleteConversation },
+    agent: {
+      conversations, conversationMessages, chat, deleteConversation,
+      chatStream: async function* (message: string, conversationId: string | null) {
+        yield { type: "status", label: "Looking up transactions" };
+        yield { type: "complete", data: await chat(message, conversationId) };
+      },
+    },
   },
 }));
 vi.mock("@/lib/auth-context", () => ({ useAuth: () => ({ isDemo: false }) }));
@@ -57,6 +63,8 @@ describe("GeminiAssistant chat history", () => {
 
   afterEach(() => {
     cleanup();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
@@ -105,6 +113,7 @@ describe("GeminiAssistant chat history", () => {
   });
 
   it("shares an active reply and draft with the popup", async () => {
+    vi.stubGlobal("PointerEvent", MouseEvent);
     let resolveReply!: (value: unknown) => void;
     chat.mockReturnValue(new Promise((resolve) => { resolveReply = resolve; }));
     const user = userEvent.setup();
@@ -112,6 +121,7 @@ describe("GeminiAssistant chat history", () => {
     await screen.findByText("Ask about your actual financial plan");
     await user.type(screen.getByPlaceholderText("Ask Meri about your finances…"), "How was September?");
     await user.click(screen.getByRole("button", { name: "Send message" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("Looking up transactions");
     await user.click(screen.getByRole("button", { name: "Open Meri as popup" }));
     expect(screen.getByRole("dialog", { name: "Meri chat" })).toBeInTheDocument();
     resolveReply({ conversation_id: "chat-2", reply: "September spending was $300.", tool_calls: [], structured_results: [] });
@@ -121,5 +131,35 @@ describe("GeminiAssistant chat history", () => {
     await user.type(screen.getByPlaceholderText("Ask Meri about your finances…"), "And October?");
     await user.click(screen.getByRole("button", { name: "Open Meri as popup" }));
     expect(screen.getByPlaceholderText("Ask Meri about your finances…")).toHaveValue("And October?");
+    const dialog = screen.getByRole("dialog", { name: "Meri chat" });
+    await user.click(screen.getByRole("button", { name: /Move Meri from right/ }));
+    expect(dialog).toHaveAttribute("data-position", "center");
+    await user.click(screen.getByRole("button", { name: /Move Meri from center/ }));
+    expect(dialog).toHaveAttribute("data-position", "left");
+    const resize = screen.getByRole("button", { name: "Resize Meri chat" });
+    resize.focus();
+    fireEvent.keyDown(resize, { key: "ArrowLeft" });
+    expect(dialog).toHaveStyle({ width: "min(388px, calc(100vw - 2rem))" });
+    const heading = screen.getByRole("heading", { name: "Meri" });
+    fireEvent.pointerDown(heading, { pointerId: 1, pointerType: "mouse", clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(window, { pointerId: 1, clientX: 900, clientY: 120 });
+    fireEvent.pointerUp(window, { pointerId: 1, clientX: 900, clientY: 120 });
+    expect(dialog).toHaveAttribute("data-position", "right");
+    class TouchPointerEvent extends MouseEvent {
+      pointerId: number;
+      pointerType: string;
+      constructor(type: string, init: MouseEventInit & { pointerId?: number; pointerType?: string }) {
+        super(type, init);
+        this.pointerId = init.pointerId ?? 1;
+        this.pointerType = init.pointerType ?? "touch";
+      }
+    }
+    vi.stubGlobal("PointerEvent", TouchPointerEvent);
+    vi.useFakeTimers();
+    fireEvent.pointerDown(heading, { pointerId: 2, pointerType: "touch", clientX: 900, clientY: 100 });
+    vi.advanceTimersByTime(350);
+    fireEvent.pointerMove(window, { pointerId: 2, pointerType: "touch", clientX: 100, clientY: 120 });
+    fireEvent.pointerUp(window, { pointerId: 2, pointerType: "touch", clientX: 100, clientY: 120 });
+    expect(dialog).toHaveAttribute("data-position", "left");
   });
 });

@@ -1,7 +1,7 @@
 "use client";
 
 import { createContext, useContext, useEffect, useRef, useState, type ReactNode } from "react";
-import { api, ApiError, type ApiAgentChatResponse, type ApiAgentConversation } from "@/lib/api-client";
+import { api, type ApiAgentChatResponse, type ApiAgentConversation } from "@/lib/api-client";
 import { useAuth } from "@/lib/auth-context";
 
 export type ChatMessage = {
@@ -27,6 +27,7 @@ function useMeriChatState() {
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [loadingConversation, setLoadingConversation] = useState(false);
   const [sending, setSending] = useState(false);
+  const [progress, setProgress] = useState("Reading your saved finances");
   const [error, setError] = useState<string | null>(null);
   const [confirmClear, setConfirmClear] = useState(false);
   const [showHistory, setShowHistory] = useState(false);
@@ -93,9 +94,16 @@ function useMeriChatState() {
     }
     setInput("");
     setError(null);
+    setProgress("Connecting to Meri");
     setSending(true);
     try {
-      const result = await api.agent.chat(trimmed, conversationId);
+      let result: ApiAgentChatResponse | null = null;
+      for await (const event of api.agent.chatStream(trimmed, conversationId)) {
+        if (event.type === "status") setProgress(event.label);
+        if (event.type === "error") throw new Error(event.message);
+        if (event.type === "complete") result = event.data;
+      }
+      if (!result) throw new Error("Meri's response ended before an answer arrived.");
       setActiveConversationId(result.conversation_id);
       lastActivityRef.current = Date.now();
       setMessages((current) => [...current, {
@@ -106,7 +114,7 @@ function useMeriChatState() {
     } catch (cause) {
       setMessages((current) => current.filter((item) => item.id !== userMessage.id));
       setInput(trimmed);
-      setError(cause instanceof ApiError ? cause.message : "Meri could not complete the analysis. Please try again.");
+      setError(cause instanceof Error ? cause.message : "Meri could not complete the analysis. Please try again.");
     } finally {
       sendingRef.current = false;
       setSending(false);
@@ -135,7 +143,7 @@ function useMeriChatState() {
   }
 
   return { messages, conversations, activeConversationId, input, setInput, loadingHistory,
-    loadingConversation, sending, error, confirmClear, setConfirmClear, showHistory, setShowHistory,
+    loadingConversation, sending, progress, error, confirmClear, setConfirmClear, showHistory, setShowHistory,
     popupOpen, setPopupOpen, openConversation, startNewChat, sendMessage, clearConversation,
     deleteConversation };
 }

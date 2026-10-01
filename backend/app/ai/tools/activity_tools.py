@@ -10,7 +10,6 @@ from pydantic import BaseModel, Field, model_validator
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.ai.tool_registry import registry
-from app.core.financial_date import financial_today
 from app.domain.category_mapping import match_existing_category
 from app.persistence.repositories.budget_repository import BudgetRepository
 from app.persistence.repositories.transaction_repository import TransactionRepository
@@ -21,6 +20,11 @@ from app.services.budget_service import BudgetCategoryInput, BudgetService, Budg
 class ActivityScope:
     session: AsyncSession
     user_id: UUID
+    as_of: date | None = None
+
+    @property
+    def today(self) -> date:
+        return self.as_of or date.today()
 
 
 class TransactionSearchInput(BaseModel):
@@ -39,8 +43,7 @@ class TransactionSearchInput(BaseModel):
         return self
 
 
-def _period(start: date | None, end: date | None) -> tuple[date, date]:
-    today = financial_today()
+def _period(start: date | None, end: date | None, today: date) -> tuple[date, date]:
     if start is None and end is None:
         return today.replace(day=1), today
     if start is None:
@@ -56,7 +59,7 @@ def _period(start: date | None, end: date | None) -> tuple[date, date]:
     scoped=True,
 )
 async def search_transactions(args: TransactionSearchInput, scope: ActivityScope) -> dict:
-    start, end = (None, None) if args.start_date is None and args.end_date is None else _period(args.start_date, args.end_date)
+    start, end = (None, None) if args.start_date is None and args.end_date is None else _period(args.start_date, args.end_date, scope.today)
     filters = dict(since=start, until=end, merchant=args.merchant, category=args.category,
                    transaction_type=args.transaction_type)
     repo = TransactionRepository(scope.session)
@@ -98,7 +101,7 @@ class SpendingSummaryInput(BaseModel):
     scoped=True,
 )
 async def get_spending_summary(args: SpendingSummaryInput, scope: ActivityScope) -> dict:
-    start, end = _period(args.start_date, args.end_date)
+    start, end = _period(args.start_date, args.end_date, scope.today)
     filters = dict(since=start, until=end, merchant=args.merchant, category=args.category)
     repo = TransactionRepository(scope.session)
     _, count = await repo.list_for_user(scope.user_id, limit=1, **filters)
@@ -122,7 +125,7 @@ class BudgetSummaryInput(BaseModel):
     scoped=True,
 )
 async def get_budget_summary(args: BudgetSummaryInput, scope: ActivityScope) -> dict:
-    month = (args.month or financial_today()).replace(day=1)
+    month = (args.month or scope.today).replace(day=1)
     end = month.replace(day=monthrange(month.year, month.month)[1])
     repo = BudgetRepository(scope.session)
     categories = await repo.list_categories(scope.user_id)
@@ -146,7 +149,7 @@ async def get_budget_summary(args: BudgetSummaryInput, scope: ActivityScope) -> 
         transaction_inputs.append(BudgetTransactionInput(row.merchant, row.amount, row.status,
                               effective_category, row.type, row.ignored_from_budget, row.category, row.posted_at))
     rollups, uncategorized_spent, uncategorized_pending, uncategorized_count = service.summarize(
-        category_inputs, rule_inputs, transaction_inputs, month, financial_today())
+        category_inputs, rule_inputs, transaction_inputs, month, scope.today)
     if args.category:
         rollups = [row for row in rollups if args.category.casefold() in row.name.casefold()]
     return {"month": month.isoformat()[:7], "category_filter": args.category,

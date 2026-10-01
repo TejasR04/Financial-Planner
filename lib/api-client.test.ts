@@ -100,6 +100,35 @@ describe("formatApiErrorDetail", () => {
   });
 });
 
+describe("agent chat stream", () => {
+  afterEach(() => { setAuthToken(null); vi.restoreAllMocks(); });
+
+  it("parses progress and the answer across network chunk boundaries", async () => {
+    setAuthToken("session");
+    const encoder = new TextEncoder();
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(encoder.encode('{"type":"status","label":"Looking up trans'));
+        controller.enqueue(encoder.encode('actions"}\n{"type":"complete","data":{"conversation_id":"one","reply":"Done","tool_calls":[],"structured_results":[]}}\n'));
+        controller.close();
+      },
+    });
+    const fetchMock = vi.spyOn(globalThis, "fetch").mockResolvedValue(
+      new Response(stream, { status: 200, headers: { "Content-Type": "application/x-ndjson" } }),
+    );
+    const events = [];
+    for await (const event of api.agent.chatStream("What did I spend?")) events.push(event);
+    expect(events).toEqual([
+      { type: "status", label: "Looking up transactions" },
+      { type: "complete", data: { conversation_id: "one", reply: "Done", tool_calls: [], structured_results: [] } },
+    ]);
+    expect(new Headers(fetchMock.mock.calls[0][1]?.headers).get("Authorization")).toBe("Bearer session");
+    expect(JSON.parse(String(fetchMock.mock.calls[0][1]?.body)).time_zone).toBe(
+      Intl.DateTimeFormat().resolvedOptions().timeZone,
+    );
+  });
+});
+
 describe("transactions.listAll", () => {
   afterEach(() => vi.restoreAllMocks());
 

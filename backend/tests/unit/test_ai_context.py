@@ -25,8 +25,12 @@ async def test_context_uses_completed_history_average(monkeypatch):
         user=user, profile=PlanningProfile(user.id), as_of=date(2026, 9, 17)
     )
 
-    payload = json.loads(await context.build_user_financial_context(object(), snapshot))
+    payload = json.loads(await context.build_user_financial_context(
+        object(), snapshot, financial_timezone="EDT"
+    ))
 
+    assert payload["as_of"] == "2026-09-17"
+    assert payload["financial_timezone"] == "EDT"
     assert payload["summary"]["average_monthly_classified_income_completed_history"] == "4000.00"
     assert payload["summary"]["average_monthly_budget_spending_completed_history"] == "2000.00"
     assert payload["summary"]["history_window"].startswith("3 completed months")

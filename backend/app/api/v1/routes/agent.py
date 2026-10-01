@@ -1,10 +1,15 @@
-from datetime import datetime
+from datetime import datetime, timezone
+import asyncio
+from contextlib import suppress
+import json
 import logging
 import re
-from typing import Literal
+from typing import Callable, Literal
 from uuid import UUID
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import APIRouter, Depends, HTTPException, Response, status
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,6 +37,7 @@ class ChatHistoryEntry(BaseModel):
 class ChatRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     conversation_id: UUID | None = None
+    time_zone: str | None = Field(default=None, max_length=100)
     history: list[ChatHistoryEntry] = Field(default_factory=list, max_length=30)
 
 
@@ -92,6 +98,18 @@ def _message_response(row) -> AgentMessageResponse:
     return AgentMessageResponse(
         id=str(row.id), role=row.role, content=row.content, created_at=row.created_at
     )
+
+
+def _chat_local_now(time_zone: str | None, instant: datetime | None = None) -> tuple[datetime, str]:
+    """Resolve the current instant in the browser's timezone, or server local time."""
+    instant = instant or datetime.now(timezone.utc)
+    if time_zone:
+        try:
+            return instant.astimezone(ZoneInfo(time_zone)), time_zone
+        except (ValueError, ZoneInfoNotFoundError):
+            pass
+    local_now = instant.astimezone()
+    return local_now, local_now.tzname() or "system local"
 
 
 @router.get("/conversations", response_model=list[AgentConversationResponse])
@@ -174,12 +192,23 @@ async def chat(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> ChatResponse:
+    return await _run_chat(body, current_user, db)
+
+
+async def _run_chat(
+    body: ChatRequest,
+    current_user: User,
+    db: AsyncSession,
+    on_progress: Callable[[str], None] | None = None,
+) -> ChatResponse:
     user_key = str(current_user.id)
     if not chat_rate_limiter.allow(user_key):
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="Too many assistant requests.")
     if not chat_concurrency_limiter.acquire(user_key):
         raise HTTPException(status_code=status.HTTP_429_TOO_MANY_REQUESTS, detail="An assistant request is already running.")
     try:
+        if on_progress:
+            on_progress("Reading your saved finances")
         try:
             orchestrator = AgentOrchestrator()
         except GeminiConfigurationError as exc:
@@ -206,13 +235,18 @@ async def chat(
             if stored
             else [item.model_dump() for item in body.history]
         )
-        snapshot = await build_financial_snapshot(db, current_user.id)
+        local_now, financial_timezone = _chat_local_now(body.time_zone)
+        snapshot = await build_financial_snapshot(db, current_user.id, as_of=local_now.date())
         selection_query = _activity_selection_query(message, conversation_history)
-        user_context = await build_user_financial_context(db, snapshot, selection_query)
+        user_context = await build_user_financial_context(
+            db, snapshot, selection_query, financial_timezone=financial_timezone
+        )
 
         try:
             result = await orchestrator.handle_message_scoped(
-                message, conversation_history, user_context, ActivityScope(db, current_user.id)
+                message, conversation_history, user_context,
+                ActivityScope(db, current_user.id, snapshot.as_of),
+                on_progress=on_progress,
             )
         except GeminiTemporaryError as exc:
             logger.warning("gemini_temporarily_unavailable", extra={"user_id": user_key}, exc_info=True)
@@ -243,3 +277,46 @@ async def chat(
         )
     finally:
         chat_concurrency_limiter.release(user_key)
+
+
+@router.post("/chat/stream")
+async def chat_stream(
+    body: ChatRequest,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    """Newline-delimited progress events and the final saved chat response."""
+    async def events():
+        queue: asyncio.Queue[dict | None] = asyncio.Queue()
+
+        def progress(label: str) -> None:
+            queue.put_nowait({"type": "status", "label": label})
+
+        async def worker() -> None:
+            try:
+                result = await _run_chat(body, current_user, db, progress)
+                queue.put_nowait({"type": "complete", "data": result.model_dump(mode="json")})
+            except HTTPException as exc:
+                queue.put_nowait({"type": "error", "message": str(exc.detail)})
+            except Exception:
+                logger.exception("gemini_stream_failed", extra={"user_id": str(current_user.id)})
+                queue.put_nowait({"type": "error", "message": "Meri could not complete the analysis. Please try again."})
+            finally:
+                queue.put_nowait(None)
+
+        task = asyncio.create_task(worker())
+        try:
+            while True:
+                event = await queue.get()
+                if event is None:
+                    break
+                yield json.dumps(event, separators=(",", ":")) + "\n"
+        finally:
+            if not task.done():
+                task.cancel()
+                with suppress(asyncio.CancelledError):
+                    await task
+
+    return StreamingResponse(events(), media_type="application/x-ndjson", headers={
+        "Cache-Control": "no-cache", "X-Accel-Buffering": "no",
+    })

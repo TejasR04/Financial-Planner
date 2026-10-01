@@ -4,6 +4,7 @@ import {
   Fragment,
   type FormEvent,
   type KeyboardEvent,
+  type PointerEvent,
   type ReactNode,
   useEffect,
   useRef,
@@ -17,6 +18,7 @@ import {
   Sparkles,
   Trash2,
   ExternalLink,
+  MoveHorizontal,
   X,
   UserRound,
   Wrench,
@@ -102,9 +104,16 @@ function AssistantContent({ content }: { content: string }) {
   );
 }
 
-function LiveGeminiAssistant({ popup = false }: { popup?: boolean }) {
+type PopupPosition = "left" | "center" | "right";
+
+function LiveGeminiAssistant({ popup = false, onMoveStart, onCyclePosition, position }: {
+  popup?: boolean;
+  onMoveStart?: (event: PointerEvent<HTMLDivElement>) => void;
+  onCyclePosition?: () => void;
+  position?: PopupPosition;
+}) {
   const { messages, conversations, activeConversationId, input, setInput, loadingHistory,
-    loadingConversation, sending, error, confirmClear, setConfirmClear, showHistory, setShowHistory,
+    loadingConversation, sending, progress, error, confirmClear, setConfirmClear, showHistory, setShowHistory,
     setPopupOpen, openConversation, startNewChat, sendMessage, clearConversation, deleteConversation } = useMeriChat();
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -132,7 +141,7 @@ function LiveGeminiAssistant({ popup = false }: { popup?: boolean }) {
 
   return (
     <section className={cn("flex min-h-0 flex-col overflow-hidden rounded-lg border border-primary/25 bg-card shadow-sm", popup && "h-full")}>
-      <div className="flex flex-col gap-3 border-b border-border bg-primary/[0.035] px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+      <div onPointerDown={popup ? onMoveStart : undefined} onContextMenu={popup ? (event) => event.preventDefault() : undefined} className={cn("flex flex-col gap-3 border-b border-border bg-primary/[0.035] px-4 py-3 sm:flex-row sm:items-center sm:justify-between", popup && "cursor-grab touch-none select-none")}>
         <div className="flex items-start gap-2.5">
           <span className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <Sparkles className="size-4" />
@@ -148,6 +157,11 @@ function LiveGeminiAssistant({ popup = false }: { popup?: boolean }) {
         </div>
 
         <div className="flex flex-wrap items-center justify-end gap-1.5">
+          {popup && (
+            <Button size="xs" variant="ghost" onClick={onCyclePosition} aria-label={`Move Meri from ${position ?? "right"} to another side`} title="Drag the header or click to change position">
+              <MoveHorizontal /> Move
+            </Button>
+          )}
           {popup ? (
             <Button size="xs" variant="ghost" onClick={() => setPopupOpen(false)} aria-label="Close Meri popup"><X /></Button>
           ) : (
@@ -318,8 +332,13 @@ function LiveGeminiAssistant({ popup = false }: { popup?: boolean }) {
                 <span className="flex size-7 items-center justify-center rounded-full bg-primary/10 text-primary">
                   <Bot className="size-3.5" />
                 </span>
-                <div className="rounded-xl rounded-tl-sm border border-border bg-background px-3.5 py-2.5 text-[13px] text-muted-foreground">
-                  Analyzing your current data…
+                <div role="status" aria-live="polite" className="rounded-xl rounded-tl-sm border border-border bg-background px-3.5 py-2.5 text-[13px] text-muted-foreground">
+                  <span>{progress}</span>
+                  <span aria-hidden="true" className="ml-1 inline-flex gap-0.5">
+                    <span className="animate-pulse [animation-delay:0ms]">.</span>
+                    <span className="animate-pulse [animation-delay:200ms]">.</span>
+                    <span className="animate-pulse [animation-delay:400ms]">.</span>
+                  </span>
                 </div>
               </div>
             )}
@@ -363,7 +382,12 @@ function LiveGeminiAssistant({ popup = false }: { popup?: boolean }) {
   );
 }
 
-export function GeminiAssistant({ popup = false }: { popup?: boolean }) {
+export function GeminiAssistant({ popup = false, onMoveStart, onCyclePosition, position }: {
+  popup?: boolean;
+  onMoveStart?: (event: PointerEvent<HTMLDivElement>) => void;
+  onCyclePosition?: () => void;
+  position?: PopupPosition;
+}) {
   const { isDemo } = useAuth();
-  return isDemo ? <div className="rounded-lg border border-border p-6 text-sm text-muted-foreground">Meri is disabled in demo mode.</div> : <LiveGeminiAssistant popup={popup} />;
+  return isDemo ? <div className="rounded-lg border border-border p-6 text-sm text-muted-foreground">Meri is disabled in demo mode.</div> : <LiveGeminiAssistant popup={popup} onMoveStart={onMoveStart} onCyclePosition={onCyclePosition} position={position} />;
 }

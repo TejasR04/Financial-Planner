@@ -110,6 +110,16 @@ async def test_exact_day_expenses_select_day_and_budget_facts(activity_repositor
 
 
 @pytest.mark.asyncio
+async def test_activity_defaults_to_configured_financial_date(activity_repositories, monkeypatch) -> None:
+    monkeypatch.setattr(relevant_activity, "financial_today", lambda: date(2026, 9, 20))
+    result = await relevant_activity.build_relevant_activity_context(
+        object(), uuid4(), "What were my expenses this month?"
+    )
+    assert result["period"]["start"] == "2026-09-01"
+    assert result["period"]["end"] == "2026-09-20"
+
+
+@pytest.mark.asyncio
 async def test_duration_number_is_not_mistaken_for_an_amount(activity_repositories) -> None:
     result = await relevant_activity.build_relevant_activity_context(
         object(), uuid4(), "Show my transactions for the last 3 months", date(2026, 9, 20)

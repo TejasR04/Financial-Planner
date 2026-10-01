@@ -6,6 +6,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
 
+from app.core.financial_date import financial_today
 from app.domain.entities import Account
 from app.domain.enums import AccountType
 from app.persistence.models import AccountModel, HoldingValueSnapshotModel, InvestmentValueSnapshotModel
@@ -19,7 +20,7 @@ class InvestmentValueSnapshotRepository(BaseRepository[InvestmentValueSnapshotMo
         """Snapshot observed position values, preserving same-day updates and zeroing closed positions."""
         if not account_ids:
             return
-        snapshot_date = as_of or date.today()
+        snapshot_date = as_of or financial_today()
         result = await self.session.execute(select(HoldingValueSnapshotModel).where(
             HoldingValueSnapshotModel.account_id.in_(account_ids),
             HoldingValueSnapshotModel.as_of == snapshot_date,
@@ -86,7 +87,7 @@ class InvestmentValueSnapshotRepository(BaseRepository[InvestmentValueSnapshotMo
         A same-day sync replaces the preliminary value, leaving the chart with
         one clear closing value rather than a noisy series of refreshes.
         """
-        snapshot_date = as_of or date.today()
+        snapshot_date = as_of or financial_today()
         eligible_accounts = [
             account
             for account in accounts

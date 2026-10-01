@@ -4,13 +4,14 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.financial_date import financial_today
 from app.persistence.repositories.budget_repository import BudgetRepository
 from app.services.activity_history import ActivityHistory, ActivityRule, completed_months, shift_month
 from app.services.budget_service import BudgetTransactionInput
 
 
 async def load_activity_history(session: AsyncSession, user_id: UUID, reference: date | None = None) -> ActivityHistory:
-    today = date.today()
+    today = financial_today()
     repo = BudgetRepository(session)
     history_start = await repo.history_start(user_id)
     months = completed_months(history_start, reference or today, today)

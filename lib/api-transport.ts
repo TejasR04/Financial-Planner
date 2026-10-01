@@ -151,12 +151,75 @@ export function refreshAccessToken(): Promise<string> {
 }
 
 export const get = <T>(path: string, options?: RequestInit) =>
-  /^\/(accounts|institutions|transactions|budgets)(\/|\?|$)/.test(path)
+  (/^\/(accounts|institutions|transactions|budgets)(\/|\?|$)/.test(path) || path === "/investments/dashboard")
     ? responseCache.load(path, () => request<T>(path, options), options?.signal)
     : request<T>(path, options);
 
 export const post = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: "POST", body: body ? JSON.stringify(body) : undefined });
+
+export type StreamEvent<T> =
+  | { type: "status"; label: string }
+  | { type: "complete"; data: T }
+  | { type: "error"; message: string };
+
+export async function* streamPost<T>(path: string, body: unknown): AsyncGenerator<StreamEvent<T>> {
+  if (demoMode) throw new ApiError(403, "Meri is disabled in demo mode.");
+  const epoch = authEpoch;
+  const generation = dataGeneration;
+  const open = async (retry: boolean): Promise<Response> => {
+    const headers = new Headers({ "Content-Type": "application/json" });
+    if (authToken) headers.set("Authorization", `Bearer ${authToken}`);
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      method: "POST", body: JSON.stringify(body), headers, credentials: "include",
+    });
+    if (response.status === 401 && retry) {
+      try {
+        await refreshAccessToken();
+      } catch {
+        if (authEpoch === epoch) {
+          setAuthToken(null);
+          onUnauthorized?.();
+        }
+        throw new ApiError(401, "Session expired. Please sign in again.");
+      }
+      return open(false);
+    }
+    if (!response.ok) {
+      let detail = response.statusText;
+      try { detail = formatApiErrorDetail((await response.json())?.detail, detail); } catch { /* non-JSON response */ }
+      if (response.status === 401) {
+        onUnauthorized?.();
+        detail = "Session expired. Please sign in again.";
+      }
+      throw new ApiError(response.status, detail);
+    }
+    return response;
+  };
+  const response = await open(true);
+  if (!response.body) throw new ApiError(502, "Meri's response stream is unavailable.");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let pending = "";
+  let finished = false;
+  try {
+    while (true) {
+      if (generation !== dataGeneration || epoch !== authEpoch) throw new ApiError(409, "Session changed during the request.");
+      const { done, value } = await reader.read();
+      pending += decoder.decode(value, { stream: !done });
+      const lines = pending.split("\n");
+      pending = lines.pop() ?? "";
+      if (done && pending.trim()) lines.push(pending);
+      for (const line of lines) {
+        if (line.trim()) yield JSON.parse(line) as StreamEvent<T>;
+      }
+      if (done) { finished = true; break; }
+    }
+  } finally {
+    if (!finished) await reader.cancel().catch(() => {});
+    reader.releaseLock();
+  }
+}
 
 export const patch = <T>(path: string, body?: unknown) =>
   request<T>(path, { method: "PATCH", body: body ? JSON.stringify(body) : undefined });

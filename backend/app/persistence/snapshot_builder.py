@@ -12,6 +12,7 @@ from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.financial_date import financial_today
 from app.domain.entities import FinancialSnapshot
 from app.persistence.repositories.account_repository import AccountRepository
 from app.persistence.repositories.holding_repository import HoldingRepository
@@ -20,7 +21,9 @@ from app.persistence.repositories.liability_repository import LiabilityRepositor
 from app.persistence.repositories.user_repository import UserRepository
 
 
-async def build_financial_snapshot(session: AsyncSession, user_id: UUID) -> FinancialSnapshot:
+async def build_financial_snapshot(
+    session: AsyncSession, user_id: UUID, *, as_of: date | None = None
+) -> FinancialSnapshot:
     user_repo = UserRepository(session)
     user = await user_repo.get_by_id(user_id)
     profile = await user_repo.get_planning_profile(user_id)
@@ -37,5 +40,5 @@ async def build_financial_snapshot(session: AsyncSession, user_id: UUID) -> Fina
         holdings=holdings,
         liabilities=liabilities,
         income_sources=income_sources,
-        as_of=date.today(),
+        as_of=as_of or financial_today(),
     )

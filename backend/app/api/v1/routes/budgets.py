@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
+from app.core.financial_date import financial_today
 from app.domain.entities import User
 from app.domain.enums import TransactionType
 from app.domain.merchant_rules import normalize_merchant_rule
@@ -114,7 +115,7 @@ async def delete_merchant_rule(
 async def budget_summary(
     month: date | None = None, current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)
 ):
-    selected_month = (month or date.today()).replace(day=1)
+    selected_month = (month or financial_today()).replace(day=1)
     end = selected_month.replace(day=monthrange(selected_month.year, selected_month.month)[1])
     repo = BudgetRepository(db)
     await repo.apply_category_defaults_for_user(current_user.id)
@@ -130,7 +131,7 @@ async def budget_summary(
     previous_inputs = [BudgetTransactionInput(row.merchant, row.amount, row.status, row.budget_category_id,
                        row.type, row.ignored_from_budget, row.category, row.posted_at) for row in previous_rows]
     history_start = await repo.history_start(current_user.id)
-    as_of = date.today()
+    as_of = financial_today()
     history = await load_activity_history(db, current_user.id, selected_month)
     rollups, uncategorized_spent, uncategorized_pending, uncategorized_count = service.summarize(
         [BudgetCategoryInput(row.id, row.name, row.group_name, row.monthly_limit, row.active) for row in categories],

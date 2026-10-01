@@ -2,7 +2,7 @@
 // that knows the backend's response shapes; lib/data-provider.tsx maps
 // these onto the display types in lib/data.ts.
 
-import { del, get, patch, post, put, refreshAccessToken } from "@/lib/api-transport";
+import { del, get, patch, post, put, refreshAccessToken, streamPost } from "@/lib/api-transport";
 
 export {
   ApiError,
@@ -437,10 +437,17 @@ export const api = {
       post<void>("/auth/password-reset/confirm", { token, password }),
   },
   agent: {
+    chatStream: (message: string, conversationId?: string | null) =>
+      streamPost<ApiAgentChatResponse>("/agent/chat/stream", {
+        message,
+        conversation_id: conversationId ?? null,
+        time_zone: typeof window === "undefined" ? null : Intl.DateTimeFormat().resolvedOptions().timeZone,
+      }),
     chat: (message: string, conversationId?: string | null) =>
       post<ApiAgentChatResponse>("/agent/chat", {
         message,
         conversation_id: conversationId ?? null,
+        time_zone: typeof window === "undefined" ? null : Intl.DateTimeFormat().resolvedOptions().timeZone,
       }),
     conversations: () => get<ApiAgentConversation[]>("/agent/conversations"),
     conversationMessages: (conversationId: string) =>

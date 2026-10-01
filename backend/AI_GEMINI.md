@@ -5,6 +5,11 @@ Python SDK. The deterministic financial tools remain provider-independent;
 the Gemini adapter only translates function declarations, conversation parts,
 and function responses.
 
+The UI uses `/api/v1/agent/chat/stream`, which emits newline-delimited JSON
+status events while it loads user context or runs a tool, followed by one
+complete event containing the saved answer. The non-streaming endpoint remains
+available for API clients.
+
 ## Configuration
 
 Add these values to `backend/.env` (never commit the key):
@@ -41,6 +46,12 @@ when the question calls for them. Meri can also use authenticated, read-only
 tools during the conversation to search transactions, calculate complete
 spending totals, or retrieve a monthly budget summary. Transaction details
 are paged, and the model cannot choose a different user ID.
+
+The web app sends the browser's current timezone with each Meri request. The
+API uses the current clock in that timezone to resolve "today" and "this
+month". API clients that omit a timezone fall back to the API server's system
+timezone. The configured financial timezone is still used by other financial
+workflows; it does not set Meri's date.
 
 Conversation messages are stored per user in `agent_messages`; the Insights
 view and bottom-right Meri popup share that history and active conversation.

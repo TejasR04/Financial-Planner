@@ -1,3 +1,4 @@
+from datetime import date
 from decimal import Decimal
 
 from pydantic import BaseModel
@@ -58,7 +59,6 @@ class AnalyzeAllocationInput(BaseModel):
     AnalyzeAllocationInput,
 )
 def analyze_allocation(args: AnalyzeAllocationInput):
-    from datetime import date
     from uuid import uuid4
 
     from app.domain.entities import Holding

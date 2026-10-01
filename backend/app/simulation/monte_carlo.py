@@ -106,61 +106,61 @@ def run_monte_carlo(
         raise ValueError("annual_withdrawal_growth_rate must be between -0.20 and 0.20")
 
     rng = random.Random(seed)
-    endings: list[Decimal] = []
+    # Monte Carlo samples are approximate by nature. Float arithmetic avoids
+    # repeated Decimal fractional powers in every trial and year.
+    endings: list[float] = []
     successes = 0
 
     mean = float(expected_return)
     stdev = float(return_volatility)
-    growth_factor = Decimal("1") + annual_withdrawal_growth_rate
-    monthly_contribution = annual_contribution / Decimal("12")
+    growth_factor = 1.0 + float(annual_withdrawal_growth_rate)
+    monthly_contribution = float(annual_contribution) / 12.0
+    fee_factor = 1.0 - float(annual_fee_rate)
+    fixed_withdrawal = float(annual_withdrawal)
+    withdrawal_rate = float(withdrawal_rate_at_retirement) if withdrawal_rate_at_retirement is not None else None
+    target = float(target_balance)
 
     for _ in range(trials):
-        balance = starting_balance
+        balance = float(starting_balance)
         for _year in range(years):
-            sampled_rate = Decimal(str(rng.normalvariate(mean, stdev)))
-            net_annual_factor = max(
-                ZERO,
-                (Decimal("1") + sampled_rate) * (Decimal("1") - annual_fee_rate),
-            )
-            monthly_factor = net_annual_factor ** (Decimal("1") / Decimal("12"))
+            sampled_rate = rng.normalvariate(mean, stdev)
+            net_annual_factor = max(0.0, (1.0 + sampled_rate) * fee_factor)
+            monthly_factor = net_annual_factor ** (1.0 / 12.0)
             for _month in range(12):
                 balance = balance * monthly_factor + monthly_contribution
 
         ran_out = False
         withdrawal = (
-            balance * withdrawal_rate_at_retirement
-            if withdrawal_rate_at_retirement is not None
-            else annual_withdrawal
+            balance * withdrawal_rate
+            if withdrawal_rate is not None
+            else fixed_withdrawal
         )
         for _year in range(retirement_years):
-            sampled_rate = Decimal(str(rng.normalvariate(mean, stdev)))
+            sampled_rate = rng.normalvariate(mean, stdev)
             if balance < withdrawal:
-                balance = ZERO
+                balance = 0.0
                 ran_out = True
             else:
                 balance = balance - withdrawal
-                balance = balance * max(
-                    ZERO,
-                    (Decimal("1") + sampled_rate) * (Decimal("1") - annual_fee_rate),
-                )
-                if balance < ZERO:
-                    balance = ZERO
+                balance = balance * max(0.0, (1.0 + sampled_rate) * fee_factor)
+                if balance < 0.0:
+                    balance = 0.0
             withdrawal = withdrawal * growth_factor
 
         endings.append(balance)
         if retirement_years > 0:
             if not ran_out:
                 successes += 1
-        elif balance >= target_balance:
+        elif balance >= target:
             successes += 1
 
     endings_sorted = sorted(endings)
     n = len(endings_sorted)
-    def nearest_rank(percentile: Decimal) -> Decimal:
-        return endings_sorted[max(0, math.ceil(float(percentile) * n) - 1)]
-    median = nearest_rank(Decimal("0.50"))
-    p10 = nearest_rank(Decimal("0.10"))
-    p90 = nearest_rank(Decimal("0.90"))
+    def nearest_rank(percentile: float) -> Decimal:
+        return Decimal(str(endings_sorted[max(0, math.ceil(percentile * n) - 1)]))
+    median = nearest_rank(0.50)
+    p10 = nearest_rank(0.10)
+    p90 = nearest_rank(0.90)
 
     return MonteCarloResult(
         trials=trials,

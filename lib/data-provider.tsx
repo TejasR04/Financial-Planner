@@ -212,6 +212,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           investmentDashboard,
           activitySummary,
           budgetCategories,
+          insightRows,
         ] = await Promise.all([
           api.users.me(),
           api.users.planningProfile(),
@@ -232,8 +233,8 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
           optional("investment details", api.investments.dashboard(), null, false),
           optional("activity summary", api.activity.summary(), null, false),
           optional("budget categories", api.budgets.categories(controller.signal), []),
+          optional("insights", api.insights.list(), []),
         ]);
-        const insightRows = await optional("insights", api.insights.list(), []);
 
         const currentAge = ageFromBirthDate(user.date_of_birth);
         const currentYear = new Date().getFullYear();
@@ -347,7 +348,7 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
         ];
 
         // --- net worth series: today (real) + forward projection -------
-        let netWorthSeries: NetWorthPoint[] = [
+        const netWorthSeries: NetWorthPoint[] = [
           {
             month: "Today",
             assets: parseFloat(accountList.total_assets),
@@ -355,29 +356,30 @@ export function DataProvider({ children }: { children: React.ReactNode }) {
             net: netWorthToday,
           },
         ];
-        if (currentAge != null) try {
-          const projection = await api.simulations.netWorth({
-            current_age: currentAge,
-            retirement_age: planningProfile.target_retirement_age,
-            years: Math.max(1, planningProfile.target_retirement_age - currentAge),
-            expected_return: planningProfile.expected_return,
-            annual_net_contribution: String(Math.max(0, averageMonthlySurplus ?? 0) * 12),
-          });
-          netWorthSeries = [
-            ...netWorthSeries,
-            ...projection.series
-              .filter((p) => p.year_index > 0)
-              .map((p) => ({
+        // The current value is enough to paint the app. Fill in the forward
+        // chart after the initial screen is visible.
+        if (currentAge != null) void api.simulations.netWorth({
+          current_age: currentAge,
+          retirement_age: planningProfile.target_retirement_age,
+          years: Math.max(1, planningProfile.target_retirement_age - currentAge),
+          expected_return: planningProfile.expected_return,
+          annual_net_contribution: String(Math.max(0, averageMonthlySurplus ?? 0) * 12),
+        }).then((projection) => {
+          if (cancelled) return;
+          setState((current) => ({
+            ...current,
+            netWorthSeries: [
+              ...netWorthSeries,
+              ...projection.series.filter((p) => p.year_index > 0).map((p) => ({
                 month: String(currentYear + p.year_index),
                 assets: parseFloat(p.assets),
                 liabilities: parseFloat(p.liabilities),
                 net: parseFloat(p.net),
                 projected: true,
               })),
-          ];
-        } catch {
-          // projection is best-effort; the "today" point still renders.
-        }
+            ],
+          }));
+        }).catch(() => {});
 
         // --- allocation --------------------------------------------------
         const allocation: AllocationSlice[] = (allocationAnalysis?.breakdown ?? []).map(
