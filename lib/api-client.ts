@@ -532,6 +532,8 @@ export const api = {
     deleteHolding: (id: string) => del<void>(`/holdings/${id}`),
   },
   investments: {
+    accountHistory: (accountId: string) =>
+      get<{ account_id: string; history: { date: string; value: string }[] }>(`/investments/accounts/history?account_id=${encodeURIComponent(accountId)}`),
     dashboard: () => get<ApiInvestmentDashboard>("/investments/dashboard"),
     holdingHistory: (accountId: string, symbol: string) =>
       get<ApiInvestmentHoldingHistory>(`/investments/holdings/history?account_id=${encodeURIComponent(accountId)}&symbol=${encodeURIComponent(symbol)}`),

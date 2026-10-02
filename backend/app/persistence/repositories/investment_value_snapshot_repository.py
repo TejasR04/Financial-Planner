@@ -81,6 +81,16 @@ class InvestmentValueSnapshotRepository(BaseRepository[InvestmentValueSnapshotMo
         )
         return [(as_of, Decimal(value)) for as_of, value in result.all()]
 
+    async def account_history_for_user(self, user_id: UUID, account_id: UUID) -> list[tuple[date, Decimal]]:
+        result = await self.session.execute(
+            select(InvestmentValueSnapshotModel.as_of, InvestmentValueSnapshotModel.value)
+            .join(AccountModel, AccountModel.id == InvestmentValueSnapshotModel.account_id)
+            .where(AccountModel.user_id == user_id, AccountModel.archived_at.is_(None),
+                   InvestmentValueSnapshotModel.account_id == account_id)
+            .order_by(InvestmentValueSnapshotModel.as_of)
+        )
+        return [(as_of, Decimal(value)) for as_of, value in result.all()]
+
     async def record_for_accounts(self, accounts: list[Account], as_of: date | None = None) -> None:
         """Store the latest value once per account per calendar day.
 

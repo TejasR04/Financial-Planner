@@ -17,6 +17,7 @@ from app.persistence.repositories.institution_repository import InstitutionRepos
 from app.persistence.repositories.investment_value_snapshot_repository import InvestmentValueSnapshotRepository
 from app.schemas.investment import (
     InvestmentAccountResponse,
+    InvestmentAccountHistoryResponse,
     InvestmentAllocationResponse,
     InvestmentDashboardResponse,
     InvestmentHoldingResponse,
@@ -37,6 +38,22 @@ def _display_history(rows: list[tuple[date, Decimal]], today: date) -> list[Inve
         elif today not in by_day:
             by_day[today] = value
     return [InvestmentValuePointResponse(date=as_of, value=value) for as_of, value in sorted(by_day.items())]
+
+
+@router.get("/accounts/history", response_model=InvestmentAccountHistoryResponse)
+async def get_account_history(
+    account_id: UUID,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> InvestmentAccountHistoryResponse:
+    account = await AccountRepository(db).get_for_user(current_user.id, account_id)
+    if account.type not in {AccountType.INVESTMENT, AccountType.RETIREMENT}:
+        raise HTTPException(404, "Investment account not found.")
+    today = financial_today()
+    rows = await InvestmentValueSnapshotRepository(db).account_history_for_user(current_user.id, account_id)
+    rows = [(as_of, value) for as_of, value in rows if as_of < today]
+    rows.append((today, account.balance))
+    return InvestmentAccountHistoryResponse(account_id=account_id, history=_display_history(rows, today))
 
 
 @router.get("/holdings/history", response_model=InvestmentHoldingHistoryResponse)

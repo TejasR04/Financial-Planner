@@ -88,3 +88,34 @@ async def test_holding_history_orders_dates_and_replaces_today_without_changing_
     ]
     assert result.last_price == Decimal("60")
     assert result.price_as_of == date(2026, 9, 25)
+
+
+@pytest.mark.asyncio
+async def test_account_history_is_scoped_and_replaces_current_day(monkeypatch):
+    user = User(uuid4(), "test@example.com", "Test")
+    account_id = uuid4()
+    today = date(2026, 9, 28)
+    past = today - timedelta(days=1)
+    snapshots = SimpleNamespace(account_history_for_user=AsyncMock(return_value=[
+        (past, Decimal("100")), (today, Decimal("110")),
+    ]))
+    account = SimpleNamespace(type=AccountType.RETIREMENT, balance=Decimal("125"))
+    account_repo = SimpleNamespace(get_for_user=AsyncMock(return_value=account))
+    monkeypatch.setattr(investments, "financial_today", lambda: today)
+    monkeypatch.setattr(investments, "AccountRepository", lambda _: account_repo)
+    monkeypatch.setattr(investments, "InvestmentValueSnapshotRepository", lambda _: snapshots)
+    result = await investments.get_account_history(account_id, user, None)
+    account_repo.get_for_user.assert_awaited_once_with(user.id, account_id)
+    snapshots.account_history_for_user.assert_awaited_once_with(user.id, account_id)
+    assert result.account_id == account_id
+    assert [(point.date, point.value) for point in result.history] == [(past, Decimal("100")), (today, Decimal("125"))]
+
+
+@pytest.mark.asyncio
+async def test_account_history_rejects_noninvestment_accounts(monkeypatch):
+    from fastapi import HTTPException
+    account = SimpleNamespace(type=AccountType.DEPOSITORY)
+    monkeypatch.setattr(investments, "AccountRepository", lambda _: SimpleNamespace(get_for_user=AsyncMock(return_value=account)))
+    with pytest.raises(HTTPException) as error:
+        await investments.get_account_history(uuid4(), User(uuid4(), "test@example.com", "Test"), None)
+    assert error.value.status_code == 404

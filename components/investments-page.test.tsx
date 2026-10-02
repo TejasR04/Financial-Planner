@@ -3,7 +3,7 @@ import type { ReactNode } from "react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import InvestmentsPage from "@/app/(app)/investments/page";
 
-const mocks = vi.hoisted(() => ({ dashboard: vi.fn(), holdingHistory: vi.fn() }));
+const mocks = vi.hoisted(() => ({ dashboard: vi.fn(), holdingHistory: vi.fn(), accountHistory: vi.fn() }));
 vi.mock("@/lib/api-client", () => ({ ApiError: class extends Error {}, api: { investments: mocks } }));
 vi.mock("@/lib/data-provider", () => ({ useDataGeneration: () => 0 }));
 vi.mock("recharts", () => ({
@@ -131,6 +131,7 @@ it("filters daily position values by each range and displays the latest per-asse
   expect(screen.getByText("Latest asset price")).toBeInTheDocument();
   expect(screen.getByText("$140.75")).toBeInTheDocument();
   expect(screen.getByText("Current position value").nextElementSibling).toHaveTextContent("$2,500.00");
+  fireEvent.click(screen.getByRole("button", { name: "All time" }));
   expect(screen.getByTestId("investment-chart-data").getAttribute("data-values")).toBe(allDates.map((_, index) => String(2000 + index * 100)).join("|"));
   expect(screen.getByTestId("investment-chart-data").getAttribute("data-labels")).toBe(allDates.map(displayDate).join("|"));
 
@@ -175,4 +176,47 @@ it("shows loading state while individual history is pending and dates a single d
   expect(await screen.findByText(`Recorded ${displayDate(onlyDate)}. This position's graph needs at least two dated values.`)).toBeInTheDocument();
   expect(screen.getByText("No price is available for this position.")).toBeInTheDocument();
   expect(screen.queryByTestId("investment-chart-data")).not.toBeInTheDocument();
+});
+
+it("groups holdings by account, toggles charts, preserves ranges, and resets on remount", async () => {
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(2026, 8, 28, 12));
+  mocks.dashboard.mockResolvedValue({ total_value: "3000", total_holdings_value: "3000", total_cost_basis: "0", total_gain_loss: null,
+    account_count: 2, holding_count: 2, accounts: [
+      { id: "one", name: "Brokerage", balance: "1000", type: "investment", institution: null, updated_at: null },
+      { id: "two", name: "Retirement", balance: "2000", type: "retirement", institution: null, updated_at: null },
+    ], allocation: [], history: [{ date: "2026-09-25", value: "2700" }, { date: "2026-09-28", value: "3000" }],
+    holdings: [
+      { account_id: "two", account_name: "Retirement", symbol: "VOO", quantity: "2", cost_basis: null, market_value: "2000", gain_loss: null, asset_class: "equity", as_of: "2026-09-28" },
+      { account_id: "one", account_name: "Brokerage", symbol: "VTI", quantity: "1", cost_basis: null, market_value: "1000", gain_loss: null, asset_class: "equity", as_of: "2026-09-28" },
+    ],
+  });
+  mocks.accountHistory.mockResolvedValue({ account_id: "two", history: [{ date: "2026-09-25", value: "1800" }, { date: "2026-09-28", value: "2000" }] });
+  mocks.holdingHistory.mockResolvedValue({ account_id: "two", symbol: "VOO", last_price: null, price_as_of: null, history: [{ date: "2026-09-25", value: "1800" }, { date: "2026-09-28", value: "2000" }] });
+  const view = render(<InvestmentsPage />);
+  await screen.findByRole("button", { name: "View Retirement account chart" });
+  const rows = screen.getByRole("table").querySelectorAll("tbody tr");
+  expect(Array.from(rows).map((row) => row.textContent)).toEqual([
+    expect.stringContaining("Brokerage"), expect.stringContaining("VTI"), expect.stringContaining("Retirement"), expect.stringContaining("VOO"),
+  ]);
+  expect(screen.getByRole("button", { name: "YTD" })).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(screen.getByRole("button", { name: "1D" }));
+  fireEvent.click(screen.getByRole("button", { name: "View Retirement account chart" }));
+  expect(await screen.findByText("Retirement value")).toBeInTheDocument();
+  expect(mocks.accountHistory).toHaveBeenCalledWith("two");
+  expect(await screen.findByTestId("investment-chart-data")).toHaveAttribute("data-values", "1800|2000");
+  expect(screen.queryByText("Latest asset price")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "1D" })).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(screen.getByRole("button", { name: "View Retirement account chart" }));
+  expect(screen.getByText("Investment value")).toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "View VOO in Retirement chart" }));
+  await screen.findByTestId("investment-chart-data");
+  expect(screen.getByRole("button", { name: "1D" })).toHaveAttribute("aria-pressed", "true");
+  fireEvent.click(screen.getByRole("button", { name: "View VOO in Retirement chart" }));
+  expect(screen.getByText("Investment value")).toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "1D" })).toHaveAttribute("aria-pressed", "true");
+  view.unmount();
+  render(<InvestmentsPage />);
+  await screen.findByRole("button", { name: "View Retirement account chart" });
+  expect(screen.getByRole("button", { name: "YTD" })).toHaveAttribute("aria-pressed", "true");
 });
