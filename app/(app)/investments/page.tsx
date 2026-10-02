@@ -186,7 +186,7 @@ export default function InvestmentsPage() {
       <Panel id="investment-value-chart" className="mt-4 scroll-mt-20">
         <PanelHeader
           title={selectedHolding ? `${selectedHolding.symbol ?? selectedHolding.accountName} value` : "Investment value"}
-          description={selectedHolding ? `${selectedHolding.accountName} · ${selectedHolding.symbol ? "position market value over time" : "all investments · daily account balances"}` : "All brokerage and retirement accounts · daily account balances"}
+          description={selectedHolding ? `${selectedHolding.accountName} Â· ${selectedHolding.symbol ? "position market value over time" : "all investments Â· daily account balances"}` : "All brokerage and retirement accounts Â· daily account balances"}
           actions={selectedHolding && <button type="button" onClick={showTotal} className="inline-flex items-center gap-1.5 rounded-md border border-border px-2.5 py-1.5 text-xs font-medium text-foreground transition-colors hover:bg-muted focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"><ArrowLeft className="size-3.5" /> Back to total</button>}
         />
         <div className="flex flex-wrap items-start justify-between gap-4 px-4 pt-4">
