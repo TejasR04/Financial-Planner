@@ -84,8 +84,8 @@ def repair(connection) -> None:
         # Preserve observed past points; historical prices/allocation are unknown.
         connection.execute(sa.text("""
             INSERT INTO holding_value_snapshots (id, account_id, symbol, as_of, value)
-            SELECT md5(account_id::text || upper(trim(symbol)) || CAST(:today AS text))::uuid,
-                   account_id, upper(trim(symbol)), :today, SUM(market_value)
+            SELECT md5(account_id::text || upper(trim(symbol)) || CAST(CAST(:today AS date) AS text))::uuid,
+                   account_id, upper(trim(symbol)), CAST(:today AS date), SUM(market_value)
             FROM holdings WHERE account_id = :account_id
             GROUP BY account_id, upper(trim(symbol))
             ON CONFLICT (account_id, symbol, as_of) DO UPDATE SET value = EXCLUDED.value

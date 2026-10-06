@@ -49,6 +49,10 @@ class RepairConnection:
                               "quantity": parameters["amount"], "cost_basis": parameters["amount"]})
         elif "INSERT INTO holding_value_snapshots" in sql:
             assert set(statement.compile().params) == {"today", "account_id"}
+            # The same bound date is used in both a UUID seed and a date column.
+            # Casting directly to text first makes PostgreSQL infer a text bind.
+            assert "CAST(CAST(:today AS date) AS text)" in sql
+            assert "upper(trim(symbol)), CAST(:today AS date), SUM(market_value)" in sql
             self.snapshots.append(sum(h["market_value"] for h in self.rows))
         elif "UPDATE investment_contribution_adjustments" in sql:
             self.applied = True
