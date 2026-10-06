@@ -23,6 +23,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import ProviderError
 from app.domain.entities import Account, Holding, Institution, Transaction
+from app.domain.cash_flow import is_card_payment
 from app.domain.enums import AccountStatus, AccountType, AssetClass, TransactionStatus, TransactionType
 from app.persistence.repositories.account_repository import AccountRepository
 from app.persistence.repositories.budget_repository import BudgetRepository
@@ -358,16 +359,7 @@ def _to_account_entity(user_id: UUID, institution_id: UUID, raw: RawPlaidAccount
 
 def _to_transaction_entity(raw: RawPlaidTransaction, account_id: UUID, account_type: AccountType) -> Transaction:
     normalized_category = raw.category.upper()
-    normalized_merchant = raw.merchant.upper()
-    is_credit_card_payment = (
-        normalized_category == "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"
-        or "PAYMENT - BILT" in normalized_merchant
-        or (
-            normalized_category == "LOAN_PAYMENTS"
-            and any(marker in normalized_merchant for marker in ("CREDIT CRD", "CREDIT CARD", "AUTOPAY PAYMENT", "AUTOMATIC PAYMENT", "PAYMENT - THANK"))
-        )
-    )
-    if is_credit_card_payment:
+    if is_card_payment("", raw.category, raw.merchant):
         transaction_type = TransactionType.CREDIT_CARD_PAYMENT
     elif normalized_category.startswith("TRANSFER"):
         transaction_type = TransactionType.TRANSFER

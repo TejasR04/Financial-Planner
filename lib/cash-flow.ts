@@ -4,10 +4,12 @@ type CashFlowTransaction = Pick<ApiTransaction, "type" | "category" | "merchant"
 
 export function isCardPayment(transaction: CashFlowTransaction): boolean {
   const category = transaction.category.toUpperCase();
-  const merchant = transaction.merchant.toUpperCase();
+  const merchant = transaction.merchant.trim().toUpperCase();
   return transaction.type === "credit_card_payment"
     || category === "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT"
     || merchant.includes("PAYMENT - BILT")
+    // Keep the actual bank housing withdrawal as spending; exclude its card leg.
+    || merchant === "BILT HOUSING PAYMENT"
     || (category === "LOAN_PAYMENTS" && ["CREDIT CRD", "CREDIT CARD", "AUTOPAY PAYMENT", "AUTOMATIC PAYMENT", "PAYMENT - THANK"].some((marker) => merchant.includes(marker)));
 }
 

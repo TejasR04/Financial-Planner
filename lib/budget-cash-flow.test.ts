@@ -10,6 +10,17 @@ const row = (overrides: Partial<ApiTransaction> = {}): ApiTransaction => ({
 });
 
 describe("budget-based cash flow", () => {
+  it("counts housing once when Bilt reports a bank withdrawal and both card legs", () => {
+    const transactions = [
+      row({ merchant: "Bilt Card - HOUSING Withdrawal WITHDRAWAL", amount: "-2100" }),
+      row({ merchant: "Bilt Housing Payment", amount: "-2100" }),
+      row({ merchant: "Payment - Bilt Housing", type: "credit_card_payment", amount: "2100" }),
+    ].map((item) => ({ ...item, budget_category_id: "housing", budget_category_name: "Housing" }));
+    expect(transactions.reduce((sum, item) => sum + budgetCashFlowAmounts(item).expenses, 0)).toBe(2100);
+    expect(groupBudgetCashFlowTransactions(transactions, "outflow")[0]).toMatchObject({ name: "Housing", total: 2100 });
+    expect(groupBudgetCashFlowTransactions(transactions, "inflow")).toHaveLength(0);
+  });
+
   it("nets dining charges, refunds and both directions of categorized Zelle transfers", () => {
     const transactions = [row(), row({ id: "2", type: "transfer", merchant: "Zelle reimbursement", amount: "60" }),
       row({ id: "3", type: "transfer", merchant: "Zelle dinner", amount: "-30" }), row({ id: "4", amount: "10" })];

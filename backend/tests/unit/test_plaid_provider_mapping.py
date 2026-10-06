@@ -197,6 +197,20 @@ def test_bilt_card_payment_has_distinct_type_even_when_provider_calls_it_income(
     assert transaction.type == TransactionType.CREDIT_CARD_PAYMENT
 
 
+@pytest.mark.parametrize("merchant,account_type,expected", [
+    ("Bilt Housing Payment", AccountType.CREDIT, TransactionType.CREDIT_CARD_PAYMENT),
+    (" bilt housing payment ", AccountType.CREDIT, TransactionType.CREDIT_CARD_PAYMENT),
+    ("Bilt Card - HOUSING Withdrawal WITHDRAWAL", AccountType.DEPOSITORY, TransactionType.EXPENSE),
+])
+def test_bilt_housing_card_leg_is_not_a_second_rent_expense(merchant, account_type, expected):
+    raw = RawPlaidTransaction(
+        external_transaction_id="bilt-housing", external_account_id="account-1",
+        posted_at=date(2026, 10, 2), merchant=merchant,
+        category="RENT_AND_UTILITIES_RENT", amount=Decimal("-2100"), pending=False,
+    )
+    assert _to_transaction_entity(raw, uuid4(), account_type).type == expected
+
+
 def test_etf_holding_maps_to_equity():
     raw = RawPlaidHolding(
         external_account_id="account-1",

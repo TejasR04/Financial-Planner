@@ -82,6 +82,7 @@ class TransactionRepository(BaseRepository[TransactionModel]):
             recognized_card_payment = (
                 (upper_category == "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT")
                 | upper_merchant.contains("PAYMENT - BILT")
+                | (func.trim(upper_merchant) == "BILT HOUSING PAYMENT")
                 | (
                     (upper_category == "LOAN_PAYMENTS")
                     & (

@@ -76,3 +76,30 @@ def test_cumulative_spending_distinguishes_missing_history_and_zero_activity():
     from app.services.budget_service import cumulative_spending
     assert cumulative_spending([], date(2024, 2, 1), date(2024, 3, 1), None) == [None] * 29
     assert cumulative_spending([], date(2024, 2, 1), date(2024, 3, 1), date(2024, 1, 1)) == [Decimal(0)] * 29
+
+
+def test_bilt_housing_counts_bank_withdrawal_once_across_budget_and_history():
+    from app.services.budget_service import cumulative_spending, reconcile_budget
+    from app.services.activity_history import ActivityHistory
+
+    housing_id = uuid4()
+    rows = [
+        BudgetTransactionInput(merchant, Decimal(amount), "cleared", housing_id,
+                               kind, provider_category=category, posted_at=date(2026, 10, 2))
+        for merchant, amount, kind, category in [
+            ("Bilt Card - HOUSING Withdrawal WITHDRAWAL", "-2100", "expense", "RENT_AND_UTILITIES_RENT"),
+            ("Bilt Housing Payment", "-2100", "expense", "RENT_AND_UTILITIES_RENT"),
+            ("Payment - Bilt Housing", "2100", "credit_card_payment", "INCOME_RENTAL"),
+        ]
+    ]
+    rollups, unassigned, _, _ = BudgetService().summarize(
+        [BudgetCategoryInput(housing_id, "Housing", "Needs", Decimal("2100"), True)],
+        [], rows, date(2026, 10, 1), date(2026, 10, 5),
+    )
+    assert rollups[0].spent == Decimal("2100")
+    assert rollups[0].remaining == 0
+    assert unassigned == 0
+    assert reconcile_budget(rows)["budget_spending"] == Decimal("2100")
+    assert cumulative_spending(rows, date(2026, 10, 1), date(2026, 10, 5), date(2026, 1, 1))[4] == Decimal("2100")
+    history = ActivityHistory([date(2026, 10, 1)], rows)
+    assert history.budget_monthly_cash_flow([(housing_id, "Housing")], []) == (0, Decimal("2100"))

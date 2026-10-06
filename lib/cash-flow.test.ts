@@ -15,5 +15,7 @@ describe("cash-flow accounting", () => {
   it("excludes transfers and legacy card payments", () => {
     expect(cashFlowAmounts({ ...base, type: "transfer", amount: "49" })).toEqual({ income: 0, expenses: 0 });
     expect(cashFlowAmounts({ ...base, merchant: "PAYMENT - BILT", amount: "-100" }).expenses).toBe(0);
+    expect(cashFlowAmounts({ ...base, merchant: " bilt housing payment ", amount: "-2100" }).expenses).toBe(0);
+    expect(cashFlowAmounts({ ...base, merchant: "Bilt Card - HOUSING Withdrawal WITHDRAWAL", amount: "-2100" }).expenses).toBe(2100);
   });
 });
