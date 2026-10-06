@@ -9,10 +9,12 @@ from sqlalchemy import delete, func, select, update
 
 from app.core.exceptions import ValidationError
 from app.core.config import get_settings
+from app.core.financial_date import financial_today
 from app.domain.entities import Account
 from app.domain.enums import AccountStatus, AccountType
 from app.persistence.models import AccountModel, HoldingModel, InvestmentValueSnapshotModel, LiabilityModel, TransactionModel
 from app.persistence.repositories.base import BaseRepository
+from app.persistence.repositories.holding_repository import HoldingRepository
 
 
 class AccountRepository(BaseRepository[AccountModel]):
@@ -148,6 +150,7 @@ class AccountRepository(BaseRepository[AccountModel]):
 
     async def update_for_user(self, user_id: UUID, account_id: UUID, **fields) -> Account:
         row = await self._row_for_user(user_id, account_id)
+        previous_balance = row.balance
         linked = row.institution_id is not None
         if linked and any(field != "name" for field in fields):
             raise ValidationError("Linked account balances and details are managed by the institution; only the account name can be edited.")
@@ -167,6 +170,14 @@ class AccountRepository(BaseRepository[AccountModel]):
             liability = await self.session.scalar(select(LiabilityModel).where(LiabilityModel.account_id == account_id))
             if liability is not None:
                 liability.last_interest_accrual_date = datetime.now(ZoneInfo(get_settings().financial_timezone)).date()
+        if (
+            "balance" in fields and row.institution_id is None
+            and row.type in {AccountType.INVESTMENT.value, AccountType.RETIREMENT.value}
+            and row.balance > previous_balance
+        ):
+            await HoldingRepository(self.session).add_contribution(
+                account_id, row.balance - previous_balance, financial_today()
+            )
         await self.session.flush()
         return _to_domain(row)
 
@@ -359,7 +370,7 @@ class AccountRepository(BaseRepository[AccountModel]):
                 AccountModel.id == account_id,
                 AccountModel.user_id == user_id,
                 AccountModel.archived_at.is_(None),
-            )
+            ).with_for_update()
         )
         row = result.scalar_one_or_none()
         if row is None:

@@ -208,6 +208,13 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
       setContributionRules([...contributionRules, row].sort((left, right) => left.day_of_month - right.day_of_month));
       setContributionAmount("");
       refresh();
+      try {
+        const updatedHoldings = await api.accounts.holdings(savingAccountId);
+        if (accountIdRef.current !== savingAccountId) return;
+        setHoldings(updatedHoldings);
+      } catch {
+        if (accountIdRef.current === savingAccountId) setError("Contribution saved. Reopen this account to reload its holdings.");
+      }
     } catch (cause) {
       if (accountIdRef.current === savingAccountId) setError(cause instanceof Error ? cause.message : "Unable to add recurring contribution.");
     } finally {
@@ -268,7 +275,7 @@ export function FinancialDetailsDialog({ account, onClose }: { account: Account 
       {holdingAccount && !account.institutionId && (
         <section className="mt-5 border-t border-border pt-4">
           <h3 className="text-xs font-semibold">Recurring account contributions</h3>
-          <p className="mt-1 text-xs text-muted-foreground">Add a fixed amount to this account balance every month. This tracks incoming contributions; it does not buy shares or change a holding’s quantity or cost basis.</p>
+          <p className="mt-1 text-xs text-muted-foreground">Add a fixed amount every month to this account and distribute it across holdings in proportion to their current values. Quantities and known cost bases increase too. Accounts without holdings receive a cash position.</p>
           {contributionRules.map((rule) => (
             <div key={rule.id} className="mt-2 flex items-center justify-between gap-3 rounded-md border border-border px-3 py-2 text-xs">
               <span>${Number(rule.amount).toFixed(2)} on the {ordinal(rule.day_of_month)} · next {rule.next_run_date}</span>

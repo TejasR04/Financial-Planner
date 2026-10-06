@@ -106,6 +106,12 @@ async def test_due_manual_investment_contribution_is_applied_once(client: AsyncC
         headers=headers,
         json={"name": "401(k)", "type": "retirement", "balance": "1000"},
     )
+    holding = await client.post(
+        f"/api/v1/accounts/{account.json()['id']}/holdings", headers=headers,
+        json={"symbol": "VTI", "quantity": "10", "cost_basis": "800", "market_value": "1000",
+              "asset_class": "equity", "as_of": date.today().isoformat()},
+    )
+    assert holding.status_code == 201, holding.text
     rule = await client.post(
         f"/api/v1/accounts/{account.json()['id']}/contribution-rules",
         headers=headers,
@@ -117,6 +123,12 @@ async def test_due_manual_investment_contribution_is_applied_once(client: AsyncC
     second = await client.get("/api/v1/accounts", headers=headers)
     assert Decimal(first.json()["data"][0]["balance"]) == Decimal("1250")
     assert Decimal(second.json()["data"][0]["balance"]) == Decimal("1250")
+    holdings = await client.get(f"/api/v1/accounts/{account.json()['id']}/holdings", headers=headers)
+    assert Decimal(holdings.json()[0]["market_value"]) == Decimal("1250")
+    assert Decimal(holdings.json()[0]["quantity"]) == Decimal("12.5")
+    assert Decimal(holdings.json()[0]["cost_basis"]) == Decimal("1050")
+    dashboard = await client.get("/api/v1/investments/dashboard", headers=headers)
+    assert Decimal(dashboard.json()["total_holdings_value"]) == Decimal("1250")
 
     removed = await client.delete(
         f"/api/v1/accounts/{account.json()['id']}/contribution-rules/{rule.json()['id']}",

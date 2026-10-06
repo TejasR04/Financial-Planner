@@ -225,6 +225,7 @@ class InvestmentContributionAdjustmentModel(Base):
     scheduled_for: Mapped[date] = mapped_column(Date, index=True)
     amount: Mapped[Decimal] = mapped_column(Numeric(18, 2))
     applied_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+    holdings_applied: Mapped[bool] = mapped_column(Boolean, default=True, server_default="true")
 
 
 class TransactionModel(Base):

@@ -11,12 +11,35 @@ from app.core.exceptions import NotFoundError, ValidationError
 from app.domain.entities import Holding
 from app.domain.enums import AssetClass
 from app.domain.holding_valuation import holding_asset_class
+from app.domain.investment_contributions import allocate_contribution
 from app.persistence.models import AccountModel, HoldingModel
 from app.persistence.repositories.base import BaseRepository
 
 
 class HoldingRepository(BaseRepository[HoldingModel]):
     model = HoldingModel
+
+    async def add_contribution(self, account_id: UUID, amount: Decimal, today: date) -> None:
+        """Called with the manual account locked; the caller updates its balance."""
+        result = await self.session.execute(
+            select(HoldingModel).where(HoldingModel.account_id == account_id).order_by(HoldingModel.id).with_for_update()
+        )
+        holdings = list(result.scalars().all())
+        unallocated = allocate_contribution(holdings, amount)
+        if unallocated > 0:
+            cash = next((holding for holding in holdings if holding.symbol == "CUR:USD"), None)
+            if cash is None:
+                cash = HoldingModel(
+                    account_id=account_id, symbol="CUR:USD", quantity=Decimal("0"),
+                    cost_basis=Decimal("0"), market_value=Decimal("0"), asset_class="cash",
+                    as_of=today, pricing_mode="manual",
+                )
+                self.session.add(cash)
+            cash.quantity += unallocated
+            cash.cost_basis += unallocated
+            cash.market_value += unallocated
+            cash.as_of = today
+        await self.session.flush()
 
     async def list_for_account(self, account_id: UUID) -> list[Holding]:
         result = await self.session.execute(select(HoldingModel).where(HoldingModel.account_id == account_id))

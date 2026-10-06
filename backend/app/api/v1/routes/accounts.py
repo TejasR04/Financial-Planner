@@ -234,6 +234,10 @@ async def update_account(
     )
     if "balance" in body.model_fields_set:
         await InvestmentValueSnapshotRepository(db).record_for_accounts([updated])
+        if updated.type in {AccountType.INVESTMENT, AccountType.RETIREMENT}:
+            await InvestmentValueSnapshotRepository(db).record_holding_values(
+                [account_id], await HoldingRepository(db).list_for_account(account_id)
+            )
     await db.commit()
     return _to_response(updated, {})
 

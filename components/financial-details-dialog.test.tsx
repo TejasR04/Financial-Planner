@@ -54,7 +54,11 @@ it("does not let a late debt response populate a different account", async () =>
 });
 
 it("adds a monthly contribution rule to a manual retirement account", async () => {
-  vi.spyOn(api.accounts, "holdings").mockResolvedValue([]);
+  const holdings = vi.spyOn(api.accounts, "holdings").mockResolvedValueOnce([]).mockResolvedValue([{
+    id: "position", account_id: "retirement", symbol: "VTI", quantity: "12.5",
+    cost_basis: "1050", market_value: "1250", asset_class: "equity", as_of: "2026-09-30",
+    pricing_mode: "manual", last_price: null,
+  }]);
   vi.spyOn(api.accounts, "contributionRules").mockResolvedValue([]);
   const save = vi.spyOn(api.accounts, "createContributionRule").mockResolvedValue({
     id: "contribution-rule",
@@ -74,6 +78,8 @@ it("adds a monthly contribution rule to a manual retirement account", async () =
 
   await waitFor(() => expect(save).toHaveBeenCalledWith("retirement", { amount: "250", day_of_month: 30 }));
   expect(await screen.findByText(/\$250\.00 on the 30th/)).toBeInTheDocument();
+  expect(await screen.findByText(/VTI/)).toBeInTheDocument();
+  expect(holdings).toHaveBeenCalledTimes(2);
 });
 
 it("saves a linked investment account's cash without creating a holding", async () => {

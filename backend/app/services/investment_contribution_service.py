@@ -17,6 +17,7 @@ from app.persistence.models import (
     InvestmentContributionRuleModel,
 )
 from app.persistence.repositories.account_repository import AccountRepository
+from app.persistence.repositories.holding_repository import HoldingRepository
 from app.persistence.repositories.investment_value_snapshot_repository import (
     InvestmentValueSnapshotRepository,
 )
@@ -125,6 +126,7 @@ class InvestmentContributionService:
                     )
                 )
                 if exists is None:
+                    await self._add_to_holdings(account.id, rule.amount, today)
                     account.balance += rule.amount
                     account.updated_at = datetime.now(timezone.utc)
                     self.session.add(
@@ -145,7 +147,13 @@ class InvestmentContributionService:
                 for changed_account_id in changed_account_ids
             ]
             await self.history.record_for_accounts(changed_accounts, as_of=today)
+            await self.history.record_holding_values(
+                list(changed_account_ids), await HoldingRepository(self.session).list_for_user(user_id), as_of=today
+            )
         return applied
+
+    async def _add_to_holdings(self, account_id: UUID, amount: Decimal, today: date) -> None:
+        await HoldingRepository(self.session).add_contribution(account_id, amount, today)
 
     async def _eligible_account(self, user_id: UUID, account_id: UUID) -> AccountModel:
         account = await self.session.scalar(
