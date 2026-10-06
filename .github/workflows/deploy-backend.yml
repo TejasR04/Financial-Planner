@@ -30,6 +30,10 @@ jobs:
           workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
           service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
 
+      # The deployment identity also needs Artifact Registry Reader on the
+      # existing us-east1/cloud-run-source-deploy repository. Repository-level
+      # access is sufficient; changing Cloud Run IAM alone does not grant it.
+
       # The API revision must never run against an older schema. Keep this as
       # a one-off Cloud Run Job, rather than running migrations in each API
       # instance at startup, so scale-out cannot race schema changes.
