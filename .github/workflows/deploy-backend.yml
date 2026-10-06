@@ -33,10 +33,13 @@ jobs:
       # The deployment identity also needs Artifact Registry Reader on the
       # existing us-east1/cloud-run-source-deploy repository. Repository-level
       # access is sufficient; changing Cloud Run IAM alone does not grant it.
+      # Source deployment requires Cloud Run Source Developer and Service Usage
+      # Consumer on the project, plus Service Account User on the runtime account.
+      # The default compute build account needs Cloud Run Builder on the project.
 
       # The API revision must never run against an older schema. Keep this as
-      # a one-off Cloud Run Job, rather than running migrations in each API
-      # instance at startup, so scale-out cannot race schema changes.
+      # a one-off Cloud Run Job so migration failures stop this workflow before
+      # it deploys a new API revision.
       - name: Migrate production database
         shell: bash
         run: |
