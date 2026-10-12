@@ -149,3 +149,17 @@ add-on. Ticker pricing uses Tiingo's latest completed end-of-day close; create
 the `tiingo-api-key` Secret Manager secret before redeploying the API and job.
 See [Plaid freshness](https://plaid.com/docs/transactions/) and
 [Cloud Run scheduled jobs](https://docs.cloud.google.com/run/docs/execute/jobs-on-schedule).
+
+## Meridian agent reports
+
+Daily report capture is an explicit release step. After the backend revision
+containing `app.jobs.daily_report` is deployed, provision its private Cloud Run
+Job and 8:05 AM Eastern Cloud Scheduler trigger with
+[scripts/deploy-daily-report.ps1](scripts/deploy-daily-report.ps1). The backend
+workflow updates the job to each newly ready API image when the job already
+exists; its first deployment reports that the explicit provisioning step is
+still required.
+
+Follow [docs/HERMES_SETUP.md](docs/HERMES_SETUP.md) to provision the job, create
+a read-only token in Meridian Settings, and schedule Hermes to fetch and deliver
+the ready report at 8:10 AM Eastern.

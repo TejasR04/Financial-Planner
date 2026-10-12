@@ -6,6 +6,7 @@ from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.security import InvalidTokenError, decode_token
+from app.core.audit import set_audit_source
 from app.domain.entities import User
 from app.persistence.repositories.user_repository import UserRepository
 from app.persistence.session import get_session
@@ -32,4 +33,5 @@ async def get_current_user(
     user = await UserRepository(db).get_active_by_id(user_id)
     if user is None:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials")
+    await set_audit_source(db, "manual")
     return user

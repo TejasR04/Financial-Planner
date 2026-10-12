@@ -1,9 +1,11 @@
 from fastapi import APIRouter, Depends
+from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_current_user, get_db
 from app.core.config import get_settings
 from app.domain.entities import User
+from app.persistence.reporting_models import FinancialSyncRunModel
 from app.providers.market_data_provider import TiingoMarketDataProvider
 from app.providers.plaid_provider import PlaidProvider
 from app.schemas.plaid import PlaidRefreshInstitutionResponse
@@ -15,8 +17,7 @@ from app.services.loan_balance_automation_service import LoanBalanceAutomationSe
 router = APIRouter(prefix="/sync", tags=["sync"])
 
 
-@router.post("", response_model=FinancialDataRefreshResponse)
-async def refresh_financial_data(
+async def _refresh_financial_data(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ) -> FinancialDataRefreshResponse:
@@ -62,3 +63,35 @@ async def refresh_financial_data(
         ),
         contributions_applied=contributions_applied,
     )
+
+
+@router.post("", response_model=FinancialDataRefreshResponse)
+async def refresh_financial_data(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+) -> FinancialDataRefreshResponse:
+    run = FinancialSyncRunModel(user_id=current_user.id, source="manual", status="running")
+    db.add(run)
+    await db.commit()
+    run_id = run.id
+    try:
+        result = await _refresh_financial_data(current_user, db)
+    except Exception:
+        await db.rollback()
+        failed_run = await db.get(FinancialSyncRunModel, run_id)
+        if failed_run is not None:
+            failed_run.status = "failed"
+            failed_run.finished_at = datetime.now(timezone.utc)
+            failed_run.error_summary = {"failed_components": ["manual_sync"]}
+            await db.commit()
+        raise
+    finished_run = await db.get(FinancialSyncRunModel, run_id)
+    if finished_run is not None:
+        errors = ["plaid"] if any(item.status == "error" for item in result.institutions) else []
+        if result.market.errors:
+            errors.append("market")
+        finished_run.status = "partial" if errors else "succeeded"
+        finished_run.finished_at = datetime.now(timezone.utc)
+        finished_run.error_summary = {"failed_components": errors} if errors else None
+        await db.commit()
+    return result

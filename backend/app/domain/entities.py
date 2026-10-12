@@ -103,6 +103,7 @@ class Holding:
     as_of: date
     pricing_mode: str = "manual"
     last_price: Decimal | None = None
+    provider_security_id: str | None = None
 
 
 @dataclass(slots=True)

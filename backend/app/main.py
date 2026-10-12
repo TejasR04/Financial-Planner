@@ -21,6 +21,7 @@ from app.core.exceptions import (
     ValidationError,
 )
 from app.persistence.session import AsyncSessionLocal, engine
+from app.mcp_server import create_mcp_server
 from app.services.plaid_sync_service import (
     sync_all_financial_data as _sync_all_financial_data,
     try_acquire_sync_lease as _try_acquire_plaid_auto_sync_lease,
@@ -42,6 +43,17 @@ app.add_middleware(
 )
 
 app.include_router(api_router, prefix=settings.api_v1_prefix)
+mcp_app, mcp_runtime = create_mcp_server()
+
+
+@app.on_event("startup")
+async def start_mcp() -> None:
+    await mcp_runtime.start()
+
+
+@app.on_event("shutdown")
+async def stop_mcp() -> None:
+    await mcp_runtime.stop()
 
 
 @app.middleware("http")
@@ -55,6 +67,11 @@ async def log_request(request: Request, call_next):
     except Exception:
         logger.exception("request_failed", extra=log_fields)
         raise
+
+    if request.url.path == "/mcp" or request.url.path.startswith((
+        "/mcp/", f"{settings.api_v1_prefix}/reports", f"{settings.api_v1_prefix}/integrations/tokens"
+    )):
+        response.headers["Cache-Control"] = "no-store"
 
     duration_ms = round((time.perf_counter() - started_at) * 1000, 2)
     response.headers["X-Request-ID"] = request_id
@@ -160,3 +177,8 @@ async def readiness() -> dict:
 @app.get("/health", include_in_schema=False)
 async def health() -> dict:
     return await liveness()
+
+
+# Root mount comes last so normal API/health routes retain precedence and
+# Streamable HTTP is served at the exact /mcp path without a slash redirect.
+app.mount("/", mcp_app)

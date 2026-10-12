@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { AlertTriangle, ArchiveRestore, Check, Trash2 } from "lucide-react";
 import { NotificationsSettings } from "@/components/notifications-settings";
+import { IntegrationsSettings } from "@/components/integrations-settings";
 import { Panel, PanelHeader } from "@/components/panel";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -14,6 +15,7 @@ const sections = [
   { id: "profile", label: "Profile" },
   { id: "planning", label: "Planning" },
   { id: "institutions", label: "Institutions" },
+  { id: "integrations", label: "Integrations" },
   { id: "archived", label: "Archived accounts" },
   { id: "notifications", label: "Notifications" },
 ];
@@ -649,6 +651,7 @@ export function SettingsForms() {
         )}
 
         {tab === "notifications" && <NotificationsSettings />}
+        {tab === "integrations" && <IntegrationsSettings />}
       </div>
     </div>
   );

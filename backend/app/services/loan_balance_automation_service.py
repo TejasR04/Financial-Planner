@@ -66,6 +66,8 @@ class LoanBalanceAutomationService:
         await self.session.flush()
 
     async def apply(self, user_id: UUID, account_id: UUID | None = None) -> int:
+        from app.core.audit import set_audit_source
+        await set_audit_source(self.session, "loan_automation")
         applied = await self.reconcile(user_id, account_id)
         today = datetime.now(ZoneInfo(get_settings().financial_timezone)).date()
         interest_query = (

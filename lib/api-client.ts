@@ -13,11 +13,36 @@ export {
   setUnauthorizedHandler,
 } from "@/lib/api-transport";
 
+/** MCP is mounted at the API host root, beside the /api/v1 REST prefix. */
+export function getMcpEndpoint(
+  apiBaseUrl = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api/v1",
+) {
+  const url = new URL(apiBaseUrl, typeof window === "undefined" ? "http://localhost" : window.location.origin);
+  url.pathname = `${url.pathname.replace(/\/api\/v1\/?$/, "").replace(/\/$/, "")}/mcp`;
+  url.search = "";
+  url.hash = "";
+  return url.toString().replace(/\/$/, "");
+}
+
 // ---------------------------------------------------------------------------
 // Backend response/request shapes (mirrors app/schemas/*.py exactly)
 // ---------------------------------------------------------------------------
 
 export type ApiTokenResponse = { access_token: string; token_type: string };
+
+export type ApiAgentToken = {
+  id: string;
+  name: string;
+  prefix: string;
+  created_at: string;
+  expires_at: string;
+  revoked_at: string | null;
+  scope: "reports:read";
+};
+
+export type ApiAgentTokenCreated = Omit<ApiAgentToken, "revoked_at"> & {
+  token: string;
+};
 
 export type ApiAgentChatResponse = {
   conversation_id: string;
@@ -456,6 +481,11 @@ export const api = {
       del<void>(`/agent/conversations/${conversationId}`),
     history: () => get<ApiAgentMessage[]>("/agent/history"),
     clearHistory: () => del<void>("/agent/history"),
+  },
+  integrations: {
+    tokens: () => get<{ data: ApiAgentToken[] }>("/integrations/tokens"),
+    createToken: (name: string) => post<ApiAgentTokenCreated>("/integrations/tokens", { name }),
+    revokeToken: (id: string) => del<void>(`/integrations/tokens/${encodeURIComponent(id)}`),
   },
   activity: {
     summary: () => get<ApiActivitySummary>("/activity/summary"),

@@ -56,6 +56,12 @@ async def test_sync_continues_after_user_failure_and_reports_institution_errors(
 @pytest.mark.parametrize("plaid_configured", [False, True])
 async def test_background_financial_sync_applies_loan_automation(monkeypatch, plaid_configured):
     session = AsyncMock()
+    runs = []
+    def add_run(run):
+        run.id = "run"
+        runs.append(run)
+    session.add = Mock(side_effect=add_run)
+    session.get = AsyncMock(side_effect=lambda *_: runs[0])
     context = AsyncMock()
     context.__aenter__.return_value = session
     monkeypatch.setattr(service, "AsyncSessionLocal", lambda: context)

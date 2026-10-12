@@ -141,6 +141,7 @@ class AccountModel(Base):
 
 class HoldingModel(Base):
     __tablename__ = "holdings"
+    __table_args__ = (UniqueConstraint("account_id", "provider_security_id", name="uq_holdings_account_security"),)
 
     id: Mapped[uuid.UUID] = _uuid_pk()
     account_id: Mapped[uuid.UUID] = mapped_column(PGUUID(as_uuid=True), ForeignKey("accounts.id"), index=True)
@@ -152,6 +153,7 @@ class HoldingModel(Base):
     as_of: Mapped[date] = mapped_column(Date)
     pricing_mode: Mapped[str] = mapped_column(String(20), default="manual", server_default="manual")
     last_price: Mapped[Decimal | None] = mapped_column(Numeric(18, 6), nullable=True)
+    provider_security_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     account: Mapped["AccountModel"] = relationship(back_populates="holdings")
 
@@ -484,3 +486,7 @@ class FinancialHealthScoreModel(Base):
     debt_ratio: Mapped[int] = mapped_column(Integer)
     savings_discipline: Mapped[int] = mapped_column(Integer)
     calculated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_now)
+
+
+# Register reporting tables on the same metadata used by Alembic and tests.
+from app.persistence import reporting_models as reporting_models  # noqa: E402, F401

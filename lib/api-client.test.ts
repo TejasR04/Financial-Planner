@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { api, clearApiCache, formatApiErrorDetail, setAuthToken } from "@/lib/api-client";
+import { api, clearApiCache, formatApiErrorDetail, getMcpEndpoint, setAuthToken } from "@/lib/api-client";
 
 afterEach(() => clearApiCache());
 
@@ -97,6 +97,36 @@ describe("formatApiErrorDetail", () => {
       { loc: ["body", "term_months"], msg: "Field required" },
       { loc: ["body", "origination_date"], msg: "Field required" },
     ], "Request failed")).toBe("term months: Field required; origination date: Field required");
+  });
+});
+
+describe("agent integration tokens", () => {
+  afterEach(() => { setAuthToken(null); vi.restoreAllMocks(); });
+
+  it("uses the configured API host root for MCP and exposes token lifecycle endpoints", async () => {
+    expect(getMcpEndpoint("https://meridian.example/api/v1/")).toBe("https://meridian.example/mcp");
+    expect(getMcpEndpoint("https://example.test/proxy/api/v1?x=1")).toBe("https://example.test/proxy/mcp");
+
+    const fetchMock = vi.spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [] }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        id: "token-1", name: "Hermes", token: "secret-once", prefix: "mer_abc",
+        created_at: "2026-10-11T12:00:00Z", expires_at: "2027-10-11T12:00:00Z", scope: "reports:read",
+      }), { status: 201 }))
+      .mockResolvedValueOnce(new Response(null, { status: 204 }));
+    setAuthToken("session-token");
+
+    await expect(api.integrations.tokens()).resolves.toEqual({ data: [] });
+    const created = await api.integrations.createToken("Hermes");
+    await api.integrations.revokeToken("token-1");
+
+    expect(created.token).toBe("secret-once");
+    expect(fetchMock.mock.calls.map(([input]) => new URL(String(input)).pathname)).toEqual([
+      "/api/v1/integrations/tokens",
+      "/api/v1/integrations/tokens",
+      "/api/v1/integrations/tokens/token-1",
+    ]);
+    expect(JSON.parse(String(fetchMock.mock.calls[1][1]?.body))).toEqual({ name: "Hermes" });
   });
 });
 

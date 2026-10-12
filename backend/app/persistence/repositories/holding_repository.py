@@ -5,7 +5,7 @@ from uuid import UUID, uuid4
 from datetime import date
 from decimal import Decimal, ROUND_HALF_UP
 
-from sqlalchemy import delete, select
+from sqlalchemy import select
 
 from app.core.exceptions import NotFoundError, ValidationError
 from app.domain.entities import Holding
@@ -103,6 +103,7 @@ class HoldingRepository(BaseRepository[HoldingModel]):
             as_of=holding.as_of,
             pricing_mode=holding.pricing_mode,
             last_price=holding.last_price,
+            provider_security_id=holding.provider_security_id,
         )
         self.session.add(row)
         await self.session.flush()
@@ -143,23 +144,55 @@ class HoldingRepository(BaseRepository[HoldingModel]):
         """
         if not account_ids:
             return []
-        await self.session.execute(delete(HoldingModel).where(HoldingModel.account_id.in_(account_ids)))
-        rows = [
-            HoldingModel(
-                id=holding.id or uuid4(),
-                account_id=holding.account_id,
-                symbol=holding.symbol,
-                quantity=holding.quantity,
-                cost_basis=holding.cost_basis,
-                market_value=holding.market_value,
-                asset_class=holding.asset_class.value,
-                as_of=holding.as_of,
-                pricing_mode=holding.pricing_mode,
-                last_price=holding.last_price,
-            )
-            for holding in holdings
-        ]
-        self.session.add_all(rows)
+        result = await self.session.execute(
+            select(HoldingModel).where(HoldingModel.account_id.in_(account_ids)).with_for_update()
+        )
+        existing = list(result.scalars().all())
+        by_security = {(row.account_id, row.provider_security_id): row for row in existing if row.provider_security_id}
+        incoming_counts: dict[tuple[UUID, str], int] = {}
+        for holding in holdings:
+            key = (holding.account_id, holding.symbol)
+            incoming_counts[key] = incoming_counts.get(key, 0) + 1
+        legacy_counts: dict[tuple[UUID, str], int] = {}
+        for existing_row in existing:
+            if existing_row.provider_security_id is None:
+                key = (existing_row.account_id, existing_row.symbol)
+                legacy_counts[key] = legacy_counts.get(key, 0) + 1
+        if any(key in incoming_counts and (count > 1 or incoming_counts[key] > 1)
+               for key, count in legacy_counts.items()):
+            from app.core.audit import set_audit_source
+            await set_audit_source(self.session, "identity_transition")
+        retained: set[UUID] = set()
+        rows = []
+        for holding in holdings:
+            if holding.account_id not in account_ids:
+                raise ValidationError("Holding does not belong to a refreshed account")
+            row: HoldingModel | None = by_security.get((holding.account_id, holding.provider_security_id)) if holding.provider_security_id else None
+            if row is None:
+                # Adopt legacy identities only when symbols match one-to-one.
+                candidates = [candidate for candidate in existing
+                              if candidate.account_id == holding.account_id
+                              and candidate.symbol == holding.symbol
+                              and candidate.provider_security_id is None
+                              and candidate.id not in retained]
+                if len(candidates) == 1 and incoming_counts[(holding.account_id, holding.symbol)] == 1:
+                    row = candidates[0]
+            if row is None:
+                row = HoldingModel(id=holding.id or uuid4(), account_id=holding.account_id)
+                self.session.add(row)
+            retained.add(row.id)
+            for field, value in {
+                "symbol": holding.symbol, "quantity": holding.quantity,
+                "cost_basis": holding.cost_basis, "market_value": holding.market_value,
+                "asset_class": holding.asset_class.value, "as_of": holding.as_of,
+                "pricing_mode": holding.pricing_mode, "last_price": holding.last_price,
+                "provider_security_id": holding.provider_security_id,
+            }.items():
+                setattr(row, field, value)
+            rows.append(row)
+        for row in existing:
+            if row.id not in retained:
+                await self.session.delete(row)
         await self.session.flush()
         return [_to_domain(row) for row in rows]
 
@@ -176,4 +209,5 @@ def _to_domain(row: HoldingModel) -> Holding:
         as_of=row.as_of,
         pricing_mode=getattr(row, "pricing_mode", "manual"),
         last_price=getattr(row, "last_price", None),
+        provider_security_id=getattr(row, "provider_security_id", None),
     )

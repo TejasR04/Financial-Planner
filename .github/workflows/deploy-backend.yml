@@ -123,3 +123,31 @@ jobs:
             --update-secrets TIINGO_API_KEY=tiingo-api-key:latest \
             --region us-east1 \
             --project "${{ vars.GCP_PROJECT_ID }}"
+
+      # The daily capture job is provisioned explicitly after the first release
+      # containing its runner. Until then, let the initial API deployment finish.
+      - name: Update daily report job when provisioned
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gcloud run jobs describe meridian-daily-report \
+            --region us-east1 \
+            --project "${{ vars.GCP_PROJECT_ID }}" \
+            --format='value(metadata.name)' >/dev/null 2>&1; then
+            revision=$(gcloud run services describe meridian-api \
+              --region us-east1 \
+              --project "${{ vars.GCP_PROJECT_ID }}" \
+              --format='value(status.latestReadyRevisionName)')
+            test -n "$revision"
+            image=$(gcloud run revisions describe "$revision" \
+              --region us-east1 \
+              --project "${{ vars.GCP_PROJECT_ID }}" \
+              --format='value(status.imageDigest)')
+            test -n "$image"
+            gcloud run jobs update meridian-daily-report \
+              --image "$image" \
+              --region us-east1 \
+              --project "${{ vars.GCP_PROJECT_ID }}"
+          else
+            echo "::notice::meridian-daily-report is not provisioned yet; run scripts/deploy-daily-report.ps1 after this API release."
+          fi

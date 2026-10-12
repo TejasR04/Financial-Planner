@@ -94,6 +94,8 @@ class InvestmentContributionService:
         await self.session.flush()
 
     async def apply(self, user_id: UUID, account_id: UUID | None = None) -> int:
+        from app.core.audit import set_audit_source
+        await set_audit_source(self.session, "investment_contribution")
         query = (
             select(InvestmentContributionRuleModel, AccountModel)
             .join(AccountModel, AccountModel.id == InvestmentContributionRuleModel.account_id)

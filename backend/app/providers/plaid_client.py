@@ -96,6 +96,7 @@ class RawPlaidHolding:
     is_cash_equivalent: bool
     as_of: date
     last_price: Decimal | None = None
+    provider_security_id: str | None = None
 
 
 @dataclass(slots=True)
@@ -283,6 +284,7 @@ class PlaidClient:
                     is_cash_equivalent=bool(security and security.is_cash_equivalent),
                     as_of=holding.institution_price_as_of or as_of,
                     last_price=Decimal(str(holding.institution_price)) if holding.institution_price is not None else None,
+                    provider_security_id=holding.security_id,
                 )
             )
         return [account.account_id for account in response.accounts], holdings

@@ -282,6 +282,8 @@ async def import_csv(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
     overrides = {override.row_number: override for override in body.overrides}
+    from app.core.audit import set_audit_source
+    await set_audit_source(db, "csv_import")
     created, skipped = await TransactionRepository(db).bulk_create_deduplicated(
         [row.transaction for row in parsed],
         [overrides[row.row_number].force_import if row.row_number in overrides else False for row in parsed],

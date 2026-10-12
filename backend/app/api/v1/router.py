@@ -10,6 +10,8 @@ from app.api.v1.routes import (
     financial_inputs,
     insights,
     investments,
+    integrations,
+    reports,
     plaid,
     recommendations,
     scenarios,
@@ -20,6 +22,8 @@ from app.api.v1.routes import (
 )
 
 api_router = APIRouter()
+api_router.include_router(integrations.router)
+api_router.include_router(reports.router)
 api_router.include_router(auth.router)
 api_router.include_router(users.router)
 api_router.include_router(accounts.router)

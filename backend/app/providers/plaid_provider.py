@@ -132,6 +132,8 @@ class PlaidProvider(FinancialDataProvider):
         new Institution (token encrypted at rest), fetch its accounts from
         Plaid, and persist those too. Returns domain entities only.
         """
+        from app.core.audit import set_audit_source
+        await set_audit_source(self.session, "plaid")
         exchange = await self._client.exchange_public_token(public_token)
 
         existing = await self._institutions.get_by_external_item_id(exchange.item_id)
@@ -198,6 +200,8 @@ class PlaidProvider(FinancialDataProvider):
         *,
         apply_loan_automation: bool = True,
     ) -> PlaidRefreshResult:
+        from app.core.audit import set_audit_source
+        await set_audit_source(self.session, "plaid")
         access_token = await self._institutions.get_decrypted_access_token(institution.id)
         cursor = await self._institutions.get_sync_cursor(institution.id)
 
@@ -395,6 +399,7 @@ def _to_holding_entity(raw: RawPlaidHolding, account_id: UUID) -> Holding:
         asset_class=_map_asset_class(raw),
         as_of=raw.as_of,
         last_price=raw.last_price,
+        provider_security_id=raw.provider_security_id,
     )
 
 

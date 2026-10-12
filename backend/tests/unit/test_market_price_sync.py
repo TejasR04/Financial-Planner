@@ -128,7 +128,11 @@ async def test_tiingo_reports_non_finite_close_as_unavailable():
 async def test_manual_refresh_route_passes_configured_tiingo_provider(monkeypatch):
     user_id = uuid4()
     api_key = "unit-test-key"
-    db = SimpleNamespace(commit=AsyncMock())
+    runs = []
+    def add_run(run):
+        run.id = uuid4()
+        runs.append(run)
+    db = SimpleNamespace(commit=AsyncMock(), add=add_run, get=AsyncMock(side_effect=lambda *_: runs[0]))
     provider = object()
     market_result = SimpleNamespace(
         symbols_updated=1, holdings_updated=1, accounts_updated=1, errors={}
@@ -152,7 +156,9 @@ async def test_manual_refresh_route_passes_configured_tiingo_provider(monkeypatc
     response = await sync_routes.refresh_financial_data(SimpleNamespace(id=user_id), db)
 
     market_sync.assert_awaited_once_with(user_id)
-    db.commit.assert_awaited_once()
+    assert db.commit.await_count == 3
+    assert runs[0].status == "succeeded"
+    assert runs[0].finished_at is not None
     assert response.market.holdings_updated == 1
     assert response.market.errors == {}
 

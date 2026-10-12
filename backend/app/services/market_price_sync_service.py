@@ -24,12 +24,15 @@ class MarketSyncResult:
 
 class MarketPriceSyncService:
     def __init__(self, session: AsyncSession, provider: TiingoMarketDataProvider):
+        self.session = session
         self._accounts = AccountRepository(session)
         self._holdings = HoldingRepository(session)
         self._history = InvestmentValueSnapshotRepository(session)
         self._provider = provider
 
     async def sync_user(self, user_id: UUID) -> MarketSyncResult:
+        from app.core.audit import set_audit_source
+        await set_audit_source(self.session, "market")
         holdings = await self._holdings.list_automatic_for_user(user_id)
         if not holdings:
             return MarketSyncResult(0, 0, 0, {})
