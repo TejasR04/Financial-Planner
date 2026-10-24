@@ -147,16 +147,16 @@ class PlaidClient:
             "language": "en",
         }
         if update_access_token is None:
-            # Request investment access alongside Transactions so brokerage
-            # and retirement Items can supply their holdings and allocation.
-            request_args["products"] = [Products("transactions"), Products("investments")]
+            # Banks and cards need only Transactions. Collect holdings where
+            # supported without excluding institutions such as Bilt.
+            request_args["products"] = [Products("transactions")]
+            request_args["optional_products"] = [Products("investments")]
             request_args["transactions"] = LinkTokenTransactions(days_requested=TRANSACTION_HISTORY_DAYS)
         else:
-            # Update mode retains the existing Item while asking for the
-            # Investments consent that older Transactions-only links lack.
-            # Plaid requires additions in `additional_consented_products`.
+            # Reauthentication must retain the existing Item and product
+            # consent. Adding Investments here prevents credit-card-only
+            # institutions such as Bilt from entering update mode.
             request_args["access_token"] = update_access_token
-            request_args["additional_consented_products"] = [Products("investments")]
         request = LinkTokenCreateRequest(**request_args)
         try:
             response = await asyncio.to_thread(self._client.link_token_create, request)
